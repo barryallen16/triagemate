@@ -11,6 +11,9 @@ import tempfile
 from pathlib import Path
 
 from triage.dataset import build_window
+from triage.explain import explain
+from triage.decision import MODEL as DECISION_MODEL
+from triage.decision import REVISION as DECISION_REVISION, DecisionScorer
 from triage.prompts import INSTRUCTIONS, SYSTEM
 
 RULES = ["--config", "p/default", "--config", "p/security-audit",
@@ -101,7 +104,9 @@ def main(argv=None):
     ap.add_argument("path")
     ap.add_argument("--model", default="unsloth/Qwen2.5-Coder-7B-Instruct-bnb-4bit")
     ap.add_argument("--adapter", default="")
-    ap.add_argument("--scorer", choices=["model", "heuristic"], default="model")
+    ap.add_argument("--scorer", choices=["model", "decision", "heuristic"], default="model")
+    ap.add_argument("--decision-model", default=DECISION_MODEL)
+    ap.add_argument("--decision-revision", default=DECISION_REVISION)
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--limit", type=int, default=0)
     args = ap.parse_args(argv)
@@ -114,9 +119,19 @@ def main(argv=None):
     rows = findings_from(scan, root)
     if args.limit:
         rows = rows[:args.limit]
-    scorer = ModelScorer(args.model, args.adapter) if args.scorer == "model" else None
+    if args.scorer == "model":
+        scorer = ModelScorer(args.model, args.adapter)
+    elif args.scorer == "decision":
+        scorer = DecisionScorer(args.decision_model, args.decision_revision, args.adapter)
+    else:
+        scorer = None
     for row in rows:
-        if scorer:
+        if args.scorer == "decision":
+            row["p_tp"], row["confidence"] = scorer.score(row)
+            prose = explain(row, "TP" if row["p_tp"] >= 0.5 else "FP")
+            row["why"] = prose["why"]
+            row["fix"] = prose["fix"]
+        elif scorer:
             row["p_tp"], text = scorer.score(row)
             row["why"] = next((l[4:].strip() for l in text.splitlines()
                                if l.upper().startswith("WHY:")), "")
@@ -124,8 +139,9 @@ def main(argv=None):
                                if l.upper().startswith("FIX:")), "")
         else:
             row["p_tp"], _ = heuristic_score(row)
-            row["why"] = row["message"][:200]
-            row["fix"] = ""
+            prose = explain(row, "TP" if row["p_tp"] >= 0.5 else "FP")
+            row["why"] = prose["why"]
+            row["fix"] = prose["fix"]
     rows.sort(key=lambda r: -r["p_tp"])
     if args.json:
         print(json.dumps(rows, indent=2))
@@ -133,11 +149,14 @@ def main(argv=None):
     print(f"{len(rows)} warnings, real bugs first\n")
     for i, r in enumerate(rows, 1):
         verdict = "BUG " if r["p_tp"] >= 0.5 else "noise"
-        print(f"{i:3d}. {verdict} p={r['p_tp']:.2f}  {r['file']}:{r['line']}  {r['rule']}")
+        confidence = f" c={r['confidence']:.2f}" if "confidence" in r else ""
+        print(f"{i:3d}. {verdict} p={r['p_tp']:.2f}{confidence}  {r['file']}:{r['line']}  {r['rule']}")
         if r.get("why"):
             print(f"     why: {r['why']}")
         if r.get("fix"):
             print(f"     fix: {r['fix']}")
+    if any(r.get("fix") for r in rows):
+        print("\nfix text is guidance, not compiled or tested")
 
 
 if __name__ == "__main__":

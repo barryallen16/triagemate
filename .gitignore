@@ -1,9 +1,11 @@
-# secrets — never commit (a live HF token was once lost this way)
+# secrets - never commit (a live HF token was once lost this way)
 .env
 
 # archives live in ../all-unorganized-code/, not in git
 *.7z
 *.zip
+*.tar.gz
+test_*.json
 
 # local logs and audit notes — never commit
 opencode-debug.log

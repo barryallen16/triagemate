@@ -14,17 +14,23 @@ def labels(rows):
 
 
 def precision_at_recall(y, score, target=0.9):
-    """Precision when the lowest accepted score keeps `target` of the positives."""
-    order = np.argsort(-np.asarray(score))
-    y = np.asarray(y)[order]
-    tp = np.cumsum(y)
-    kept = np.arange(1, len(y) + 1)
-    recall = tp / max(y.sum(), 1)
-    ok = np.where(recall >= target)[0]
-    if not len(ok):
+    """Precision at the highest score threshold that keeps `target` recall.
+
+    All rows at the chosen threshold are accepted together, so tied scores
+    cannot change the result with row order.
+    """
+    y = np.asarray(y)
+    score = np.asarray(score)
+    positives = y.sum()
+    if not positives:
         return 0.0, 0.0
-    i = ok[0]  # first threshold that reaches the target keeps the set smallest
-    return float(tp[i] / kept[i]), float(recall[i])
+    for threshold in np.unique(score)[::-1]:
+        accepted = score >= threshold
+        tp = y[accepted].sum()
+        recall = tp / positives
+        if recall >= target:
+            return float(tp / accepted.sum()), float(recall)
+    return 0.0, 0.0
 
 
 def ece(y, score, bins=10):

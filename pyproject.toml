@@ -7,11 +7,10 @@ name = "triagemate"
 version = "0.1.0"
 description = "Triage Java static analysis alerts into verdict, reason and fix"
 requires-python = ">=3.10"
-dependencies = ["javalang>=0.13", "numpy", "scikit-learn"]
+dependencies = ["javalang>=0.13", "numpy", "scikit-learn", "pytest>=8"]
 
 [project.optional-dependencies]
 model = ["torch", "transformers", "peft", "bitsandbytes", "unsloth"]
-test = ["pytest>=8"]
 
 [project.scripts]
 triagemate = "triage.cli:main"

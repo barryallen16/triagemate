@@ -36,6 +36,15 @@ def test_precision_at_recall_unreachable():
     assert r == 1.0
 
 
+def test_precision_at_recall_groups_ties():
+    # Both positives tie with both negatives: a threshold must accept all four.
+    y = np.array([1, 1, 0, 0])
+    score = np.array([0.75, 0.75, 0.75, 0.75])
+    p, r = precision_at_recall(y, score, 0.9)
+    assert p == 0.5
+    assert r == 1.0
+
+
 def test_ece_perfect_calibration():
     # Confs exactly match labels within each bin -> ECE = 0.
     y = np.array([0.0, 0.0, 1.0, 1.0])
