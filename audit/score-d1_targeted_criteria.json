@@ -1,0 +1,126 @@
+{
+  "ghsa": {
+    "L0 location proxy": {
+      "positives": 85,
+      "heuristic": {
+        "auc": 0.5886,
+        "p_at_90r": 0.4885
+      },
+      "targeted_identity": {
+        "auc": 0.5633,
+        "p_at_90r": 0.5066,
+        "delta_auc": -0.0254,
+        "ci": [
+          -0.2195,
+          0.1343
+        ],
+        "gate": "FAIL",
+        "within_rule_auc": 0.5488,
+        "within_rule_ci": [
+          0.3226,
+          0.7138
+        ]
+      },
+      "targeted_swap": {
+        "auc": 0.4978,
+        "within_rule_auc": 0.4104,
+        "code_signal_delta": 0.0655
+      }
+    },
+    "L1 hunk only": {
+      "positives": 44,
+      "heuristic": {
+        "auc": 0.522,
+        "p_at_90r": 0.2529
+      },
+      "targeted_identity": {
+        "auc": 0.575,
+        "p_at_90r": 0.2548,
+        "delta_auc": 0.053,
+        "ci": [
+          -0.1352,
+          0.2783
+        ],
+        "gate": "PASS",
+        "within_rule_auc": 0.4908,
+        "within_rule_ci": [
+          0.3043,
+          0.6441
+        ]
+      },
+      "targeted_swap": {
+        "auc": 0.5449,
+        "within_rule_auc": 0.5176,
+        "code_signal_delta": 0.0301
+      }
+    },
+    "L2 stored + CWE": {
+      "positives": 53,
+      "heuristic": {
+        "auc": 0.6223,
+        "p_at_90r": 0.3046
+      },
+      "targeted_identity": {
+        "auc": 0.4969,
+        "p_at_90r": 0.3082,
+        "delta_auc": -0.1254,
+        "ci": [
+          -0.3218,
+          0.0632
+        ],
+        "gate": "FAIL",
+        "within_rule_auc": 0.5071,
+        "within_rule_ci": [
+          0.327,
+          0.6982
+        ]
+      },
+      "targeted_swap": {
+        "auc": 0.4388,
+        "within_rule_auc": 0.3798,
+        "code_signal_delta": 0.0581
+      }
+    },
+    "L3 hunk + CWE": {
+      "positives": 28,
+      "heuristic": {
+        "auc": 0.5235,
+        "p_at_90r": 0.1609
+      },
+      "targeted_identity": {
+        "auc": 0.5559,
+        "p_at_90r": 0.1635,
+        "delta_auc": 0.0324,
+        "ci": [
+          -0.2187,
+          0.3639
+        ],
+        "gate": "PASS",
+        "within_rule_auc": 0.4746,
+        "within_rule_ci": [
+          0.2424,
+          0.6751
+        ]
+      },
+      "targeted_swap": {
+        "auc": 0.525,
+        "within_rule_auc": 0.4928,
+        "code_signal_delta": 0.0309
+      }
+    }
+  },
+  "vul4j": {
+    "rows": 14,
+    "positives": 5,
+    "heuristic": {
+      "auc": 0.5778,
+      "p_at_90r": 0.3571
+    },
+    "targeted_identity": {
+      "auc": 0.4444,
+      "p_at_90r": 0.3846,
+      "delta_auc": -0.1333,
+      "gate": "FAIL"
+    }
+  }
+}

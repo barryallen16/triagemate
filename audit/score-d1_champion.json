@@ -1,0 +1,126 @@
+{
+  "ghsa": {
+    "L0 location proxy": {
+      "positives": 85,
+      "heuristic": {
+        "auc": 0.5886,
+        "p_at_90r": 0.4885
+      },
+      "champion_identity": {
+        "auc": 0.5953,
+        "p_at_90r": 0.5,
+        "delta_auc": 0.0067,
+        "ci": [
+          -0.1458,
+          0.1684
+        ],
+        "gate": "FAIL",
+        "within_rule_auc": 0.5374,
+        "within_rule_ci": [
+          0.4181,
+          0.7422
+        ]
+      },
+      "champion_swap": {
+        "auc": 0.5114,
+        "within_rule_auc": 0.4399,
+        "code_signal_delta": 0.0839
+      }
+    },
+    "L1 hunk only": {
+      "positives": 44,
+      "heuristic": {
+        "auc": 0.522,
+        "p_at_90r": 0.2529
+      },
+      "champion_identity": {
+        "auc": 0.6088,
+        "p_at_90r": 0.2899,
+        "delta_auc": 0.0868,
+        "ci": [
+          -0.0869,
+          0.3044
+        ],
+        "gate": "PASS",
+        "within_rule_auc": 0.5983,
+        "within_rule_ci": [
+          0.4267,
+          0.7928
+        ]
+      },
+      "champion_swap": {
+        "auc": 0.5116,
+        "within_rule_auc": 0.4782,
+        "code_signal_delta": 0.0972
+      }
+    },
+    "L2 stored + CWE": {
+      "positives": 53,
+      "heuristic": {
+        "auc": 0.6223,
+        "p_at_90r": 0.3046
+      },
+      "champion_identity": {
+        "auc": 0.5214,
+        "p_at_90r": 0.3141,
+        "delta_auc": -0.101,
+        "ci": [
+          -0.2642,
+          0.0832
+        ],
+        "gate": "FAIL",
+        "within_rule_auc": 0.5095,
+        "within_rule_ci": [
+          0.3485,
+          0.7383
+        ]
+      },
+      "champion_swap": {
+        "auc": 0.4653,
+        "within_rule_auc": 0.4738,
+        "code_signal_delta": 0.0561
+      }
+    },
+    "L3 hunk + CWE": {
+      "positives": 28,
+      "heuristic": {
+        "auc": 0.5235,
+        "p_at_90r": 0.1609
+      },
+      "champion_identity": {
+        "auc": 0.5988,
+        "p_at_90r": 0.1884,
+        "delta_auc": 0.0753,
+        "ci": [
+          -0.1465,
+          0.3894
+        ],
+        "gate": "PASS",
+        "within_rule_auc": 0.6594,
+        "within_rule_ci": [
+          0.4395,
+          0.8338
+        ]
+      },
+      "champion_swap": {
+        "auc": 0.4883,
+        "within_rule_auc": 0.471,
+        "code_signal_delta": 0.1106
+      }
+    }
+  },
+  "vul4j": {
+    "rows": 14,
+    "positives": 5,
+    "heuristic": {
+      "auc": 0.5778,
+      "p_at_90r": 0.3571
+    },
+    "champion_identity": {
+      "auc": 0.5444,
+      "p_at_90r": 0.4167,
+      "delta_auc": -0.0333,
+      "gate": "FAIL"
+    }
+  }
+}

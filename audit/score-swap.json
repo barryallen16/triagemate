@@ -1,0 +1,142 @@
+{
+  "L0 location proxy": {
+    "identity": {
+      "auc": 0.7028,
+      "p_at_90r": 0.5132,
+      "within_rule": 0.4739,
+      "identity_minus_this": {
+        "valid": 2000,
+        "low": 0.0,
+        "high": 0.0,
+        "share_le_0": 1.0
+      }
+    },
+    "global": {
+      "auc": 0.6348,
+      "p_at_90r": 0.5066,
+      "within_rule": 0.5896,
+      "identity_minus_this": {
+        "valid": 2000,
+        "low": -0.0594,
+        "high": 0.1849,
+        "share_le_0": 0.156
+      }
+    },
+    "rule": {
+      "auc": 0.6739,
+      "p_at_90r": 0.5232,
+      "within_rule": 0.4444,
+      "identity_minus_this": {
+        "valid": 2000,
+        "low": -0.0335,
+        "high": 0.102,
+        "share_le_0": 0.184
+      }
+    }
+  },
+  "L1 hunk only": {
+    "identity": {
+      "auc": 0.6461,
+      "p_at_90r": 0.3053,
+      "within_rule": 0.5008,
+      "identity_minus_this": {
+        "valid": 2000,
+        "low": 0.0,
+        "high": 0.0,
+        "share_le_0": 1.0
+      }
+    },
+    "global": {
+      "auc": 0.6005,
+      "p_at_90r": 0.2721,
+      "within_rule": 0.5714,
+      "identity_minus_this": {
+        "valid": 2000,
+        "low": -0.0726,
+        "high": 0.1951,
+        "share_le_0": 0.2265
+      }
+    },
+    "rule": {
+      "auc": 0.6019,
+      "p_at_90r": 0.2857,
+      "within_rule": 0.395,
+      "identity_minus_this": {
+        "valid": 2000,
+        "low": -0.024,
+        "high": 0.1396,
+        "share_le_0": 0.101
+      }
+    }
+  },
+  "L2 stored + CWE": {
+    "identity": {
+      "auc": 0.7758,
+      "p_at_90r": 0.4898,
+      "within_rule": 0.519,
+      "identity_minus_this": {
+        "valid": 2000,
+        "low": 0.0,
+        "high": 0.0,
+        "share_le_0": 1.0
+      }
+    },
+    "global": {
+      "auc": 0.7521,
+      "p_at_90r": 0.3967,
+      "within_rule": 0.5833,
+      "identity_minus_this": {
+        "valid": 2000,
+        "low": -0.0889,
+        "high": 0.1289,
+        "share_le_0": 0.342
+      }
+    },
+    "rule": {
+      "auc": 0.7215,
+      "p_at_90r": 0.3357,
+      "within_rule": 0.431,
+      "identity_minus_this": {
+        "valid": 2000,
+        "low": -0.0179,
+        "high": 0.1187,
+        "share_le_0": 0.0655
+      }
+    }
+  },
+  "L3 hunk + CWE": {
+    "identity": {
+      "auc": 0.8105,
+      "p_at_90r": 0.3562,
+      "within_rule": 0.5012,
+      "identity_minus_this": {
+        "valid": 2000,
+        "low": 0.0,
+        "high": 0.0,
+        "share_le_0": 1.0
+      }
+    },
+    "global": {
+      "auc": 0.7387,
+      "p_at_90r": 0.2574,
+      "within_rule": 0.5411,
+      "identity_minus_this": {
+        "valid": 2000,
+        "low": -0.0522,
+        "high": 0.2269,
+        "share_le_0": 0.1165
+      }
+    },
+    "rule": {
+      "auc": 0.744,
+      "p_at_90r": 0.2149,
+      "within_rule": 0.3973,
+      "identity_minus_this": {
+        "valid": 2000,
+        "low": -0.0334,
+        "high": 0.184,
+        "share_le_0": 0.089
+      }
+    }
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "L0 location proxy": {
+    "positives": 85,
+    "heuristic": {
+      "auc": 0.5886,
+      "p_at_90r": 0.4885
+    },
+    "pred": {
+      "auc": 0.7028,
+      "p_at_90r": 0.5132,
+      "delta_auc": 0.1141,
+      "entry_bootstrap": {
+        "valid": 2000,
+        "low": -0.0832,
+        "high": 0.3254,
+        "share_le_0": 0.1625
+      }
+    },
+    "gate_pass": true
+  },
+  "L1 hunk only": {
+    "positives": 44,
+    "heuristic": {
+      "auc": 0.522,
+      "p_at_90r": 0.2529
+    },
+    "pred": {
+      "auc": 0.6461,
+      "p_at_90r": 0.3053,
+      "delta_auc": 0.124,
+      "entry_bootstrap": {
+        "valid": 2000,
+        "low": -0.0708,
+        "high": 0.39,
+        "share_le_0": 0.1275
+      }
+    },
+    "gate_pass": true
+  },
+  "L2 stored + CWE": {
+    "positives": 53,
+    "heuristic": {
+      "auc": 0.6223,
+      "p_at_90r": 0.3046
+    },
+    "pred": {
+      "auc": 0.7758,
+      "p_at_90r": 0.4898,
+      "delta_auc": 0.1534,
+      "entry_bootstrap": {
+        "valid": 2000,
+        "low": -0.0621,
+        "high": 0.3342,
+        "share_le_0": 0.096
+      }
+    },
+    "gate_pass": true
+  },
+  "L3 hunk + CWE": {
+    "positives": 28,
+    "heuristic": {
+      "auc": 0.5235,
+      "p_at_90r": 0.1609
+    },
+    "pred": {
+      "auc": 0.8105,
+      "p_at_90r": 0.3562,
+      "delta_auc": 0.2871,
+      "entry_bootstrap": {
+        "valid": 2000,
+        "low": 0.0534,
+        "high": 0.5347,
+        "share_le_0": 0.0065
+      }
+    },
+    "gate_pass": true
+  }
+}

@@ -1,0 +1,110 @@
+{
+  "L0 location proxy": {
+    "positives": 85,
+    "heuristic": {
+      "auc": 0.5886,
+      "p_at_90r": 0.4885
+    },
+    "targeted_identity": {
+      "auc": 0.6098,
+      "p_at_90r": 0.5417,
+      "delta_auc": 0.0212,
+      "ci": [
+        -0.1279,
+        0.1687
+      ],
+      "gate": "PASS",
+      "within_rule_auc": 0.5986,
+      "within_rule_ci": [
+        0.4269,
+        0.7731
+      ]
+    },
+    "targeted_swap": {
+      "auc": 0.5349,
+      "within_rule_auc": 0.3866,
+      "code_signal_delta": 0.0749
+    }
+  },
+  "L1 hunk only": {
+    "positives": 44,
+    "heuristic": {
+      "auc": 0.522,
+      "p_at_90r": 0.2529
+    },
+    "targeted_identity": {
+      "auc": 0.5937,
+      "p_at_90r": 0.2778,
+      "delta_auc": 0.0717,
+      "ci": [
+        -0.0972,
+        0.2951
+      ],
+      "gate": "PASS",
+      "within_rule_auc": 0.5639,
+      "within_rule_ci": [
+        0.4192,
+        0.7394
+      ]
+    },
+    "targeted_swap": {
+      "auc": 0.5469,
+      "within_rule_auc": 0.4706,
+      "code_signal_delta": 0.0468
+    }
+  },
+  "L2 stored + CWE": {
+    "positives": 53,
+    "heuristic": {
+      "auc": 0.6223,
+      "p_at_90r": 0.3046
+    },
+    "targeted_identity": {
+      "auc": 0.5843,
+      "p_at_90r": 0.3582,
+      "delta_auc": -0.038,
+      "ci": [
+        -0.2001,
+        0.1454
+      ],
+      "gate": "FAIL",
+      "within_rule_auc": 0.6321,
+      "within_rule_ci": [
+        0.3546,
+        0.8507
+      ]
+    },
+    "targeted_swap": {
+      "auc": 0.5062,
+      "within_rule_auc": 0.4345,
+      "code_signal_delta": 0.078
+    }
+  },
+  "L3 hunk + CWE": {
+    "positives": 28,
+    "heuristic": {
+      "auc": 0.5235,
+      "p_at_90r": 0.1609
+    },
+    "targeted_identity": {
+      "auc": 0.6261,
+      "p_at_90r": 0.1806,
+      "delta_auc": 0.1026,
+      "ci": [
+        -0.1256,
+        0.4309
+      ],
+      "gate": "PASS",
+      "within_rule_auc": 0.5761,
+      "within_rule_ci": [
+        0.3834,
+        0.7637
+      ]
+    },
+    "targeted_swap": {
+      "auc": 0.5799,
+      "within_rule_auc": 0.4891,
+      "code_signal_delta": 0.0462
+    }
+  }
+}

@@ -1,0 +1,162 @@
+{
+  "L0 location proxy": {
+    "positives": 85,
+    "base_rate": 0.4885,
+    "off_cwe_positives": 32,
+    "method_only_positives": 41,
+    "scores": {
+      "heuristic": {
+        "auc": 0.5886,
+        "p_at_90r": 0.4885,
+        "recall": 1.0,
+        "delta_auc": 0.0
+      },
+      "d1": {
+        "auc": 0.6941,
+        "p_at_90r": 0.4847,
+        "recall": 0.9294,
+        "delta_auc": 0.1054,
+        "entry_bootstrap": {
+          "valid": 2000,
+          "low": -0.0952,
+          "high": 0.3232,
+          "share_le_0": 0.1855
+        },
+        "gate_pass": false
+      },
+      "kev": {
+        "auc": 0.7521,
+        "p_at_90r": 0.6063,
+        "recall": 0.9059,
+        "delta_auc": 0.1635,
+        "entry_bootstrap": {
+          "valid": 2000,
+          "low": -0.0375,
+          "high": 0.3409,
+          "share_le_0": 0.056
+        },
+        "gate_pass": true
+      }
+    }
+  },
+  "L1 hunk only": {
+    "positives": 44,
+    "base_rate": 0.2529,
+    "off_cwe_positives": 16,
+    "method_only_positives": 0,
+    "scores": {
+      "heuristic": {
+        "auc": 0.522,
+        "p_at_90r": 0.2529,
+        "recall": 1.0,
+        "delta_auc": 0.0
+      },
+      "d1": {
+        "auc": 0.6672,
+        "p_at_90r": 0.2778,
+        "recall": 0.9091,
+        "delta_auc": 0.1452,
+        "entry_bootstrap": {
+          "valid": 2000,
+          "low": -0.0704,
+          "high": 0.4351,
+          "share_le_0": 0.104
+        },
+        "gate_pass": true
+      },
+      "kev": {
+        "auc": 0.6612,
+        "p_at_90r": 0.3226,
+        "recall": 0.9091,
+        "delta_auc": 0.1392,
+        "entry_bootstrap": {
+          "valid": 2000,
+          "low": -0.0192,
+          "high": 0.3359,
+          "share_le_0": 0.0525
+        },
+        "gate_pass": true
+      }
+    }
+  },
+  "L2 stored + CWE": {
+    "positives": 53,
+    "base_rate": 0.3046,
+    "off_cwe_positives": 0,
+    "method_only_positives": 25,
+    "scores": {
+      "heuristic": {
+        "auc": 0.6223,
+        "p_at_90r": 0.3046,
+        "recall": 1.0,
+        "delta_auc": 0.0
+      },
+      "d1": {
+        "auc": 0.7861,
+        "p_at_90r": 0.5,
+        "recall": 0.9057,
+        "delta_auc": 0.1637,
+        "entry_bootstrap": {
+          "valid": 2000,
+          "low": -0.0515,
+          "high": 0.343,
+          "share_le_0": 0.078
+        },
+        "gate_pass": true
+      },
+      "kev": {
+        "auc": 0.7594,
+        "p_at_90r": 0.4364,
+        "recall": 0.9057,
+        "delta_auc": 0.1371,
+        "entry_bootstrap": {
+          "valid": 2000,
+          "low": -0.0501,
+          "high": 0.3004,
+          "share_le_0": 0.0825
+        },
+        "gate_pass": true
+      }
+    }
+  },
+  "L3 hunk + CWE": {
+    "positives": 28,
+    "base_rate": 0.1609,
+    "off_cwe_positives": 0,
+    "method_only_positives": 0,
+    "scores": {
+      "heuristic": {
+        "auc": 0.5235,
+        "p_at_90r": 0.1609,
+        "recall": 1.0,
+        "delta_auc": 0.0
+      },
+      "d1": {
+        "auc": 0.8372,
+        "p_at_90r": 0.3514,
+        "recall": 0.9286,
+        "delta_auc": 0.3137,
+        "entry_bootstrap": {
+          "valid": 2000,
+          "low": 0.0893,
+          "high": 0.5438,
+          "share_le_0": 0.0015
+        },
+        "gate_pass": true
+      },
+      "kev": {
+        "auc": 0.7167,
+        "p_at_90r": 0.2241,
+        "recall": 0.9286,
+        "delta_auc": 0.1932,
+        "entry_bootstrap": {
+          "valid": 2000,
+          "low": -0.0,
+          "high": 0.4296,
+          "share_le_0": 0.0255
+        },
+        "gate_pass": true
+      }
+    }
+  }
+}

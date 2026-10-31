@@ -1,0 +1,210 @@
+{
+  "baselines": {
+    "L0 location proxy": {
+      "rule": {
+        "entry": 0.7666,
+        "repo": 0.7873
+      },
+      "rule+basename": {
+        "entry": 0.7862,
+        "repo": 0.7988
+      },
+      "rule+cwe+sev+len+line": {
+        "entry": 0.7307,
+        "repo": 0.7397
+      },
+      "severity": {
+        "entry": 0.395,
+        "repo": 0.3714
+      },
+      "basename": {
+        "entry": 0.2181,
+        "repo": 0.2443
+      }
+    },
+    "L1 hunk only": {
+      "rule": {
+        "entry": 0.4612,
+        "repo": 0.5867
+      },
+      "rule+basename": {
+        "entry": 0.4906,
+        "repo": 0.6084
+      },
+      "rule+cwe+sev+len+line": {
+        "entry": 0.5705,
+        "repo": 0.619
+      },
+      "severity": {
+        "entry": 0.1571,
+        "repo": 0.2302
+      },
+      "basename": {
+        "entry": 0.1565,
+        "repo": 0.2121
+      }
+    },
+    "L2 stored + CWE": {
+      "rule": {
+        "entry": 0.7684,
+        "repo": 0.8194
+      },
+      "rule+basename": {
+        "entry": 0.7804,
+        "repo": 0.8367
+      },
+      "rule+cwe+sev+len+line": {
+        "entry": 0.886,
+        "repo": 0.9121
+      },
+      "severity": {
+        "entry": 0.3775,
+        "repo": 0.4037
+      },
+      "basename": {
+        "entry": 0.1698,
+        "repo": 0.1591
+      }
+    },
+    "L3 hunk + CWE": {
+      "rule": {
+        "entry": 0.6743,
+        "repo": 0.6469
+      },
+      "rule+basename": {
+        "entry": 0.7178,
+        "repo": 0.6802
+      },
+      "rule+cwe+sev+len+line": {
+        "entry": 0.8434,
+        "repo": 0.8366
+      },
+      "severity": {
+        "entry": 0.0915,
+        "repo": 0.0915
+      },
+      "basename": {
+        "entry": 0.2423,
+        "repo": 0.0711
+      }
+    }
+  },
+  "within_rule": {
+    "L0 location proxy": {
+      "heuristic": {
+        "auc": 0.5,
+        "entry_bootstrap": {
+          "valid": 2000,
+          "low": 0.5,
+          "high": 0.5,
+          "share_le_0.5": 1.0
+        }
+      },
+      "d1": {
+        "auc": 0.4297,
+        "entry_bootstrap": {
+          "valid": 2000,
+          "low": 0.2253,
+          "high": 0.6703,
+          "share_le_0.5": 0.707
+        }
+      },
+      "kev": {
+        "auc": 0.6757,
+        "entry_bootstrap": {
+          "valid": 2000,
+          "low": 0.5013,
+          "high": 0.8647,
+          "share_le_0.5": 0.0245
+        }
+      }
+    },
+    "L1 hunk only": {
+      "heuristic": {
+        "auc": 0.5,
+        "entry_bootstrap": {
+          "valid": 2000,
+          "low": 0.5,
+          "high": 0.5,
+          "share_le_0.5": 1.0
+        }
+      },
+      "d1": {
+        "auc": 0.5462,
+        "entry_bootstrap": {
+          "valid": 2000,
+          "low": 0.4136,
+          "high": 0.731,
+          "share_le_0.5": 0.1995
+        }
+      },
+      "kev": {
+        "auc": 0.5244,
+        "entry_bootstrap": {
+          "valid": 2000,
+          "low": 0.3541,
+          "high": 0.739,
+          "share_le_0.5": 0.3825
+        }
+      }
+    },
+    "L2 stored + CWE": {
+      "heuristic": {
+        "auc": 0.5,
+        "entry_bootstrap": {
+          "valid": 2000,
+          "low": 0.5,
+          "high": 0.5,
+          "share_le_0.5": 1.0
+        }
+      },
+      "d1": {
+        "auc": 0.4571,
+        "entry_bootstrap": {
+          "valid": 2000,
+          "low": 0.2222,
+          "high": 0.6661,
+          "share_le_0.5": 0.7425
+        }
+      },
+      "kev": {
+        "auc": 0.75,
+        "entry_bootstrap": {
+          "valid": 2000,
+          "low": 0.5569,
+          "high": 0.902,
+          "share_le_0.5": 0.0065
+        }
+      }
+    },
+    "L3 hunk + CWE": {
+      "heuristic": {
+        "auc": 0.5,
+        "entry_bootstrap": {
+          "valid": 2000,
+          "low": 0.5,
+          "high": 0.5,
+          "share_le_0.5": 1.0
+        }
+      },
+      "d1": {
+        "auc": 0.5495,
+        "entry_bootstrap": {
+          "valid": 2000,
+          "low": 0.3889,
+          "high": 0.7329,
+          "share_le_0.5": 0.274
+        }
+      },
+      "kev": {
+        "auc": 0.6449,
+        "entry_bootstrap": {
+          "valid": 2000,
+          "low": 0.4412,
+          "high": 0.845,
+          "share_le_0.5": 0.074
+        }
+      }
+    }
+  }
+}
