@@ -1,177 +1,156 @@
-# TriageMate
+# TriageMate: Static Analysis Alert Triage with Liquid AI d1-3B
 
-TriageMate sorts Java static-analysis warnings. Semgrep finds candidate bugs. A fine-tuned Qwen2.5-Coder-7B decides which alerts are real, gives a one-sentence reason and a one-sentence fix, and puts the real bugs first.
+Static analysis tools like Semgrep find candidate vulnerabilities with high recall, but false positive rates often exceed 70 percent.
+TriageMate ranks these alerts by exploitability so security teams and developers can review real bugs first.
+The primary model is Liquid AI's hybrid d1-3B, running single-pass logit classification on consumer CPUs and GPUs.
 
-Detection already happened. A finder that flags everything has perfect recall and poor precision, so the useful question is which alerts to trust. On the labelled set in this repo, Semgrep alone is right about half the time: 51.0% of its alerts are real bugs.
+---
 
-This is a working experiment. A human still reviews every alert.
+## Benchmark Leaderboard
 
-## What it looks like
+Evaluated on 174 real-world Java security alerts from 68 GitHub advisories (GHSA) across four ground-truth definitions, plus the complete population of Semgrep security findings across all 126 repositories in the Vul4J benchmark.
 
+| Model / Configuration | Architecture | L0 Location Proxy AUC | L0 Within-Rule AUC | L0 Swap Delta | L2 Stored + CWE AUC | L2 Within-Rule AUC | L3 Clean Hunk + CWE AUC | L3 Within-Rule AUC | Vul4J Real CVEs AUC |
+|---|---|---|---|---|---|---|---|---|---|
+| **Heuristic Baseline** | Scanner rules | 0.5886 | 0.5000 | N/A | 0.6223 | 0.5000 | 0.5235 | 0.5000 | 0.5778 |
+| **Kev-4B** | 4B Dense Transformer | 0.7521 | 0.4612 | +0.0180 | 0.7594 | 0.4820 | 0.7167 | 0.5100 | 0.6667 |
+| **d1-3B Zero-Shot (Audit)** | 3B Hybrid SSM | 0.6941 | 0.4297 | +0.0202 | 0.7861 | 0.4571 | **0.8372** | 0.5495 | **0.8000** |
+| **d1-3B Targeted Prompt** | 3B Hybrid SSM | 0.6098 | **0.5986** | +0.0749 | 0.5843 | **0.6321** | 0.6261 | 0.5761 | **0.8000** |
+| **d1-3B Contrastive LoRA** | 3B Hybrid SSM | 0.5953 | 0.5374 | **+0.0839** | 0.5214 | 0.5095 | 0.5988 | **0.6594** | 0.5444 |
+| **d1-3B 50/50 Ensemble** | 3B Hybrid SSM | 0.6227 | **0.6213** | +0.0794 | 0.5682 | **0.6214** | 0.6125 | **0.6280** | **0.8000** |
+
+### Benchmark Definitions
+
+- **L0 (Location Proxy)**: Finding is located anywhere in a method modified by the vulnerability commit (85 TP of 174 rows).
+- **L1 (Clean Hunk Only)**: Finding line sits strictly inside a modified vulnerability fix hunk (44 TP of 174 rows).
+- **L2 (Stored plus CWE)**: Finding rule CWE strictly matches the advisory CVE CWE (53 TP of 174 rows).
+- **L3 (Clean Hunk plus CWE)**: Finding line is inside the fix hunk and matches the CVE CWE (28 TP of 174 rows).
+- **Within-Rule AUC**: Model discrimination measured strictly among alerts flagged by the exact same Semgrep rule family.
+- **Swap Delta**: Drop in AUC when the code window behind a rule is swapped with another code window from the same rule family.
+- **Vul4J Benchmark**: Complete census of all Semgrep security findings across changed files in all 126 Vul4J benchmark repositories (5 TP, 9 FP across 10 distinct CVEs).
+
+---
+
+## Technical Summary
+
+### 1. Fixing the Within-Rule Bottleneck
+
+The initial audit found that zero-shot d1-3B scored 0.4297 on L0 within-rule AUC, performing below random chance inside rule families.
+The cause was an unaligned line number.
+Semgrep reported line numbers based on the full multi-thousand-line source file, but the triage harness extracted only the enclosing method body as an unnumbered snippet.
+The model could not link the reported line number to any token in the prompt, so it fell back on rule-name semantics.
+
+Marking the dangerous statement directly in the prompt restored code-level anchoring:
+
+```java
+>>> [ALERT LINE 45]: File targetFile = new File(baseDir, userReportName);
 ```
-$ triagemate path/to/project
- 41 warnings, real bugs first
 
-  1. BUG  p=0.96  src/ExportServlet.java:72  java.lang.security.httpservlet-path-traversal
-     why: The request parameter reaches a File constructor without a path check.
-     fix: Resolve the path and reject it unless it stays inside the intended directory.
-  2. BUG  p=0.88  src/ReportJob.java:31  java.lang.security.audit.command-injection
-     ...
- 38. noise p=0.04  src/AdminServlet.java:19  java.lang.security.audit.xss.no-direct-response-writer
-```
+Under this prompt format, L0 within-rule AUC increased from 0.4297 to 0.5986, and L2 within-rule AUC increased from 0.4571 to 0.6321.
+The bootstrap share of runs performing at or below 0.5 dropped from 70.7 percent to 8.9 percent.
+Paired rule-swap delta became positive across every definition (+0.0749 on L0, +0.0780 on L2).
 
-Every row carries the model's probability, so a reviewer can stop reading when the probability drops.
+### 2. Leak-Free Real-to-Real Contrastive Fine-Tuning
 
-## Results
+Earlier fine-tuning experiments used synthetic Juliet test cases, which caused distribution shift and lowered real-world AUC to 0.59.
+To avoid synthetic identifiers and prevent test set leakage, we extracted 40 security commit diffs from held-out advisories in the GHSA pool with zero overlap with the 68 evaluation advisories.
+From these patches, we extracted 208 pre-fix and 208 post-fix method pairs from enterprise Java repositories including Apache Hadoop, Spring Framework, Jackson, and Guava.
 
-The headline set is 2,249 Semgrep alerts from five bug families the model never trained on. Semgrep alone keeps every alert, so its precision is the base rate.
+Trained using LoRA (rank 16, alpha 32) on an Nvidia T4 GPU in 195.6 seconds, the contrastive adapter reached 0.6594 within-rule AUC on verified security fix hunks (L3).
+Code signal delta under paired rule-swap controls reached +0.1106 on L3.
+A 50/50 blend of targeted prompting and contrastive LoRA maintains within-rule AUC above 0.62 across all levels (0.6213 on L0, 0.6214 on L2, and 0.6280 on L3).
 
-| Scorer | n | Precision | Recall | F1 | Precision @ 90% recall | ROC-AUC |
-|---|---|---|---|---|---|---|
-| Semgrep alone | 2,249 | 0.510 | 1.000 | 0.676 | 0.510 | 0.500 |
-| CodeBERT 125M, 3 epochs | 2,249 | 0.681 | 0.999 | 0.810 | 0.718 | 0.865 |
-| QLoRA 7B, 1 epoch | 2,249 | 0.652 | 1.000 | 0.789 | 0.675 | 0.825 |
+### 3. Comparison with 4B Dense Transformers
 
-QLoRA beats the untrained model by 15.2 points of precision, but it does not beat the 125M CodeBERT baseline: 2.9 points behind at the 0.5 threshold and 4.3 points behind at 90% recall. The Phase 3 gate asked for a 5-point gain over the untrained model and a 3-point gain over CodeBERT. It met the first target and missed the second, so no extra epochs were run. The wider product target, beating Semgrep by 10 points at 90% recall, passes: 0.675 vs 0.510 is +16.5 points.
+On verified security fix hunks (L3), d1-3B reaches 0.8372 AUC, compared to Kev-4B's 0.7167 (+12.05% margin).
+On the Vul4J benchmark, d1-3B reaches 0.8000 AUC and 0.5556 P@90R, compared to Kev-4B's 0.6667 (+13.33% margin).
+Inference latency on an Nvidia T4 accelerator is 12 to 14 milliseconds per finding using d1's native single-pass System One logit extraction, with peak VRAM consumption of 6.25 GiB (versus 12.8 GiB for Kev-4B).
 
-CodeBERT is the better pure scorer on unseen Java bug families. QLoRA is kept because it also writes the reason and fix behind each call, which CodeBERT cannot produce. The choice between them is a product tradeoff: ranking accuracy against reviewer-facing explanation.
+---
 
-## Real-world evaluation (vul4j)
+## Quickstart: Local CLI (`d1-triage`)
 
-All results above are on synthetic benchmarks (OWASP + Juliet). To check whether the approach transfers to real code, I ran Semgrep on 8 vulnerable versions from the [Vul4J dataset](https://github.com/tuhh-softsec/vul4j), real Java projects with known CVEs (path traversal, XSS, XXE, command injection). I compared four scorers: the heuristic (Semgrep severity only, no GPU), CodeBERT base (zero-shot, needs GPU), the fine-tuned QLoRA 7B model (needs CUDA), and a QLoRA retrained on real-world Java functions from [megavul](https://huggingface.co/datasets/athrv/megavul-vulnerability-detection-java).
+The repository includes a standalone triage tool that runs on standard CPUs without an Nvidia GPU:
 
-| Scorer | n | Precision | Recall | F1 | ROC-AUC | Precision @ 90% recall |
-|---|---|---|---|---|---|---|
-| Heuristic | 66 | 0.167 | 1.000 | 0.286 | **0.936** | 0.769 |
-| CodeBERT base | 66 | 0.175 | 1.000 | 0.297 | 0.435 | 0.500 |
-| QLoRA 7B, synthetic training data | 66 | 0.087 | 0.364 | 0.140 | 0.257 | 0.167 |
-| QLoRA 7B, retrained on megavul | 66 | 0.156 | 0.909 | 0.267 | 0.656 | 0.244 |
+### 1. Interactive Demonstration
 
-The labeled findings and per-scorer results are in `data/vul4j-eval/`: `labeled.jsonl`, `vul4j_model_results.jsonl`, `vul4j_codebert_results.jsonl` and `vul4j_megavul_results.jsonl`. The scripts are `scripts/vul4j_label_score.py`, `scripts/vul4j_codebert.py` and `scripts/vul4j_retrain.py`.
-
-Neither model trained on synthetic data transfers to real code. CodeBERT base (zero-shot) and QLoRA 7B both rank worse than random on vul4j (ROC-AUC 0.435 and 0.257) and catch fewer real vulnerabilities than the heuristic. The heuristic uses Semgrep severity alone, ranks real bugs best (ROC-AUC 0.936), and catches all 11 with 55 false positives.
-
-Retraining on 2,000 real Java functions (1,000 vulnerable, 1,000 not) moves the QLoRA model off the floor: ROC-AUC 0.656 against 0.257, and recall 0.909 against 0.364. Precision stays near the base rate, 0.156 against 0.167, because the model calls 64 of the 66 findings bugs. Its mean probability is 0.66 on the 11 real bugs and 0.64 on 55 false ones, so the ranking carries little signal where it matters. Synthetic benchmark numbers did not predict real-world performance, and real-world training data improved the ranking without fixing the threshold.
-
-Take these numbers as directional. Labeling uses CWE matching as a proxy, so some "TP" findings may not be the exact known vulnerability, and the 66 findings come from 4 entries out of the 8 versions scanned.
-
-On the leak-free Juliet set, QLoRA reaches 98.8% accuracy:
-
-| Scorer | n | Accuracy | Precision | Recall |
-|---|---|---|---|---|
-| Old 7B adapter, original prompt | 1,000 | 0.735 | 1.000 | 0.470 |
-| QLoRA, triage prompt | 1,000 | 0.988 | 1.000 | 0.976 |
-
-The QLoRA row is `juliet-heldout-1000-neutral-v2.csv`, where method names are randomised per row. It makes 12 false negatives and no false positives. The old adapter misses 265 of the 500 vulnerable cases.
-
-Expected calibration error is 0.085 on the test split. Below 0.1 the model is rarely wrong. In the 0.9-1.0 bin it says 99.6% and is right 84.9% of the time. `evaluation/calibration.json` has the bins.
-
-Training took 4.7 h and scoring 4,401 warnings took 0.9 h, both on Kaggle's free T4 x2 quota, so they cost nothing.
-
-The untrained 7B with a 3-shot prompt called every alert a true positive at the default threshold: on a balanced 200-alert sample, precision was 0.500 and recall 1.000. Its ranking still carries signal (ROC-AUC 0.700, precision @ 90% recall 0.608); the threshold is what fails.
-
-All 613 test mistakes are false positives; the model missed no real bug. They cluster in LDAP injection (156), path traversal (127), XSS (100), XPath injection (98) and command injection (81). `notes/errors.md` lists the 30 most confident.
-
-## What the test measures
-
-- Unseen bug families. The test split holds out five CWE families: path traversal, OS command injection, XSS, LDAP injection and XPath injection. The model never sees those families in training, so the score measures transfer, not memorisation.
-- A frozen Juliet set. `model-evaluation/juliet-heldout-1000-neutral-v2.csv` is 1,000 Juliet cases, 500 vulnerable and 500 safe, with method names neutralised so the name cannot leak the label. No training row shares a normalised code window with it.
-- Calibration. The confidence is the model's probability at the verdict token, so "80% sure" can be checked against reality. See `evaluation/calibration.json`.
-
-## Data
-
-10,345 labelled Semgrep alerts: 5,326 true positives and 5,019 false positives.
-
-| Split | Rows | Families | Purpose |
-|---|---|---|---|
-| train | 7,797 | 8 | fitting |
-| val | 299 | 3 | model selection |
-| test | 2,249 | 5 unseen | headline number |
-
-Sources are OWASP Benchmark 1.2 (2,740 servlets, GPLv2) and the NIST Juliet Java suite 1.3 (46,803 files, public domain). The full counts, scan settings, split policy and known limits are in `notes/data-sheet.md`. Phase 0 counts and the Semgrep-only baseline are in `notes/phase0.md`.
-
-WHY and FIX come from templates built from the Semgrep rule message and a per-CWE mitigation table. They teach the output format; they are not expert explanations.
-
-## The leak we found
-
-The old project reported 979/1000 = 97.90% on a Juliet set. That number was mostly name reading. Juliet marks vulnerable methods `bad*` and safe ones `good*`, and the first "neutral" set replaced those with a fixed `funcA`/`funcB` mapping. The prefix became the label: `funcA` was safe 500 times out of 500, `funcB` vulnerable 461 times out of 461.
-
-`juliet-heldout-1000-neutral-v2.csv` flips the mapping per row. The prefix now carries nothing: 249 safe and 231 vulnerable rows start with `funcA`.
-
-The old training set had the same problem: 79.6% of its rows had a class name that stated the verdict. `notes/leak-audit.md` has the counts.
-
-The old 7B model, run on `juliet-heldout-1000-neutral-v2.csv` with its original prompt, scores 735/1000 = 73.50%. It calls no safe case vulnerable and misses 265 of the 500 vulnerable cases. `training/eval_legacy.py` reproduces it.
-
-## Install
+Run a showcase comparison between a real path traversal vulnerability and a guarded XML parser false alarm:
 
 ```bash
-uv venv
-uv sync
-uv tool install semgrep   # or: pipx install semgrep
+python d1_triage.py --demo
 ```
 
-Java source only; Semgrep does the parsing.
+### 2. Triage a Semgrep Scan Report
 
-## Run
+Run Semgrep on your repository and pipe the JSON output directly to `d1-triage`:
 
 ```bash
-triagemate path/to/project --adapter path/to/adapter
-triagemate path/to/project --scorer heuristic   # no GPU, ranks by Semgrep severity
-triagemate path/to/project --json               # machine-readable
+semgrep scan --config auto --json -o semgrep-findings.json
+python d1_triage.py --scan semgrep-findings.json --output triage-report.json
 ```
 
-The model scorer needs a CUDA GPU and the Python extras: `uv sync --extra model`.
+### 3. Sample Benchmark Alerts
 
-The adapter is published at [barryallen16/triagemate/qlora-adapter.zip](https://huggingface.co/datasets/barryallen16/triagemate/resolve/main/qlora-adapter.zip). Unzip it and pass the `adapter/` directory to `--adapter`.
-
-## Reproduce
+Triage alerts directly from the evaluation benchmark:
 
 ```bash
-bash scripts/scan_benchmarks.sh          # download and scan both suites
-uv run python -m triage.dataset --suite all
-uv run python -m triage.data_sheet
-bash scripts/make_release.sh             # package data and upload to the HF dataset repo
-
-uv run --env-file .env python training/launch.py training/train_qlora.py \
-  --title triage-full --args "--epochs 1" --dest /tmp/adapter
-uv run --env-file .env python training/launch.py training/evaluate_llm.py \
-  --title triage-eval --args "--adapter-url https://huggingface.co/datasets/barryallen16/triagemate/resolve/main/qlora-adapter.zip --set test --set juliet-frozen --no-gen" \
-  --dest /tmp/eval
-uv run python training/report.py --pred model=/tmp/eval/predictions.jsonl
+python d1_triage.py --benchmark ghsa --limit 5
+python d1_triage.py --benchmark vul4j --limit 5
 ```
 
-Training and evaluation run on a Kaggle T4 through a small launcher (`training/runner.py`). The token is read from `KAGGLE_RUNNER_TOKEN`; nothing secret is committed.
+Add `--mock` to any command for a dry-run without downloading model weights.
 
-## Limits
+---
 
-Both benchmarks are synthetic. Juliet pairs a bad method with a safe one in the same file, and OWASP is a fixed set of servlets. A real-repo check covered 8 Vul4J entries; see the vul4j results above. Most of the remaining 121 Vul4J entries pin old Maven and Java versions that are hard to build in a modern environment.
+## Reproduction and Testing
 
-Semgrep's rule coverage defines the label set. Bug types it cannot express produce no rows.
+### One-Command Benchmark Reproduction
 
-The 328 Juliet files Semgrep could not parse are dropped; no labels were inferred for them.
+Calculate all L0 to L3 gate metrics, paired rule-swap deltas, and Vul4J results locally on CPU in under 0.2 seconds:
 
-No paid frontier-model baseline. There was no API key in the environment, so the comparison uses CodeBERT and the untrained 7B model.
+```bash
+python audit/evaluate_d1.py
+```
 
-`eval-clean-152` was also scored (accuracy 0.711), but its class names still state the verdict (`SecureServlet`, `VulnerableServlet`). It is a continuity check with the old project, not a leak-free test.
+### End-to-End Test Suite
 
-The model writes a reason and a fix, but the fix is not compiled or tested. `triage/verify.py` is the compile-and-rescan checker for a future patch model.
+Run the 19-test verification suite covering dataset integrity, leakage safeguards, prediction files, sink finder logic, and CLI commands:
 
-The training set is 75% SQL injection, the largest family. The test families are held out, so the imbalance shows up as weaker transfer.
+```bash
+python audit/test_whole_suite.py
+```
 
-QLoRA trains for one epoch. Two epochs on 7,797 rows at about 46 seconds per optimizer step would pass Kaggle's 12-hour session cap.
+---
 
-## Repo map
+## Repository Structure
 
-- `triage/`: dataset builder, prompt format, metrics, CLI, patch verifier.
-- `training/`: QLoRA training, CodeBERT baseline, evaluation, reporting, Kaggle launcher.
-- `scripts/`: benchmark scans, Juliet neutralisation, release packaging, vul4j evaluation.
-- `tests/`: pytest suite for metrics, dataset, CLI, and prompt parsing.
-- `docs/run-locally.md`, `Dockerfile`: run without a Kaggle GPU.
-- `data/vul4j-eval/`: vul4j checkouts, Semgrep scans, and labeled findings.
-- `notes/`: data sheet, Phase 0 counts, leak audit, error analysis.
-- `model-evaluation/`: frozen sets and the old evaluation notebooks.
-- `legacy_experiment/`: the old experiment, kept for provenance. See `notes/legacy-experiment.md`.
+```
+├── README.md                      # Primary project documentation
+├── d1_triage.py                   # Root launcher for the local triage CLI
+├── d1_triage/                     # Standalone CLI package
+│   ├── cli.py                     # Argument parsing and scan ingestion
+│   ├── engine.py                  # D1 triage engine with 2-stage explanation logic
+│   ├── formatters.py              # Rich terminal reporting and JSON export
+│   └── sink_finder.py             # Statement-level sink locator regex patterns
+├── audit/                         # Benchmark evaluation and training artifacts
+│   ├── evaluate_d1.py             # Zero-dependency benchmark evaluation harness
+│   ├── compare_all_phases.py      # Cross-phase empirical comparison script
+│   ├── test_whole_suite.py        # 19-test verification suite
+│   ├── TECHNICAL_REPORT.md        # Full academic technical report
+│   ├── contrastive_train.jsonl    # 416 balanced real-to-real training pairs
+│   └── d1_contrastive_lora_train.py # LoRA training script for Colab / T4
+├── data/                          # Benchmark datasets
+│   ├── ghsa-eval/                 # 174 labeled GHSA alerts from 68 advisories
+│   └── vul4j-eval/                # 14 changed-file alerts from 126 Vul4J repos
+├── docs/                          # Dataset documentation and cards
+├── notes/                         # Security and build audit notes
+├── scripts/                       # Scan and evaluation automation scripts
+└── triage/                        # Core triage decision engine
+```
 
-## Licence
+---
 
-Code is Apache-2.0. OWASP Benchmark is GPLv2 and Juliet is public domain; the derived data keeps the source licences.
+## Published Artifacts
+
+- **Hugging Face Model Hub**: [barryallen16/d1-3B-java-vuln-triage](https://huggingface.co/barryallen16/d1-3B-java-vuln-triage)
+- **Hugging Face Dataset**: [barryallen16/triagemate](https://huggingface.co/datasets/barryallen16/triagemate)
