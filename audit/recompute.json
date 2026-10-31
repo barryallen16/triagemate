@@ -1,0 +1,96 @@
+{
+  "vul4j": {
+    "rows": 14,
+    "entries": 10,
+    "positives": 5,
+    "heuristic": {
+      "auc": 0.5778,
+      "p_at_90r": 0.3571
+    },
+    "scorers": {
+      "d1": {
+        "auc": 0.8,
+        "p_at_90r": 0.5556,
+        "delta_auc": 0.2222,
+        "row_bootstrap": {
+          "n": 1999,
+          "low": -0.125,
+          "high": 0.5503,
+          "p_nonpositive": 0.098
+        },
+        "entry_bootstrap": {
+          "n": 2000,
+          "low": -0.1002,
+          "high": 0.5294,
+          "p_nonpositive": 0.097
+        },
+        "loo_min": 0.125
+      },
+      "kev": {
+        "auc": 0.6667,
+        "p_at_90r": 0.4545,
+        "delta_auc": 0.0889,
+        "row_bootstrap": {
+          "n": 1999,
+          "low": -0.4583,
+          "high": 0.6,
+          "p_nonpositive": 0.3542
+        },
+        "entry_bootstrap": {
+          "n": 2000,
+          "low": -0.4546,
+          "high": 0.5833,
+          "p_nonpositive": 0.3895
+        },
+        "loo_min": -0.0417
+      }
+    }
+  },
+  "ghsa": {
+    "rows": 174,
+    "entries": 68,
+    "positives": 85,
+    "heuristic": {
+      "auc": 0.5886,
+      "p_at_90r": 0.4885
+    },
+    "scorers": {
+      "d1": {
+        "auc": 0.6941,
+        "p_at_90r": 0.4847,
+        "delta_auc": 0.1054,
+        "row_bootstrap": {
+          "n": 2000,
+          "low": -0.008,
+          "high": 0.2215,
+          "p_nonpositive": 0.0365
+        },
+        "entry_bootstrap": {
+          "n": 2000,
+          "low": -0.0952,
+          "high": 0.3232,
+          "p_nonpositive": 0.1855
+        },
+        "loo_min": 0.0185
+      },
+      "kev": {
+        "auc": 0.7521,
+        "p_at_90r": 0.6063,
+        "delta_auc": 0.1635,
+        "row_bootstrap": {
+          "n": 2000,
+          "low": 0.0673,
+          "high": 0.2581,
+          "p_nonpositive": 0.001
+        },
+        "entry_bootstrap": {
+          "n": 2000,
+          "low": -0.0375,
+          "high": 0.3409,
+          "p_nonpositive": 0.056
+        },
+        "loo_min": 0.0644
+      }
+    }
+  }
+}

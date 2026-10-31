@@ -1,0 +1,199 @@
+From f1f6ac6f613e1c0afc121c8989f28b4155a6797a Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Stephan=20K=C3=B6ninger?= <stephan.koeninger@codecentric.de>
+Date: Fri, 14 Jul 2023 08:34:43 +0200
+Subject: [PATCH] fix(#2615): reduce ssti vectors for thymeleaf
+
+* fix: thymeleaf ssti
+
+* feat(ci): add semgrep scan
+
+* chore: formatting
+
+* chore: remove redundant vulnerable file
+---
+ .github/workflows/vulnerability-scan.yml      | 25 +++++++
+ .../AdminServerNotifierAutoConfiguration.java |  7 +-
+ .../notify/MailNotifierIntegrationTest.java   | 74 +++++++++++++++++++
+ .../admin/server/notify/vulnerable-file.html  | 30 ++++++++
+ 4 files changed, 132 insertions(+), 4 deletions(-)
+ create mode 100644 .github/workflows/vulnerability-scan.yml
+ create mode 100644 spring-boot-admin-server/src/test/java/de/codecentric/boot/admin/server/notify/MailNotifierIntegrationTest.java
+ create mode 100644 spring-boot-admin-server/src/test/resources/de/codecentric/boot/admin/server/notify/vulnerable-file.html
+
+diff --git a/.github/workflows/vulnerability-scan.yml b/.github/workflows/vulnerability-scan.yml
+new file mode 100644
+index 00000000000..5a8faf150be
+--- /dev/null
++++ b/.github/workflows/vulnerability-scan.yml
+@@ -0,0 +1,25 @@
++name: Vulnerability Scan
++
++on:
++  pull_request: {}
++  workflow_dispatch: {}
++  push:
++    branches: ["master"]
++  schedule:
++    - cron: '0 7 * * *'
++
++jobs:
++  semgrep:
++    name: semgrep/ci
++    runs-on: ubuntu-latest
++
++    container:
++      image: returntocorp/semgrep
++
++    if: (github.actor != 'renovate')
++
++    steps:
++      - uses: actions/checkout@v3
++      - run: semgrep ci
++        env:
++          SEMGREP_RULES: p/default
+diff --git a/spring-boot-admin-server/src/main/java/de/codecentric/boot/admin/server/config/AdminServerNotifierAutoConfiguration.java b/spring-boot-admin-server/src/main/java/de/codecentric/boot/admin/server/config/AdminServerNotifierAutoConfiguration.java
+index 9bb8a83af62..9a3190d9328 100644
+--- a/spring-boot-admin-server/src/main/java/de/codecentric/boot/admin/server/config/AdminServerNotifierAutoConfiguration.java
++++ b/spring-boot-admin-server/src/main/java/de/codecentric/boot/admin/server/config/AdminServerNotifierAutoConfiguration.java
+@@ -48,8 +48,8 @@
+ import org.springframework.web.client.RestTemplate;
+ import org.thymeleaf.TemplateEngine;
+ import org.thymeleaf.spring6.SpringTemplateEngine;
+-import org.thymeleaf.spring6.templateresolver.SpringResourceTemplateResolver;
+ import org.thymeleaf.templatemode.TemplateMode;
++import org.thymeleaf.templateresolver.ClassLoaderTemplateResolver;
+ 
+ import de.codecentric.boot.admin.server.domain.entities.InstanceRepository;
+ import de.codecentric.boot.admin.server.domain.events.InstanceEvent;
+@@ -179,13 +179,12 @@ public MailNotifier mailNotifier(JavaMailSender mailSender, InstanceRepository r
+ 
+ 		@Bean
+ 		public TemplateEngine mailNotifierTemplateEngine() {
+-			SpringResourceTemplateResolver resolver = new SpringResourceTemplateResolver();
+-			resolver.setApplicationContext(this.applicationContext);
++			ClassLoaderTemplateResolver resolver = new ClassLoaderTemplateResolver();
+ 			resolver.setTemplateMode(TemplateMode.HTML);
+ 			resolver.setCharacterEncoding(StandardCharsets.UTF_8.name());
+ 
+ 			SpringTemplateEngine templateEngine = new SpringTemplateEngine();
+-			templateEngine.addTemplateResolver(resolver);
++			templateEngine.setTemplateResolver(resolver);
+ 			return templateEngine;
+ 		}
+ 
+diff --git a/spring-boot-admin-server/src/test/java/de/codecentric/boot/admin/server/notify/MailNotifierIntegrationTest.java b/spring-boot-admin-server/src/test/java/de/codecentric/boot/admin/server/notify/MailNotifierIntegrationTest.java
+new file mode 100644
+index 00000000000..261bf236011
+--- /dev/null
++++ b/spring-boot-admin-server/src/test/java/de/codecentric/boot/admin/server/notify/MailNotifierIntegrationTest.java
+@@ -0,0 +1,74 @@
++/*
++ * Copyright 2014-2023 the original author or authors.
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     https://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package de.codecentric.boot.admin.server.notify;
++
++import java.io.FileNotFoundException;
++import java.io.IOException;
++import java.net.URL;
++
++import org.assertj.core.api.WithAssertions;
++import org.junit.jupiter.api.Test;
++import org.springframework.beans.factory.annotation.Autowired;
++import org.springframework.boot.SpringBootConfiguration;
++import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
++import org.springframework.boot.test.context.SpringBootTest;
++import org.thymeleaf.context.Context;
++
++import de.codecentric.boot.admin.server.config.EnableAdminServer;
++
++@SpringBootTest(properties = { "spring.mail.host=localhost", "spring.boot.admin.notify.mail=true" })
++class MailNotifierIntegrationTest implements WithAssertions {
++
++	@Autowired
++	MailNotifier mailNotifier;
++
++	@Test
++	void fileProtocolIsNotAllowed() {
++		assertThatThrownBy(() -> {
++			URL resource = getClass().getClassLoader().getResource(".");
++			mailNotifier.setTemplate("file://" + resource.getFile()
++					+ "de/codecentric/boot/admin/server/notify/vulnerable-file.html");
++			mailNotifier.getBody(new Context());
++		}).hasCauseInstanceOf(FileNotFoundException.class);
++	}
++
++	@Test
++	void httpProtocolIsNotAllowed() {
++		assertThatThrownBy(() -> {
++			URL resource = getClass().getClassLoader().getResource(".");
++			mailNotifier.setTemplate(
++					"https://raw.githubusercontent.com/codecentric/spring-boot-admin/gh-pages/vulnerable-file.html");
++			mailNotifier.getBody(new Context());
++		}).hasCauseInstanceOf(FileNotFoundException.class);
++	}
++
++	@Test
++	void classpathProtocolIsAllowed() throws IOException {
++		assertThatThrownBy(() -> {
++			mailNotifier.setTemplate("/de/codecentric/boot/admin/server/notify/vulnerable-file.html");
++			String body = mailNotifier.getBody(new Context());
++		}).rootCause().hasMessageContaining("error=2, No such file or directory");
++	}
++
++	@EnableAdminServer
++	@EnableAutoConfiguration
++	@SpringBootConfiguration
++	public static class TestAdminApplication {
++
++	}
++
++}
+diff --git a/spring-boot-admin-server/src/test/resources/de/codecentric/boot/admin/server/notify/vulnerable-file.html b/spring-boot-admin-server/src/test/resources/de/codecentric/boot/admin/server/notify/vulnerable-file.html
+new file mode 100644
+index 00000000000..cbc5829638a
+--- /dev/null
++++ b/spring-boot-admin-server/src/test/resources/de/codecentric/boot/admin/server/notify/vulnerable-file.html
+@@ -0,0 +1,30 @@
++<!DOCTYPE html>
++<html xmlns:th="http://www.thymeleaf.org">
++<head>
++  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type"/>
++</head>
++<body>
++
++<tr
++  th:with="getRuntimeMethod=${T(org.springframework.util.ReflectionUtils).findMethod(T(org.springframework.util.ClassUtils).forName('java.lang.Runtime',T(org.springframework.util.ClassUtils).getDefaultClassLoader()), 'getRuntime' )}"
++>
++  <td>
++    <a
++      th:with="runtimeObj=${T(org.springframework.util.ReflectionUtils).invokeMethod(getRuntimeMethod, null)}"
++    >
++      <a
++        th:with="exeMethod=${T(org.springframework.util.ReflectionUtils).findMethod(T(org.springframework.util.ClassUtils).forName('java.lang.Runtime',T(org.springframework.util.ClassUtils).getDefaultClassLoader()), 'exec', ''.getClass() )}"
++      >
++        <a
++          th:href="${param2}"
++          th:with="param2=${T(org.springframework.util.ReflectionUtils).invokeMethod(exeMethod, runtimeObj, 'evilSoftwareThatShouldNotRun' )
++                }"
++        ></a>
++      </a>
++
++    </a>
++  </td>
++</tr>
++
++</body>
++</html>

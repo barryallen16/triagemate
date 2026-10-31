@@ -1,0 +1,86 @@
+From 456752ebc1ef4c0db980cb5b01a0b3cd0a9e0bae Mon Sep 17 00:00:00 2001
+From: "g.turri" <g.turri@criteo.com>
+Date: Thu, 25 Jan 2024 08:58:21 +0100
+Subject: [PATCH] Fix CWE-611
+
+This commit fixes the issue described on
+https://cwe.mitre.org/data/definitions/611.html
+
+Nb: it's mostly the same as ad6615b3ec41353e614f6ea5fdd5b046442a832b but
+with an added reference to org.apache.xerces in order to avoid the
+AbstractMethodError that was experienced by users back then.
+
+Nb2: writting down the payload with which I tested this patch, in case I
+need to run this test again in the future:
+
+    <?xml version="1.0"?>
+    <!DOCTYPE replace [<!ENTITY ent SYSTEM "http://localhost/malware"> ]>
+    <methodResponse>
+        <params>
+            <param>
+               <value><string>&ent;</string></value>
+            </param>
+        </params>
+    </methodResponse>
+---
+ Changelog                                            |  1 +
+ pom.xml                                              |  5 +++++
+ src/main/java/de/timroes/axmlrpc/ResponseParser.java | 11 ++++++++++-
+ 3 files changed, 16 insertions(+), 1 deletion(-)
+
+diff --git a/Changelog b/Changelog
+index 67833b2..a372879 100644
+--- a/Changelog
++++ b/Changelog
+@@ -1,3 +1,4 @@
++Fix security issue CWE-611
+ Add support for CDATA section in the server response
+ 
+ 1.13.0
+diff --git a/pom.xml b/pom.xml
+index b065300..ccacc48 100644
+--- a/pom.xml
++++ b/pom.xml
+@@ -42,6 +42,11 @@
+ 			<artifactId>jISO8601</artifactId>
+ 			<version>0.2</version>
+ 		</dependency>
++        <dependency>
++            <groupId>xerces</groupId>
++            <artifactId>xercesImpl</artifactId>
++            <version>2.12.2</version>
++        </dependency>
+         <dependency>
+           <groupId>com.github.tomakehurst</groupId>
+           <artifactId>wiremock-jre8</artifactId>
+diff --git a/src/main/java/de/timroes/axmlrpc/ResponseParser.java b/src/main/java/de/timroes/axmlrpc/ResponseParser.java
+index 6feef08..6117937 100644
+--- a/src/main/java/de/timroes/axmlrpc/ResponseParser.java
++++ b/src/main/java/de/timroes/axmlrpc/ResponseParser.java
+@@ -10,6 +10,7 @@
+ 
+ import javax.xml.parsers.DocumentBuilder;
+ import javax.xml.parsers.DocumentBuilderFactory;
++import javax.xml.parsers.ParserConfigurationException;
+ import javax.xml.transform.OutputKeys;
+ import javax.xml.transform.Transformer;
+ import javax.xml.transform.TransformerException;
+@@ -45,9 +46,17 @@ public class ResponseParser {
+ 	public Object parse(SerializerHandler serializerHandler, InputStream response, boolean debugMode) throws XMLRPCException {
+ 
+ 		try {
+-
+ 			DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
++
++			// Ensure the xml parser won't allow exploitation of the vuln CWE-611
++			// (described on https://cwe.mitre.org/data/definitions/611.html )
++			factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
++			factory.setExpandEntityReferences(false);
+ 			factory.setNamespaceAware(true);
++			factory.setXIncludeAware(false);
++			factory.setExpandEntityReferences(false);
++			// End of the configuration of the parser for CWE-611
++
+ 			DocumentBuilder builder = factory.newDocumentBuilder();
+ 			Document dom = builder.parse(response);
+ 			if (debugMode ){

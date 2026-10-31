@@ -1,0 +1,1308 @@
+From 3e13562cf36d7407813eae464e0f4b598de15692 Mon Sep 17 00:00:00 2001
+From: Edgar Espina <espina.edgar@gmail.com>
+Date: Sun, 30 Mar 2025 19:55:05 -0300
+Subject: [PATCH] security: pac4j can cause deserialization of untrusted data
+
+- Prevent setting encoded values outside pac4j internals
+- Link to security advisory: https://github.com/jooby-project/jooby/security/advisories/GHSA-7c5v-895v-w4q5
+---
+ modules/jooby-bom/pom.xml                     | 605 +++++++++---------
+ .../io/jooby/internal/pac4j/Pac4jSession.java | 126 ++++
+ .../internal/pac4j/SessionStoreImpl.java      |  55 +-
+ .../pac4j/UntrustedSessionDataDetector.java   |  23 +
+ .../main/java/io/jooby/pac4j/Pac4jModule.java |   7 +-
+ .../java/io/jooby/pac4j/Pac4jOptions.java     |  28 +-
+ .../jooby/pac4j/Pac4jUntrustedDataFound.java  |  20 +
+ .../src/main/java/module-info.java            |   1 +
+ mypatch.patch                                 | 107 ++++
+ .../test/java/io/jooby/i3633/Issue3633.java   | 125 ++++
+ 10 files changed, 755 insertions(+), 342 deletions(-)
+ create mode 100644 modules/jooby-pac4j/src/main/java/io/jooby/internal/pac4j/Pac4jSession.java
+ create mode 100644 modules/jooby-pac4j/src/main/java/io/jooby/internal/pac4j/UntrustedSessionDataDetector.java
+ create mode 100644 modules/jooby-pac4j/src/main/java/io/jooby/pac4j/Pac4jUntrustedDataFound.java
+ create mode 100644 mypatch.patch
+ create mode 100644 tests/src/test/java/io/jooby/i3633/Issue3633.java
+
+diff --git a/modules/jooby-bom/pom.xml b/modules/jooby-bom/pom.xml
+index 42c0925f68..bbc4700883 100644
+--- a/modules/jooby-bom/pom.xml
++++ b/modules/jooby-bom/pom.xml
+@@ -1,5 +1,6 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
++<project xmlns='http://maven.apache.org/POM/4.0.0' xmlns:xsi='http://www.w3.org/2001/XMLSchema-instance'
++         xsi:schemaLocation='http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd'>
+ 
+   <modelVersion>4.0.0</modelVersion>
+ 
+@@ -11,11 +12,306 @@
+ 
+   <groupId>io.jooby</groupId>
+   <artifactId>jooby-bom</artifactId>
+-  <version>3.6.2-SNAPSHOT</version>
+   <packaging>pom</packaging>
++  <version>3.6.2-SNAPSHOT</version>
+   <description>Jooby (Bill of Materials)</description>
+   <url>https://jooby.io</url>
+ 
++  <!-- THIS FILE IS AUTO GENERATED. DON'T EDIT -->
++  <properties>
++    <spotless.check.skip>true</spotless.check.skip>
++  </properties>
++
++  <dependencyManagement>
++  <dependencies>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-avaje-inject</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-avaje-jsonb</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-avaje-validator</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-awssdk-v1</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-awssdk-v2</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-caffeine</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-camel</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-cli</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-commons-email</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-conscrypt</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-db-scheduler</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-distribution</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-ebean</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-flyway</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-freemarker</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-graphiql</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-graphql</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-graphql-playground</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-gson</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-guice</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-handlebars</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-hibernate</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-hibernate-validator</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-hikari</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-jackson</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-jasypt</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-jdbi</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-jetty</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-jstachio</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-jte</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-jwt</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-kafka</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-kotlin</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-log4j</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-logback</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-maven-plugin</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-metrics</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-mutiny</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-netty</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-openapi</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-pac4j</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-pebble</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-quartz</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-reactor</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-redis</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-redoc</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-rocker</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-run</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-rxjava3</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-stork</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-swagger-ui</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-test</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-thymeleaf</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-undertow</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-whoops</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++    <dependency>
++      <groupId>io.jooby</groupId>
++      <artifactId>jooby-yasson</artifactId>
++      <version>${project.version}</version>
++    </dependency>
++  </dependencies>
++</dependencyManagement>
++
+   <licenses>
+     <license>
+       <name>The Apache Software License, Version 2.0</name>
+@@ -36,311 +332,16 @@
+   </scm>
+ 
+   <distributionManagement>
+-    <repository>
+-      <id>ossrh</id>
+-      <name>Nexus Release Repository</name>
+-      <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
+-    </repository>
+     <snapshotRepository>
+       <id>ossrh</id>
+       <name>Sonatype Nexus Snapshots</name>
+       <url>https://oss.sonatype.org/content/repositories/snapshots/</url>
+     </snapshotRepository>
++    <repository>
++      <id>ossrh</id>
++      <name>Nexus Release Repository</name>
++      <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
++    </repository>
+   </distributionManagement>
+ 
+-  <!-- THIS FILE IS AUTO GENERATED. DON'T EDIT -->
+-  <properties>
+-    <spotless.check.skip>true</spotless.check.skip>
+-  </properties>
+-
+-  <dependencyManagement>
+-    <dependencies>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-avaje-inject</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-avaje-jsonb</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-avaje-validator</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-awssdk-v1</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-awssdk-v2</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-caffeine</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-camel</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-cli</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-commons-email</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-conscrypt</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-db-scheduler</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-distribution</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-ebean</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-flyway</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-freemarker</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-graphiql</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-graphql</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-graphql-playground</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-gson</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-guice</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-handlebars</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-hibernate</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-hibernate-validator</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-hikari</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-jackson</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-jasypt</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-jdbi</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-jetty</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-jstachio</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-jte</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-jwt</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-kafka</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-kotlin</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-log4j</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-logback</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-maven-plugin</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-metrics</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-mutiny</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-netty</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-openapi</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-pac4j</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-pebble</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-quartz</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-reactor</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-redis</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-redoc</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-rocker</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-run</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-rxjava3</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-stork</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-swagger-ui</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-test</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-thymeleaf</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-undertow</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-whoops</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-      <dependency>
+-        <groupId>io.jooby</groupId>
+-        <artifactId>jooby-yasson</artifactId>
+-        <version>${project.version}</version>
+-      </dependency>
+-    </dependencies>
+-  </dependencyManagement>
+-
+ </project>
+diff --git a/modules/jooby-pac4j/src/main/java/io/jooby/internal/pac4j/Pac4jSession.java b/modules/jooby-pac4j/src/main/java/io/jooby/internal/pac4j/Pac4jSession.java
+new file mode 100644
+index 0000000000..caf14530c6
+--- /dev/null
++++ b/modules/jooby-pac4j/src/main/java/io/jooby/internal/pac4j/Pac4jSession.java
+@@ -0,0 +1,126 @@
++/*
++ * Jooby https://jooby.io
++ * Apache License Version 2.0 https://jooby.io/LICENSE.txt
++ * Copyright 2014 Edgar Espina
++ */
++package io.jooby.internal.pac4j;
++
++import java.time.Instant;
++import java.util.Map;
++
++import edu.umd.cs.findbugs.annotations.NonNull;
++import edu.umd.cs.findbugs.annotations.Nullable;
++import io.jooby.*;
++import io.jooby.pac4j.Pac4jUntrustedDataFound;
++
++class Pac4jSession implements Session {
++  public static final String PAC4J = "p4j~";
++
++  public static final String BIN = "b64~";
++
++  private final Session session;
++
++  public Pac4jSession(@NonNull Session session) {
++    this.session = session;
++  }
++
++  @Nullable public String getId() {
++    return session.getId();
++  }
++
++  @NonNull public Value get(@NonNull String name) {
++    return session.get(name);
++  }
++
++  @NonNull public Instant getLastAccessedTime() {
++    return session.getLastAccessedTime();
++  }
++
++  public void destroy() {
++    session.destroy();
++  }
++
++  @NonNull public Session setId(String id) {
++    session.setId(id);
++    return this;
++  }
++
++  @NonNull public Value remove(@NonNull String name) {
++    return session.remove(name);
++  }
++
++  public boolean isNew() {
++    return session.isNew();
++  }
++
++  @NonNull public Session setNew(boolean isNew) {
++    session.setNew(isNew);
++    return this;
++  }
++
++  @NonNull public Session setLastAccessedTime(@NonNull Instant lastAccessedTime) {
++    session.setLastAccessedTime(lastAccessedTime);
++    return this;
++  }
++
++  public boolean isModify() {
++    return session.isModify();
++  }
++
++  @NonNull public Session setCreationTime(@NonNull Instant creationTime) {
++    session.setCreationTime(creationTime);
++    return this;
++  }
++
++  @NonNull public Session setModify(boolean modify) {
++    session.setModify(modify);
++    return this;
++  }
++
++  public Session renewId() {
++    session.renewId();
++    return this;
++  }
++
++  @NonNull public Instant getCreationTime() {
++    return session.getCreationTime();
++  }
++
++  @NonNull public Map<String, String> toMap() {
++    return session.toMap();
++  }
++
++  public Session clear() {
++    session.clear();
++    return this;
++  }
++
++  public Session getSession() {
++    return session;
++  }
++
++  public static Context create(Context ctx) {
++    return new ForwardingContext(ctx) {
++      @NonNull @Override
++      public Session session() {
++        return new Pac4jSession(super.session());
++      }
++
++      @Override
++      public Session sessionOrNull() {
++        Session session = super.sessionOrNull();
++        return session == null ? null : new Pac4jSession(session);
++      }
++    };
++  }
++
++  @NonNull @Override
++  public Session put(@NonNull String name, @NonNull String value) {
++    if (value != null) {
++      if (value.startsWith(PAC4J) || value.startsWith(BIN)) {
++        throw new Pac4jUntrustedDataFound(name);
++      }
++    }
++    return session.put(name, value);
++  }
++}
+diff --git a/modules/jooby-pac4j/src/main/java/io/jooby/internal/pac4j/SessionStoreImpl.java b/modules/jooby-pac4j/src/main/java/io/jooby/internal/pac4j/SessionStoreImpl.java
+index 5e69492fd2..e891be5ef2 100644
+--- a/modules/jooby-pac4j/src/main/java/io/jooby/internal/pac4j/SessionStoreImpl.java
++++ b/modules/jooby-pac4j/src/main/java/io/jooby/internal/pac4j/SessionStoreImpl.java
+@@ -13,13 +13,10 @@
+ import static io.jooby.StatusCode.SEE_OTHER_CODE;
+ import static io.jooby.StatusCode.TEMPORARY_REDIRECT_CODE;
+ import static io.jooby.StatusCode.UNAUTHORIZED_CODE;
++import static io.jooby.internal.pac4j.Pac4jSession.BIN;
++import static io.jooby.internal.pac4j.Pac4jSession.PAC4J;
+ 
+-import java.io.ByteArrayInputStream;
+-import java.io.ByteArrayOutputStream;
+-import java.io.IOException;
+-import java.io.ObjectInputStream;
+-import java.io.ObjectOutputStream;
+-import java.util.Base64;
++import java.io.*;
+ import java.util.Optional;
+ 
+ import org.pac4j.core.context.WebContext;
+@@ -35,19 +32,15 @@
+ import org.pac4j.core.exception.http.UnauthorizedAction;
+ import org.pac4j.core.exception.http.WithContentAction;
+ import org.pac4j.core.exception.http.WithLocationAction;
++import org.pac4j.core.util.serializer.Serializer;
+ 
+ import io.jooby.Context;
+ import io.jooby.Session;
+-import io.jooby.SneakyThrows;
+ import io.jooby.Value;
+ import io.jooby.pac4j.Pac4jContext;
+ 
+ public class SessionStoreImpl implements org.pac4j.core.context.session.SessionStore {
+ 
+-  private static final String PAC4J = "p4j~";
+-
+-  private static final String BIN = "b64~";
+-
+   private Session getSession(WebContext context) {
+     return context(context).session();
+   }
+@@ -75,20 +68,17 @@ public Optional<String> getSessionId(WebContext context, boolean createSession)
+ 
+   @Override
+   public Optional<Object> get(WebContext context, String key) {
+-    Optional sessionValue =
+-        getSessionOrEmpty(context)
+-            .map(session -> session.get(key))
+-            .map(SessionStoreImpl::strToObject)
+-            .orElseGet(Optional::empty);
+-    return sessionValue;
++    return getSessionOrEmpty(context)
++        .map(session -> session.get(key))
++        .flatMap(value -> strToObject(context(context).require(Serializer.class), value));
+   }
+ 
+   @Override
+   public void set(WebContext context, String key, Object value) {
+-    if (value == null || value.toString().length() == 0) {
++    if (value == null || value.toString().isEmpty()) {
+       getSessionOrEmpty(context).ifPresent(session -> session.remove(key));
+     } else {
+-      String encoded = objToStr(value);
++      String encoded = objToStr(context(context).require(Serializer.class), value);
+       getSession(context).put(key, encoded);
+     }
+   }
+@@ -116,42 +106,31 @@ public Optional<SessionStore> buildFromTrackableSession(
+ 
+   @Override
+   public boolean renewSession(WebContext context) {
+-    getSessionOrEmpty(context).ifPresent(session -> session.renewId());
+-    return true;
++    var session = getSessionOrEmpty(context);
++    session.ifPresent(Session::renewId);
++    return session.isPresent();
+   }
+ 
+-  static Optional<Object> strToObject(final Value node) {
++  static Optional<Object> strToObject(Serializer serializer, Value node) {
+     if (node.isMissing()) {
+       return Optional.empty();
+     }
+     String value = node.value();
+     if (value.startsWith(BIN)) {
+-      try {
+-        byte[] bytes = Base64.getDecoder().decode(value.substring(BIN.length()));
+-        return Optional.of(new ObjectInputStream(new ByteArrayInputStream(bytes)).readObject());
+-      } catch (Exception x) {
+-        throw SneakyThrows.propagate(x);
+-      }
++      return Optional.of(serializer.deserializeFromString(value.substring(BIN.length())));
+     } else if (value.startsWith(PAC4J)) {
+       return Optional.of(strToAction(value.substring(PAC4J.length())));
+     }
+     return Optional.of(value);
+   }
+ 
+-  static String objToStr(final Object value) {
++  static String objToStr(Serializer serializer, Object value) {
+     if (value instanceof CharSequence || value instanceof Number || value instanceof Boolean) {
+       return value.toString();
+     } else if (value instanceof HttpAction) {
+       return actionToStr((HttpAction) value);
+-    }
+-    try {
+-      ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+-      ObjectOutputStream stream = new ObjectOutputStream(bytes);
+-      stream.writeObject(value);
+-      stream.flush();
+-      return BIN + Base64.getEncoder().encodeToString(bytes.toByteArray());
+-    } catch (IOException x) {
+-      throw SneakyThrows.propagate(x);
++    } else {
++      return BIN + serializer.serializeToString(value);
+     }
+   }
+ 
+diff --git a/modules/jooby-pac4j/src/main/java/io/jooby/internal/pac4j/UntrustedSessionDataDetector.java b/modules/jooby-pac4j/src/main/java/io/jooby/internal/pac4j/UntrustedSessionDataDetector.java
+new file mode 100644
+index 0000000000..2a703e1d5b
+--- /dev/null
++++ b/modules/jooby-pac4j/src/main/java/io/jooby/internal/pac4j/UntrustedSessionDataDetector.java
+@@ -0,0 +1,23 @@
++/*
++ * Jooby https://jooby.io
++ * Apache License Version 2.0 https://jooby.io/LICENSE.txt
++ * Copyright 2014 Edgar Espina
++ */
++package io.jooby.internal.pac4j;
++
++import edu.umd.cs.findbugs.annotations.NonNull;
++import io.jooby.Route;
++import io.jooby.Session;
++
++public class UntrustedSessionDataDetector implements Route.Filter {
++  @Override
++  @NonNull public Route.Handler apply(@NonNull Route.Handler next) {
++    return ctx -> {
++      Session session = ctx.sessionOrNull();
++      if (session instanceof Pac4jSession) {
++        return session;
++      }
++      return session == null ? next.apply(ctx) : next.apply(Pac4jSession.create(ctx));
++    };
++  }
++}
+diff --git a/modules/jooby-pac4j/src/main/java/io/jooby/pac4j/Pac4jModule.java b/modules/jooby-pac4j/src/main/java/io/jooby/pac4j/Pac4jModule.java
+index a63d2d951a..6856bd6bbe 100644
+--- a/modules/jooby-pac4j/src/main/java/io/jooby/pac4j/Pac4jModule.java
++++ b/modules/jooby-pac4j/src/main/java/io/jooby/pac4j/Pac4jModule.java
+@@ -31,6 +31,7 @@
+ import org.pac4j.core.http.adapter.HttpActionAdapter;
+ import org.pac4j.core.http.url.UrlResolver;
+ import org.pac4j.core.profile.factory.ProfileManagerFactory;
++import org.pac4j.core.util.serializer.Serializer;
+ import org.pac4j.http.client.indirect.FormClient;
+ import org.pac4j.http.credentials.authenticator.test.SimpleTestUsernamePasswordAuthenticator;
+ 
+@@ -345,7 +346,10 @@ public Pac4jModule client(
+ 
+   @Override
+   public void install(@NonNull Jooby app) throws Exception {
+-    app.getServices().putIfAbsent(Pac4jOptions.class, options);
++    var services = app.getServices();
++    services.putIfAbsent(Pac4jOptions.class, options);
++    // Set defaults:
++    services.putIfAbsent(Serializer.class, options.getSerializer());
+ 
+     var clients =
+         ofNullable(options.getClients())
+@@ -488,6 +492,7 @@ public void install(@NonNull Jooby app) throws Exception {
+     if (securityLogic == null) {
+       options.setSecurityLogic(newSecurityLogic(excludes));
+     }
++    app.use(new UntrustedSessionDataDetector());
+ 
+     /** For each client to a specific path, add a security handler. */
+     for (var entry : allClients.entrySet()) {
+diff --git a/modules/jooby-pac4j/src/main/java/io/jooby/pac4j/Pac4jOptions.java b/modules/jooby-pac4j/src/main/java/io/jooby/pac4j/Pac4jOptions.java
+index 128f768363..6118061629 100644
+--- a/modules/jooby-pac4j/src/main/java/io/jooby/pac4j/Pac4jOptions.java
++++ b/modules/jooby-pac4j/src/main/java/io/jooby/pac4j/Pac4jOptions.java
+@@ -8,6 +8,8 @@
+ import java.util.Optional;
+ 
+ import org.pac4j.core.config.Config;
++import org.pac4j.core.util.serializer.JavaSerializer;
++import org.pac4j.core.util.serializer.Serializer;
+ 
+ import edu.umd.cs.findbugs.annotations.NonNull;
+ import edu.umd.cs.findbugs.annotations.Nullable;
+@@ -52,6 +54,8 @@ public class Pac4jOptions extends Config {
+ 
+   private boolean forceLogoutRoutes = false;
+ 
++  private Serializer serializer = new JavaSerializer();
++
+   private Pac4jOptions(Config config) {
+     setClients(config.getClients());
+     Optional.ofNullable(config.getAuthorizers()).ifPresent(this::setAuthorizers);
+@@ -353,8 +357,30 @@ public boolean isForceLogoutRoutes() {
+    *
+    * @param logoutUrlPattern It’s the logout URL pattern that the url parameter must match. It is an
+    *     optional parameter and only relative URLs are allowed by default.
++   * @return This instance.
+    */
+-  public void setLogoutUrlPattern(String logoutUrlPattern) {
++  public @NonNull Pac4jOptions setLogoutUrlPattern(String logoutUrlPattern) {
+     this.logoutUrlPattern = logoutUrlPattern;
++    return this;
++  }
++
++  /**
++   * Used for save complex object into session while using indirect clients.
++   *
++   * @return Serializer, defaults to {@link JavaSerializer}.
++   */
++  public @NonNull Serializer getSerializer() {
++    return serializer;
++  }
++
++  /**
++   * Set serializer for saving complex object into session while using indirect clients.
++   *
++   * @param serializer Serializer.
++   * @return This instance.
++   */
++  public @NonNull Pac4jOptions setSerializer(@NonNull Serializer serializer) {
++    this.serializer = serializer;
++    return this;
+   }
+ }
+diff --git a/modules/jooby-pac4j/src/main/java/io/jooby/pac4j/Pac4jUntrustedDataFound.java b/modules/jooby-pac4j/src/main/java/io/jooby/pac4j/Pac4jUntrustedDataFound.java
+new file mode 100644
+index 0000000000..056683105e
+--- /dev/null
++++ b/modules/jooby-pac4j/src/main/java/io/jooby/pac4j/Pac4jUntrustedDataFound.java
+@@ -0,0 +1,20 @@
++/*
++ * Jooby https://jooby.io
++ * Apache License Version 2.0 https://jooby.io/LICENSE.txt
++ * Copyright 2014 Edgar Espina
++ */
++package io.jooby.pac4j;
++
++import io.jooby.StatusCode;
++import io.jooby.exception.StatusCodeException;
++
++/**
++ * Occurs when sensitive encoded data is set outside pac4j internals.
++ *
++ * @since 2.16.6
++ */
++public class Pac4jUntrustedDataFound extends StatusCodeException {
++  public Pac4jUntrustedDataFound(String message) {
++    super(StatusCode.FORBIDDEN, message);
++  }
++}
+diff --git a/modules/jooby-pac4j/src/main/java/module-info.java b/modules/jooby-pac4j/src/main/java/module-info.java
+index a3a067c2ad..667096a8fe 100644
+--- a/modules/jooby-pac4j/src/main/java/module-info.java
++++ b/modules/jooby-pac4j/src/main/java/module-info.java
+@@ -13,4 +13,5 @@
+   requires org.slf4j;
+   requires pac4j.core;
+   requires pac4j.http;
++  requires jsr305;
+ }
+diff --git a/mypatch.patch b/mypatch.patch
+new file mode 100644
+index 0000000000..453a57cc98
+--- /dev/null
++++ b/mypatch.patch
+@@ -0,0 +1,107 @@
++package io.jooby.internal.pac4j;
++
++import io.jooby.Session;
++import io.jooby.SneakyThrows;
++import io.jooby.Value;
++import io.jooby.pac4j.Pac4jContext;
++import org.pac4j.core.context.session.SessionStore;
++
++import org.pac4j.core.exception.http.UnauthorizedAction;
++import org.pac4j.core.exception.http.WithContentAction;
++import org.pac4j.core.exception.http.WithLocationAction;
++import org.pac4j.core.util.JavaSerializationHelper;
++
++import java.io.ByteArrayInputStream;
++import java.io.ByteArrayOutputStream;
++import java.io.IOException;
++import java.io.ObjectInputStream;
++import java.io.ObjectOutputStream;
++import java.util.Base64;
++import java.io.*;
++import java.util.Optional;
++
++import static io.jooby.StatusCode.BAD_REQUEST_CODE;
++
++public class SessionStoreImpl
++    implements org.pac4j.core.context.session.SessionStore<Pac4jContext> {
++
++  private static final String PAC4J = "p4j~";
++
++  private static final String BIN = "b64~";
++
++  private Session getSession(Pac4jContext context) {
++    return context.getContext().session();
++    return session(context.getContext().session());
++  }
++
++  private Session session(Session session) {
++    if (session instanceof Pac4jSession) {
++      return ((Pac4jSession) session).getSession();
++    }
++    return session;
++  }
++
++  private Optional<Session> getSessionOrEmpty(Pac4jContext context) {
++    return Optional.ofNullable(context.getContext().sessionOrNull());
++    return Optional.ofNullable(session(context.getContext().sessionOrNull()));
++  }
++
++  @Override public String getOrCreateSessionId(Pac4jContext context) {
++
++  }
++
++  @Override public boolean renewSession(Pac4jContext context) {
++    //getSessionOrEmpty(context).ifPresent(session -> session.renewId());
++    getSessionOrEmpty(context).ifPresent(Session::renewId);
++    return true;
++  }
++
++
++      return Optional.empty();
++    }
++    String value = node.value();
++    if (value.startsWith(BIN)) {
++      try {
++        byte[] bytes = Base64.getDecoder().decode(value.substring(BIN.length()));
++        return Optional.of(new ObjectInputStream(new ByteArrayInputStream(bytes)).readObject());
++      } catch (Exception x) {
++        throw SneakyThrows.propagate(x);
++      }
++    } else if (value.startsWith(PAC4J)) {
++      return Optional.of(strToAction(value.substring(PAC4J.length())));
++    if (value.startsWith(Pac4jSession.BIN)) {
++       JavaSerializationHelper helper = new JavaSerializationHelper();
++       return Optional.of(helper.deserializeFromBase64(value.substring(Pac4jSession.BIN.length())));
++    } else if (value.startsWith(Pac4jSession.PAC4J)) {
++      return Optional.of(strToAction(value.substring(Pac4jSession.PAC4J.length())));
++    }
++    return Optional.of(value);
++  }
++
++      return value.toString();
++    } else if (value instanceof HttpAction) {
++      return actionToStr((HttpAction) value);
++    }
++    try {
++      ByteArrayOutputStream bytes = new ByteArrayOutputStream();
++      ObjectOutputStream stream = new ObjectOutputStream(bytes);
++      stream.writeObject(value);
++      stream.flush();
++      return BIN + Base64.getEncoder().encodeToString(bytes.toByteArray());
++    } catch (IOException x) {
++      throw SneakyThrows.propagate(x);
++    } else if (value instanceof Serializable) {
++      JavaSerializationHelper helper = new JavaSerializationHelper();
++      return Pac4jSession.BIN + helper.serializeToBase64((Serializable) value);
++    } else {
++      throw new UnsupportedOperationException("Unsupported type: " + value.getClass().getName());
++    }
++  }
++
++  private static String actionToStr(HttpAction action) {
++    StringBuilder buffer = new StringBuilder();
++    buffer.append(PAC4J).append(action.getCode());
++    buffer.append(Pac4jSession.PAC4J).append(action.getCode());
++    if (action instanceof WithContentAction) {
++      buffer.append(":").append(((WithContentAction) action).getContent());
++    } else if (action instanceof WithLocationAction) {
+diff --git a/tests/src/test/java/io/jooby/i3633/Issue3633.java b/tests/src/test/java/io/jooby/i3633/Issue3633.java
+new file mode 100644
+index 0000000000..b825473b3b
+--- /dev/null
++++ b/tests/src/test/java/io/jooby/i3633/Issue3633.java
+@@ -0,0 +1,125 @@
++/*
++ * Jooby https://jooby.io
++ * Apache License Version 2.0 https://jooby.io/LICENSE.txt
++ * Copyright 2014 Edgar Espina
++ */
++package io.jooby.i3633;
++
++import static org.junit.jupiter.api.Assertions.assertEquals;
++import static org.junit.jupiter.api.Assertions.assertTrue;
++
++import org.pac4j.core.util.serializer.JavaSerializer;
++import org.pac4j.http.client.direct.HeaderClient;
++import org.pac4j.http.client.indirect.FormClient;
++import org.pac4j.http.credentials.authenticator.test.SimpleTestTokenAuthenticator;
++import org.pac4j.http.credentials.authenticator.test.SimpleTestUsernamePasswordAuthenticator;
++
++import io.jooby.MediaType;
++import io.jooby.junit.ServerTest;
++import io.jooby.junit.ServerTestRunner;
++import io.jooby.pac4j.Pac4jModule;
++import okhttp3.FormBody;
++import okhttp3.Response;
++
++public class Issue3633 {
++  private static final String WELCOME =
++      "<!DOCTYPE html>\n"
++          + "<html>\n"
++          + "<head>\n"
++          + "  <title>Welcome Page</title>\n"
++          + "</head>\n"
++          + "<body>\n"
++          + "<h3>Welcome: {0}</h3>\n"
++          + "<h4><a href=\"/logout\">Logout</a></h4>\n"
++          + "</body>\n"
++          + "</html>\n";
++
++  @ServerTest
++  public void pac4jShouldNotAllowToSetUntrustedDataOnIndirectClients(ServerTestRunner runner) {
++    JavaSerializer serializer = new JavaSerializer();
++    String externalToken = "b64~" + serializer.serializeToString("hello cwm");
++    runner
++        .define(
++            app -> {
++              app.install(
++                  new Pac4jModule()
++                      .client(
++                          conf ->
++                              new FormClient(
++                                  "/login", new SimpleTestUsernamePasswordAuthenticator())));
++
++              app.get(
++                  "/",
++                  ctx -> {
++                    String token = ctx.query("token").value();
++                    ctx.session().put("token", token);
++                    Object user = ctx.getUser();
++                    return ctx.setResponseType(MediaType.html).send(String.format(WELCOME, user));
++                  });
++            })
++        .dontFollowRedirects()
++        .ready(
++            http -> {
++              http.post(
++                  "/callback?client_name=FormClient",
++                  new FormBody.Builder().add("username", "test").add("password", "test").build(),
++                  rsp -> {
++                    String sid = sid(rsp);
++                    http.header("Cookie", sid);
++                    http.get(
++                        "/?token=" + externalToken,
++                        rsp2 -> {
++                          assertEquals(403, rsp2.code());
++                        });
++
++                    // success
++                    http.header("Cookie", sid);
++                    http.get(
++                        "/?token=" + "123",
++                        rsp2 -> {
++                          assertEquals(200, rsp2.code());
++                        });
++                  });
++            });
++  }
++
++  @ServerTest
++  public void pac4jShouldNotCreateSessionOnDirectClient(ServerTestRunner runner) {
++    JavaSerializer serializer = new JavaSerializer();
++    String externalToken = "b64~" + serializer.serializeToString("hello cwm");
++    runner
++        .define(
++            app -> {
++              app.install(
++                  new Pac4jModule()
++                      .client(
++                          conf -> new HeaderClient("token", new SimpleTestTokenAuthenticator())));
++
++              app.get(
++                  "/",
++                  ctx -> {
++                    String token = ctx.header("token").value();
++                    assertTrue(ctx.sessionOrNull() == null);
++                    // force create session, should be OK due pac4j does nothing on direct client
++                    // (no session is required)
++                    ctx.session().put("token", token);
++                    Object user = ctx.getUser();
++                    return ctx.setResponseType(MediaType.html).send(String.format(WELCOME, user));
++                  });
++            })
++        .dontFollowRedirects()
++        .ready(
++            http -> {
++              http.header("token", externalToken);
++              http.get(
++                  "/",
++                  rsp2 -> {
++                    assertEquals(200, rsp2.code());
++                  });
++            });
++  }
++
++  private String sid(Response response) {
++    return response.header("Set-Cookie").split(";")[0];
++  }
++}

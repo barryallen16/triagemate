@@ -1,0 +1,111 @@
+From 64007b131d689158af90ca1c1b71b018129a85c5 Mon Sep 17 00:00:00 2001
+From: Timo Walther <twalthr@apache.org>
+Date: Tue, 31 Mar 2026 00:18:02 +0200
+Subject: [PATCH] [FLINK-39355][table-planner] Fix field names in code
+ generation for JSON_OBJECT/ARRAY/STRING
+
+This closes #27850.
+---
+ .../planner/codegen/JsonGenerateUtils.scala   |  3 +-
+ .../functions/JsonFunctionsITCase.java        | 46 +++++++++++++++++++
+ 2 files changed, 48 insertions(+), 1 deletion(-)
+
+diff --git a/flink-table/flink-table-planner/src/main/scala/org/apache/flink/table/planner/codegen/JsonGenerateUtils.scala b/flink-table/flink-table-planner/src/main/scala/org/apache/flink/table/planner/codegen/JsonGenerateUtils.scala
+index 0fec3d1b23ce17..3fd256e071d4b1 100644
+--- a/flink-table/flink-table-planner/src/main/scala/org/apache/flink/table/planner/codegen/JsonGenerateUtils.scala
++++ b/flink-table/flink-table-planner/src/main/scala/org/apache/flink/table/planner/codegen/JsonGenerateUtils.scala
+@@ -31,6 +31,7 @@ import org.apache.flink.table.runtime.typeutils.TypeCheckUtils.isCharacterString
+ import org.apache.flink.table.types.logical._
+ import org.apache.flink.table.types.logical.LogicalTypeRoot._
+ import org.apache.flink.table.types.logical.utils.LogicalTypeChecks
++import org.apache.flink.table.utils.EncodingUtils
+ 
+ import org.apache.calcite.rex.{RexCall, RexNode}
+ 
+@@ -264,7 +265,7 @@ object JsonGenerateUtils {
+ 
+   /** Generates a method to convert rows into [[ObjectNode]]. */
+   private def generateRowConverter(ctx: CodeGeneratorContext, rowType: LogicalType): String = {
+-    val fieldNames = toScala(LogicalTypeChecks.getFieldNames(rowType))
++    val fieldNames = toScala(LogicalTypeChecks.getFieldNames(rowType)).map(EncodingUtils.escapeJava)
+     val fieldTypes = toScala(LogicalTypeChecks.getFieldTypes(rowType))
+ 
+     val populateObjectCode = fieldNames.zipWithIndex.map {
+diff --git a/flink-table/flink-table-planner/src/test/java/org/apache/flink/table/planner/functions/JsonFunctionsITCase.java b/flink-table/flink-table-planner/src/test/java/org/apache/flink/table/planner/functions/JsonFunctionsITCase.java
+index 5905da188cf53f..6c236ccd04d5d0 100644
+--- a/flink-table/flink-table-planner/src/test/java/org/apache/flink/table/planner/functions/JsonFunctionsITCase.java
++++ b/flink-table/flink-table-planner/src/test/java/org/apache/flink/table/planner/functions/JsonFunctionsITCase.java
+@@ -53,6 +53,7 @@
+ import static org.apache.flink.table.api.DataTypes.BOOLEAN;
+ import static org.apache.flink.table.api.DataTypes.DECIMAL;
+ import static org.apache.flink.table.api.DataTypes.DOUBLE;
++import static org.apache.flink.table.api.DataTypes.FIELD;
+ import static org.apache.flink.table.api.DataTypes.INT;
+ import static org.apache.flink.table.api.DataTypes.MAP;
+ import static org.apache.flink.table.api.DataTypes.ROW;
+@@ -697,6 +698,21 @@ private static List<TestSetSpec> jsonStringSpec() {
+                                 jsonString(call("PARSE_JSON", $("f14"))),
+                                 "JSON_STRING(PARSE_JSON('{\"key\":\"value\"}'))",
+                                 "{\"key\":\"value\"}",
++                                STRING().notNull()),
++                TestSetSpec.forFunction(BuiltInFunctionDefinitions.JSON_STRING)
++                        .onFieldsWithData(Row.of("val1", "val2", "val3", "val4", "val5"))
++                        .andDataTypes(
++                                ROW(
++                                                FIELD("field\"quote", STRING()),
++                                                FIELD("field\\slash", STRING()),
++                                                FIELD("field\nline", STRING()),
++                                                FIELD("field\ttab", STRING()),
++                                                FIELD("field\rreturn", STRING()))
++                                        .notNull())
++                        .testResult(
++                                jsonString($("f0")),
++                                "JSON_STRING(f0)",
++                                "{\"field\\ttab\":\"val4\",\"field\\nline\":\"val3\",\"field\\rreturn\":\"val5\",\"field\\\"quote\":\"val1\",\"field\\\\slash\":\"val2\"}",
+                                 STRING().notNull()));
+     }
+ 
+@@ -1069,6 +1085,21 @@ private static List<TestSetSpec> jsonObjectSpec() {
+                                         + "\"R\":{\"f0\":\"V\",\"f1\":null}"
+                                         + "}",
+                                 STRING().notNull(),
++                                STRING().notNull()),
++                TestSetSpec.forFunction(BuiltInFunctionDefinitions.JSON_OBJECT)
++                        .onFieldsWithData(Row.of("val1", "val2", "val3", "val4", "val5"))
++                        .andDataTypes(
++                                ROW(
++                                                FIELD("field\"quote", STRING()),
++                                                FIELD("field\\slash", STRING()),
++                                                FIELD("field\nline", STRING()),
++                                                FIELD("field\ttab", STRING()),
++                                                FIELD("field\rreturn", STRING()))
++                                        .notNull())
++                        .testResult(
++                                jsonObject(JsonOnNull.NULL, "testRow", $("f0")),
++                                "JSON_OBJECT(KEY 'testRow' VALUE f0 NULL ON NULL)",
++                                "{\"testRow\":{\"field\\ttab\":\"val4\",\"field\\nline\":\"val3\",\"field\\rreturn\":\"val5\",\"field\\\"quote\":\"val1\",\"field\\\\slash\":\"val2\"}}",
+                                 STRING().notNull()));
+     }
+ 
+@@ -1491,6 +1522,21 @@ private static List<TestSetSpec> jsonArraySpec() {
+                                         + "{\"age\":1,\"name\":\"V\",\"payload\":{\"M1\":\"V1\",\"M2\":\"V2\"}}"
+                                         + "]",
+                                 STRING().notNull(),
++                                STRING().notNull()),
++                TestSetSpec.forFunction(BuiltInFunctionDefinitions.JSON_ARRAY)
++                        .onFieldsWithData(Row.of("val1", "val2", "val3", "val4", "val5"))
++                        .andDataTypes(
++                                ROW(
++                                                FIELD("field\"quote", STRING()),
++                                                FIELD("field\\slash", STRING()),
++                                                FIELD("field\nline", STRING()),
++                                                FIELD("field\ttab", STRING()),
++                                                FIELD("field\rreturn", STRING()))
++                                        .notNull())
++                        .testResult(
++                                jsonArray(JsonOnNull.NULL, $("f0")),
++                                "JSON_ARRAY(f0 NULL ON NULL)",
++                                "[{\"field\\ttab\":\"val4\",\"field\\nline\":\"val3\",\"field\\rreturn\":\"val5\",\"field\\\"quote\":\"val1\",\"field\\\\slash\":\"val2\"}]",
+                                 STRING().notNull()));
+     }
+ 

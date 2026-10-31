@@ -1,0 +1,100 @@
+From 3560de2f486d688a3ddcf4aa54d8bdacea380c3d Mon Sep 17 00:00:00 2001
+From: dotasek <david.otasek@smilecdr.com>
+Date: Tue, 19 Nov 2024 12:17:27 -0500
+Subject: [PATCH] Checkstyle checks for xml factory instantations + fixes
+
+---
+ checkstyle.xml                                | 37 +++++++++++++------
+ .../hl7/fhir/igtools/publisher/Publisher.java |  2 +-
+ .../publisher/utils/PackageReleaser.java      |  2 +-
+ .../publisher/utils/TemplateReleaser.java     |  2 +-
+ 4 files changed, 29 insertions(+), 14 deletions(-)
+
+diff --git a/checkstyle.xml b/checkstyle.xml
+index 625428252..777ca2e5f 100644
+--- a/checkstyle.xml
++++ b/checkstyle.xml
+@@ -11,17 +11,32 @@
+     <module name="TreeWalker">
+         <!--
+         <module name="TodoComment">-->
+-            <!-- The (?i) below means Case Insensitive -->
++        <!-- The (?i) below means Case Insensitive -->
+         <!--<property name="format" value="(?i)FIXME"/>
+ -->
+-  <module name="RegexpSinglelineJava">
+-      <property name="format" value="org\.jetbrains\.annotations\.NotNull"/>
+-  </module>
+-  <module name="RegexpSinglelineJava">
+-      <property name="format" value="org\.jetbrains\.annotations\.Nullable"/>
+-  </module>
+-  <module name="RegexpSinglelineJava">
+-      <property name="format" value="org\.jetbrains\.annotations\.\*"/>
+-  </module>
+-</module>
++        <module name="RegexpSinglelineJava">
++            <property name="format" value="org\.jetbrains\.annotations\.NotNull"/>
++        </module>
++        <module name="RegexpSinglelineJava">
++            <property name="format" value="org\.jetbrains\.annotations\.Nullable"/>
++        </module>
++        <module name="RegexpSinglelineJava">
++            <property name="format" value="org\.jetbrains\.annotations\.\*"/>
++        </module>
++    </module>
++    <module name="RegexpMultiline">
++        <property name="id" value="transformerFactoryNewInstance"/>
++        <property name="matchAcrossLines" value="true"/>
++        <property name="format" value="TransformerFactory\.newInstance\("/>
++    </module>
++    <module name="RegexpMultiline">
++        <property name="id" value="documentBuilderFactoryNewInstance"/>
++        <property name="matchAcrossLines" value="true"/>
++        <property name="format" value="DocumentBuilderFactory\.newInstance\("/>
++    </module>
++    <module name="RegexpMultiline">
++        <property name="id" value="saxParserFactoryNewInstance"/>
++        <property name="matchAcrossLines" value="true"/>
++        <property name="format" value="SAXParserFactory\.newInstance\("/>
++    </module>
+ </module>
+\ No newline at end of file
+diff --git a/org.hl7.fhir.publisher.core/src/main/java/org/hl7/fhir/igtools/publisher/Publisher.java b/org.hl7.fhir.publisher.core/src/main/java/org/hl7/fhir/igtools/publisher/Publisher.java
+index a0c355f81..89a54e30f 100644
+--- a/org.hl7.fhir.publisher.core/src/main/java/org/hl7/fhir/igtools/publisher/Publisher.java
++++ b/org.hl7.fhir.publisher.core/src/main/java/org/hl7/fhir/igtools/publisher/Publisher.java
+@@ -14312,7 +14312,7 @@ private String fetchCurrentIGPubVersion() {
+   private void loadMappingSpaces(byte[] source) throws Exception {
+     ByteArrayInputStream is = null;
+     try {
+-      DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
++      DocumentBuilderFactory factory = XMLUtil.newXXEProtectedDocumentBuilderFactory();
+       factory.setNamespaceAware(true);
+       DocumentBuilder builder = factory.newDocumentBuilder();
+       is = new ByteArrayInputStream(source);
+diff --git a/org.hl7.fhir.publisher.core/src/main/java/org/hl7/fhir/igtools/publisher/utils/PackageReleaser.java b/org.hl7.fhir.publisher.core/src/main/java/org/hl7/fhir/igtools/publisher/utils/PackageReleaser.java
+index 11fa4ba55..c5b447232 100644
+--- a/org.hl7.fhir.publisher.core/src/main/java/org/hl7/fhir/igtools/publisher/utils/PackageReleaser.java
++++ b/org.hl7.fhir.publisher.core/src/main/java/org/hl7/fhir/igtools/publisher/utils/PackageReleaser.java
+@@ -840,7 +840,7 @@ private void check(boolean condition, String message) {
+ 
+   private Document loadXml(File file) throws Exception {
+     InputStream src = new FileInputStream(file);
+-    DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
++    DocumentBuilderFactory dbf = XMLUtil.newXXEProtectedDocumentBuilderFactory();
+     DocumentBuilder db = dbf.newDocumentBuilder();
+     return db.parse(src);
+   }
+diff --git a/org.hl7.fhir.publisher.core/src/main/java/org/hl7/fhir/igtools/publisher/utils/TemplateReleaser.java b/org.hl7.fhir.publisher.core/src/main/java/org/hl7/fhir/igtools/publisher/utils/TemplateReleaser.java
+index b32861510..680b1c428 100644
+--- a/org.hl7.fhir.publisher.core/src/main/java/org/hl7/fhir/igtools/publisher/utils/TemplateReleaser.java
++++ b/org.hl7.fhir.publisher.core/src/main/java/org/hl7/fhir/igtools/publisher/utils/TemplateReleaser.java
+@@ -601,7 +601,7 @@ private void check(boolean condition, String message) {
+ 
+   private Document loadXml(File file) throws Exception {
+     InputStream src = new FileInputStream(file);
+-    DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
++    DocumentBuilderFactory dbf = XMLUtil.newXXEProtectedDocumentBuilderFactory();
+     DocumentBuilder db = dbf.newDocumentBuilder();
+     return db.parse(src);
+   }

@@ -1,0 +1,256 @@
+From 549f295cf8c5496a5e799d6bec2432ef976c82aa Mon Sep 17 00:00:00 2001
+From: Fabian Diet <fabian.diet@spaceapplications.com>
+Date: Sat, 13 Jun 2026 19:30:51 +0200
+Subject: [PATCH] Sanitize YAML for templated instances
+
+GHSA-73mf-m39p-wpm9
+CVE-2026-55559
+---
+ .../src/main/java/org/yamcs/YamcsServer.java  |  2 +-
+ .../java/org/yamcs/templating/Template.java   | 65 +++++++++++++++++
+ .../yamcs/templating/TemplateProcessor.java   | 73 +++++++++++++++++++
+ .../templating/TemplateProcessorTest.java     | 26 +++++++
+ 4 files changed, 165 insertions(+), 1 deletion(-)
+
+diff --git a/yamcs-core/src/main/java/org/yamcs/YamcsServer.java b/yamcs-core/src/main/java/org/yamcs/YamcsServer.java
+index 3237d18ec1e..7993c8fdef8 100644
+--- a/yamcs-core/src/main/java/org/yamcs/YamcsServer.java
++++ b/yamcs-core/src/main/java/org/yamcs/YamcsServer.java
+@@ -648,7 +648,7 @@ public synchronized YamcsServerInstance createInstance(String name, String templ
+         metadata.setLabels(labels);
+         customMetadata.forEach((k, v) -> metadata.put(k, v));
+ 
+-        String processed = template.process(metadata.getTemplateArgs());
++        String processed = template.processAndSanitizeYaml(metadata.getTemplateArgs());
+ 
+         Path confFile = instanceDefDir.resolve(configFileName(name));
+         try (Writer writer = Files.newBufferedWriter(confFile)) {
+diff --git a/yamcs-core/src/main/java/org/yamcs/templating/Template.java b/yamcs-core/src/main/java/org/yamcs/templating/Template.java
+index 338c329d951..925bb23a0d6 100644
+--- a/yamcs-core/src/main/java/org/yamcs/templating/Template.java
++++ b/yamcs-core/src/main/java/org/yamcs/templating/Template.java
+@@ -1,8 +1,13 @@
+ package org.yamcs.templating;
+ 
+ import java.util.Collection;
++import java.util.HashMap;
+ import java.util.LinkedHashMap;
++import java.util.List;
+ import java.util.Map;
++import java.util.UUID;
++
++import org.yaml.snakeyaml.Yaml;
+ 
+ public class Template {
+ 
+@@ -47,6 +52,66 @@ public String process(Map<String, Object> args) {
+         return templateProcessor.process(args);
+     }
+ 
++    public String processAndSanitizeYaml(Map<String, Object> userArgs) {
++        Map<String, Object> tokenArgs = new HashMap<>();
++        Map<String, String> tokenToActualValueMap = new HashMap<>();
++
++        // 1. Swap user strings out for safe, un-injectable UUID tokens
++        for (var entry : userArgs.entrySet()) {
++            if (entry.getValue() instanceof String rawString) {
++                String token = "___TOKEN_" + UUID.randomUUID().toString() + "___";
++                tokenArgs.put(entry.getKey(), token);
++                tokenToActualValueMap.put(token, rawString);
++            } else {
++                tokenArgs.put(entry.getKey(), entry.getValue());
++            }
++        }
++
++        // 2. Process layout logic (if, comments, filters) via your custom text engine
++        String renderedLayoutText = this.templateProcessor.process(tokenArgs);
++
++        // 3. Parse text output into an object structure. Tokens are trapped cleanly as data strings.
++        Yaml yaml = new Yaml();
++        Object structuralRoot = yaml.load(renderedLayoutText);
++
++        // 4. Recursively traverse the structure to replace tokens with raw user data
++        replaceTokensWithRealValues(structuralRoot, tokenToActualValueMap);
++
++        // 5. Serialize the safe memory graph back to text
++        return yaml.dump(structuralRoot);
++    }
++
++    @SuppressWarnings("unchecked")
++    private void replaceTokensWithRealValues(Object node, Map<String, String> tokenMap) {
++        if (node instanceof Map) {
++            Map<String, Object> map = (Map<String, Object>) node;
++            for (Map.Entry<String, Object> entry : map.entrySet()) {
++                Object value = entry.getValue();
++
++                if (value instanceof String stringValue && tokenMap.containsKey(stringValue)) {
++                    // Update value inside the map
++                    entry.setValue(tokenMap.get(stringValue));
++                } else {
++                    // Continue diving into nested maps, lists, etc.
++                    replaceTokensWithRealValues(value, tokenMap);
++                }
++            }
++        } else if (node instanceof List) {
++            List<Object> list = (List<Object>) node;
++            for (int i = 0; i < list.size(); i++) {
++                Object element = list.get(i);
++
++                if (element instanceof String stringValue && tokenMap.containsKey(stringValue)) {
++                    // Update element inside the array list
++                    list.set(i, tokenMap.get(stringValue));
++                } else {
++                    // Continue diving into objects inside the list
++                    replaceTokensWithRealValues(element, tokenMap);
++                }
++            }
++        }
++    }
++
+     @Override
+     public String toString() {
+         return name;
+diff --git a/yamcs-core/src/main/java/org/yamcs/templating/TemplateProcessor.java b/yamcs-core/src/main/java/org/yamcs/templating/TemplateProcessor.java
+index ea8ba9bbe1a..774cac9ce6d 100644
+--- a/yamcs-core/src/main/java/org/yamcs/templating/TemplateProcessor.java
++++ b/yamcs-core/src/main/java/org/yamcs/templating/TemplateProcessor.java
+@@ -2,7 +2,13 @@
+ 
+ import java.io.StringReader;
+ import java.util.HashMap;
++import java.util.List;
+ import java.util.Map;
++import java.util.UUID;
++
++import org.yaml.snakeyaml.DumperOptions;
++import org.yaml.snakeyaml.DumperOptions.FlowStyle;
++import org.yaml.snakeyaml.Yaml;
+ 
+ /**
+  * Processes a template source. Supported features:
+@@ -33,6 +39,10 @@ public static String process(String template, Map<String, Object> args) throws P
+         return new TemplateProcessor(template).process(args);
+     }
+ 
++    public static String processAndSanitizeYaml(String template, Map<String, Object> args) throws ParseException {
++        return new TemplateProcessor(template).processAndSanitizeYaml(args);
++    }
++
+     public void addFilter(String name, VariableFilter filter) {
+         filters.put(name, filter);
+     }
+@@ -40,4 +50,67 @@ public void addFilter(String name, VariableFilter filter) {
+     public String process(Map<String, Object> args) {
+         return compiledTemplate.render(args, filters);
+     }
++
++    public String processAndSanitizeYaml(Map<String, Object> args) {
++        Map<String, Object> tokenArgs = new HashMap<>();
++        Map<String, String> tokenToActualValueMap = new HashMap<>();
++
++        // Swap strings out for safe, un-injectable UUID tokens
++        for (var entry : args.entrySet()) {
++            if (entry.getValue() instanceof String rawString) {
++                String token = "___TOKEN_" + UUID.randomUUID().toString() + "___";
++                tokenArgs.put(entry.getKey(), token);
++                tokenToActualValueMap.put(token, rawString);
++            } else {
++                tokenArgs.put(entry.getKey(), entry.getValue());
++            }
++        }
++
++        // Process layout logic (if, comments, filters)
++        String renderedLayoutText = process(tokenArgs);
++
++        // Parse text output into an object structure. Tokens are trapped cleanly as data strings.
++        DumperOptions dumperOptions = new DumperOptions();
++        dumperOptions.setPrettyFlow(true);
++        dumperOptions.setDefaultFlowStyle(FlowStyle.BLOCK);
++        Yaml yaml = new Yaml(dumperOptions);
++        Object structuralRoot = yaml.load(renderedLayoutText);
++
++        // Recursively traverse the structure to replace tokens with raw user data
++        replaceTokensWithRealValues(structuralRoot, tokenToActualValueMap);
++
++        // Serialize the safe memory graph back to text
++        return yaml.dump(structuralRoot);
++    }
++
++    @SuppressWarnings("unchecked")
++    private void replaceTokensWithRealValues(Object node, Map<String, String> tokenMap) {
++        if (node instanceof Map) {
++            Map<String, Object> map = (Map<String, Object>) node;
++            for (Map.Entry<String, Object> entry : map.entrySet()) {
++                Object value = entry.getValue();
++
++                if (value instanceof String stringValue && tokenMap.containsKey(stringValue)) {
++                    // Update value inside the map
++                    entry.setValue(tokenMap.get(stringValue));
++                } else {
++                    // Continue diving into nested maps, lists, etc.
++                    replaceTokensWithRealValues(value, tokenMap);
++                }
++            }
++        } else if (node instanceof List) {
++            List<Object> list = (List<Object>) node;
++            for (int i = 0; i < list.size(); i++) {
++                Object element = list.get(i);
++
++                if (element instanceof String stringValue && tokenMap.containsKey(stringValue)) {
++                    // Update element inside the array list
++                    list.set(i, tokenMap.get(stringValue));
++                } else {
++                    // Continue diving into objects inside the list
++                    replaceTokensWithRealValues(element, tokenMap);
++                }
++            }
++        }
++    }
+ }
+diff --git a/yamcs-core/src/test/java/org/yamcs/templating/TemplateProcessorTest.java b/yamcs-core/src/test/java/org/yamcs/templating/TemplateProcessorTest.java
+index 099aaee04e0..ecb991542d2 100644
+--- a/yamcs-core/src/test/java/org/yamcs/templating/TemplateProcessorTest.java
++++ b/yamcs-core/src/test/java/org/yamcs/templating/TemplateProcessorTest.java
+@@ -1,11 +1,14 @@
+ package org.yamcs.templating;
+ 
+ import static org.junit.jupiter.api.Assertions.assertEquals;
++import static org.junit.jupiter.api.Assertions.assertNotEquals;
+ import static org.junit.jupiter.api.Assertions.assertThrows;
+ 
++import java.util.List;
+ import java.util.Map;
+ 
+ import org.junit.jupiter.api.Test;
++import org.yaml.snakeyaml.Yaml;
+ 
+ import com.google.common.collect.ImmutableMap;
+ 
+@@ -127,4 +130,27 @@ public void testUnknownFilter() throws ParseException {
+             TemplateProcessor.process(template, args);
+         });
+     }
++
++    @Test
++    public void testSanitizeYaml() throws ParseException {
++        String template = "people:\n- {{ a }}\n- {{ b }}";
++
++        // Work the same for normal input
++        Map<String, Object> args = ImmutableMap.of("a", "alice", "b", "bob");
++        assertEquals("people:\n- alice\n- bob", TemplateProcessor.process(template, args).trim());
++        assertEquals("people:\n- alice\n- bob", TemplateProcessor.processAndSanitizeYaml(template, args).trim());
++
++        // Attempt at changing the YAML structure
++        args = ImmutableMap.of("a", "alice", "b", "bob\n- eve");
++        var unsafeOutput = "people:\n- alice\n- bob\n- eve";
++        assertEquals(unsafeOutput, TemplateProcessor.process(template, args).trim());
++        assertNotEquals(unsafeOutput, TemplateProcessor.processAndSanitizeYaml(template, args).trim());
++
++        // Deeper verification
++        var sanitizedOutput = TemplateProcessor.processAndSanitizeYaml(template, args);
++        Map<String, Object> map = new Yaml().load(sanitizedOutput);
++        assertEquals("alice", ((List<?>) map.get("people")).get(0));
++        assertEquals("bob\n- eve", ((List<?>) map.get("people")).get(1));
++
++    }
+ }

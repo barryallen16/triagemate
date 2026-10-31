@@ -1,0 +1,294 @@
+From edcf968cad91a78b932dba4ad559ef94cbf35f5a Mon Sep 17 00:00:00 2001
+From: Valera V Harseko <vharseko@3a-systems.ru>
+Date: Mon, 20 Jul 2026 11:48:43 +0300
+Subject: [PATCH] CVE-2026-62379 Unauthenticated Remote Code Execution via
+ unsafe class instantiation in the /authservice (PLL) endpoint
+
+---
+ .../authentication/share/AuthXMLUtils.java    |  55 +++++-
+ .../share/AuthXMLUtilsSecurityTest.java       | 186 ++++++++++++++++++
+ 2 files changed, 240 insertions(+), 1 deletion(-)
+ create mode 100644 openam-core/src/test/java/com/sun/identity/authentication/share/AuthXMLUtilsSecurityTest.java
+
+diff --git a/openam-core/src/main/java/com/sun/identity/authentication/share/AuthXMLUtils.java b/openam-core/src/main/java/com/sun/identity/authentication/share/AuthXMLUtils.java
+index f5d015c6c7..064ec286a1 100644
+--- a/openam-core/src/main/java/com/sun/identity/authentication/share/AuthXMLUtils.java
++++ b/openam-core/src/main/java/com/sun/identity/authentication/share/AuthXMLUtils.java
+@@ -46,9 +46,11 @@
+ import java.io.ByteArrayInputStream;
+ import java.io.ByteArrayOutputStream;
+ import java.io.IOException;
++import java.io.ObjectInputFilter;
+ import java.io.ObjectInputStream;
+ import java.io.ObjectOutputStream;
+ import java.security.AccessController;
++import java.security.Principal;
+ import java.security.cert.CertificateEncodingException;
+ import java.security.cert.CertificateException;
+ import java.security.cert.CertificateFactory;
+@@ -1609,7 +1611,19 @@ static DSAMECallbackInterface createCustomCallback(
+             
+             if (callback == null) {
+                 if ((className != null) && (className.length() != 0)) {
+-                    Class xmlClass = Class.forName(className);
++                    // The class name is read from attacker-controllable XML on the
++                    // unauthenticated /authservice endpoint. Load the class without
++                    // running its static initializers and verify it implements
++                    // DSAMECallbackInterface BEFORE instantiating it; otherwise an
++                    // arbitrary class could be instantiated, leading to remote code
++                    // execution (GHSA-wg5r-wc3x-39vc).
++                    Class xmlClass = Class.forName(className, false,
++                        AuthXMLUtils.class.getClassLoader());
++                    if (!DSAMECallbackInterface.class.isAssignableFrom(xmlClass)) {
++                        debug.error("createCustomCallback : class " + className
++                            + " is not a DSAMECallbackInterface implementation");
++                        return null;
++                    }
+                     callback = (DSAMECallbackInterface) xmlClass.newInstance();
+                 }
+             }
+@@ -1760,6 +1774,44 @@ public static String getSerializedSubject(Subject subject) {
+         return encodedString;
+     }
+     
++    // Hardened deserialization filter for the encrypted <Subject> value received
++    // from the auth server. The value is Java-serialized, so without a class
++    // allowlist a forged or relayed response could trigger gadget-chain code
++    // execution in the AuthContext client. A legitimate javax.security.auth.Subject
++    // graph only contains the Subject itself, JDK collections/scalars and
++    // java.security.Principal implementations (GHSA-wg5r-wc3x-39vc, related
++    // deserialization hardening).
++    private static final ObjectInputFilter SUBJECT_DESERIALISATION_FILTER =
++        AuthXMLUtils::filterSubjectClass;
++
++    private static ObjectInputFilter.Status filterSubjectClass(
++            ObjectInputFilter.FilterInfo info) {
++        // Reject oversized or deeply nested graphs before resolving any class.
++        if (info.depth() > 20L || info.references() > 1000L
++                || info.arrayLength() > 10000L) {
++            return ObjectInputFilter.Status.REJECTED;
++        }
++        Class<?> clazz = info.serialClass();
++        if (clazz == null) {
++            return ObjectInputFilter.Status.UNDECIDED;
++        }
++        while (clazz.isArray()) {
++            clazz = clazz.getComponentType();
++        }
++        if (clazz.isPrimitive() || Principal.class.isAssignableFrom(clazz)) {
++            return ObjectInputFilter.Status.ALLOWED;
++        }
++        String name = clazz.getName();
++        if (name.startsWith("java.lang.") || name.startsWith("java.util.")
++                || name.startsWith("java.security.")
++                || name.startsWith("javax.security.")) {
++            return ObjectInputFilter.Status.ALLOWED;
++        }
++        debug.warning("getDeSerializedSubject : rejected class " + name
++            + " during Subject deserialization");
++        return ObjectInputFilter.Status.REJECTED;
++    }
++
+     /**
+      * Deserializes Subject.
+      *
+@@ -1784,6 +1836,7 @@ public static Subject getDeSerializedSubject(String subjectSerialized)
+             //convert byte to object using streams
+             byteIn = new ByteArrayInputStream(byteDecrypted);
+             objInStream  = new ObjectInputStream(byteIn);
++            objInStream.setObjectInputFilter(SUBJECT_DESERIALISATION_FILTER);
+             tempObject = objInStream.readObject();
+         }catch(Exception e){
+             debug.message("Exception Message in decrypt: " , e);
+diff --git a/openam-core/src/test/java/com/sun/identity/authentication/share/AuthXMLUtilsSecurityTest.java b/openam-core/src/test/java/com/sun/identity/authentication/share/AuthXMLUtilsSecurityTest.java
+new file mode 100644
+index 0000000000..6c306bf416
+--- /dev/null
++++ b/openam-core/src/test/java/com/sun/identity/authentication/share/AuthXMLUtilsSecurityTest.java
+@@ -0,0 +1,186 @@
++/*
++ * The contents of this file are subject to the terms of the Common Development and
++ * Distribution License (the License). You may not use this file except in compliance with the
++ * License.
++ *
++ * You can obtain a copy of the License at legal/CDDLv1.0.txt. See the License for the
++ * specific language governing permission and limitations under the License.
++ *
++ * When distributing Covered Software, include this CDDL Header Notice in each file and include
++ * the License file at legal/CDDLv1.0.txt. If applicable, add the following below the CDDL
++ * Header, with the fields enclosed by brackets [] replaced by your own identifying
++ * information: "Portions copyright [year] [name of copyright owner]".
++ *
++ * Portions copyright 2026 3A Systems, LLC.
++ */
++
++package com.sun.identity.authentication.share;
++
++import static org.assertj.core.api.Assertions.assertThat;
++import static org.assertj.core.api.Assertions.catchThrowable;
++
++import java.io.ByteArrayInputStream;
++import java.io.ByteArrayOutputStream;
++import java.io.IOException;
++import java.io.InvalidClassException;
++import java.io.ObjectInputFilter;
++import java.io.ObjectInputStream;
++import java.io.ObjectOutputStream;
++import java.io.Serializable;
++import java.lang.reflect.Field;
++import java.security.Principal;
++import java.util.Map;
++
++import javax.security.auth.Subject;
++
++import org.testng.annotations.Test;
++import org.w3c.dom.Document;
++import org.w3c.dom.Node;
++
++import com.sun.identity.authentication.spi.DSAMECallbackInterface;
++import com.sun.identity.shared.debug.Debug;
++import com.sun.identity.shared.xml.XMLUtils;
++
++/**
++ * Security regression tests for {@link AuthXMLUtils} covering GHSA-wg5r-wc3x-39vc:
++ * <ul>
++ *   <li>unauthenticated RCE via {@code Class.forName} in {@code createCustomCallback()};</li>
++ *   <li>unrestricted Java deserialization in {@code getDeSerializedSubject()}.</li>
++ * </ul>
++ */
++public class AuthXMLUtilsSecurityTest {
++
++    private static final Debug DEBUG = Debug.getInstance("test");
++
++    // ---- createCustomCallback() : arbitrary class instantiation (RCE) -------
++
++    @Test
++    public void createCustomCallbackRejectsNonCallbackClassWithoutInstantiating() {
++        NonCallbackProbe.instantiated = false;
++        Node node = customCallbackNode(NonCallbackProbe.class.getName());
++
++        DSAMECallbackInterface result = AuthXMLUtils.createCustomCallback(node, null);
++
++        assertThat(result).as("a class that is not a DSAMECallbackInterface must be rejected")
++                .isNull();
++        assertThat(NonCallbackProbe.instantiated)
++                .as("the attacker-named class must never be instantiated").isFalse();
++    }
++
++    @Test
++    public void createCustomCallbackInstantiatesLegitimateCallback() {
++        Node node = customCallbackNode(LegitCallback.class.getName());
++
++        DSAMECallbackInterface result = AuthXMLUtils.createCustomCallback(node, null);
++
++        assertThat(result).isInstanceOf(LegitCallback.class);
++    }
++
++    private static Node customCallbackNode(String className) {
++        Document doc = XMLUtils.toDOMDocument(
++                "<CustomCallback className=\"" + className + "\"/>", DEBUG);
++        return doc.getDocumentElement();
++    }
++
++    // ---- getDeSerializedSubject() : Subject deserialization allowlist -------
++
++    @Test
++    public void subjectFilterAllowsSubjectGraphWithPrincipal() throws Exception {
++        Subject subject = new Subject();
++        subject.getPrincipals().add(new TestPrincipal("alice"));
++
++        Object restored = deserializeWithSubjectFilter(serialize(subject));
++
++        assertThat(restored).isInstanceOf(Subject.class);
++        assertThat(((Subject) restored).getPrincipals())
++                .extracting(Principal::getName).contains("alice");
++    }
++
++    @Test
++    public void subjectFilterRejectsNonAllowlistedClass() throws Exception {
++        // EvilPayload is Serializable but is neither a Principal nor a JDK
++        // collection/scalar, so the allowlist must reject it before readObject runs.
++        EvilPayload.deserialized = false;
++
++        Throwable thrown = catchThrowable(
++                () -> deserializeWithSubjectFilter(serialize(new EvilPayload())));
++
++        assertThat(thrown).isInstanceOf(InvalidClassException.class);
++        assertThat(EvilPayload.deserialized)
++                .as("a rejected class must not complete deserialization").isFalse();
++    }
++
++    private static byte[] serialize(Serializable object) throws IOException {
++        ByteArrayOutputStream bos = new ByteArrayOutputStream();
++        try (ObjectOutputStream oos = new ObjectOutputStream(bos)) {
++            oos.writeObject(object);
++        }
++        return bos.toByteArray();
++    }
++
++    private static Object deserializeWithSubjectFilter(byte[] bytes) throws Exception {
++        try (ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(bytes))) {
++            ois.setObjectInputFilter(subjectDeserialisationFilter());
++            return ois.readObject();
++        }
++    }
++
++    /** Reaches the production filter so the test exercises the real allowlist. */
++    private static ObjectInputFilter subjectDeserialisationFilter() throws Exception {
++        Field field = AuthXMLUtils.class.getDeclaredField("SUBJECT_DESERIALISATION_FILTER");
++        field.setAccessible(true);
++        return (ObjectInputFilter) field.get(null);
++    }
++
++    // ---- fixtures -----------------------------------------------------------
++
++    /** Stand-in for an attacker-chosen gadget class; not a DSAMECallbackInterface. */
++    public static class NonCallbackProbe {
++        static volatile boolean instantiated = false;
++
++        public NonCallbackProbe() {
++            instantiated = true;
++        }
++    }
++
++    /** A legitimate custom callback, which must keep working. */
++    public static class LegitCallback implements DSAMECallbackInterface {
++        private Map config;
++
++        @Override
++        public void setConfig(Map configMap) {
++            this.config = configMap;
++        }
++
++        @Override
++        public Map getConfig() {
++            return config;
++        }
++    }
++
++    /** Custom Principal, as an auth module would contribute to the Subject. */
++    public static class TestPrincipal implements Principal, Serializable {
++        private static final long serialVersionUID = 1L;
++        private final String name;
++
++        public TestPrincipal(String name) {
++            this.name = name;
++        }
++
++        @Override
++        public String getName() {
++            return name;
++        }
++    }
++
++    /** Serializable non-Principal payload that must be denied by the filter. */
++    public static class EvilPayload implements Serializable {
++        private static final long serialVersionUID = 1L;
++        static volatile boolean deserialized = false;
++
++        private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
++            in.defaultReadObject();
++            deserialized = true;
++        }
++    }
++}

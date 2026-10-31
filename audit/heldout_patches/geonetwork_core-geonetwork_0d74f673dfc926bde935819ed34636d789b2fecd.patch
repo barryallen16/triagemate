@@ -1,0 +1,839 @@
+From 0d74f673dfc926bde935819ed34636d789b2fecd Mon Sep 17 00:00:00 2001
+From: "github-actions[bot]"
+ <41898282+github-actions[bot]@users.noreply.github.com>
+Date: Mon, 1 Jun 2026 12:06:49 +0200
+Subject: [PATCH] [Backport 4.2.x] Harden login redirect URL validation (#9309)
+
+* Harden login redirect URL validation
+
+Centralise the validation of the post-login redirectUrl into a shared
+RedirectUtil helper and use it from the OIDC and Keycloak authentication
+filters. Only server-local relative paths are honoured; anything else
+falls back to the application context home.
+
+Add unit tests covering the accepted and rejected redirect targets.
+
+* Rename relative-only redirect check to isRelativeRedirect
+
+The single-argument isSafeRedirect only accepts server-local relative
+paths, while the four-argument overload also honours same-site absolute
+URLs. Naming both isSafeRedirect made the distinction unclear at the call
+sites.
+
+Rename the single-argument method to isRelativeRedirect to make its
+narrower contract explicit, and update the internal callers and tests
+accordingly. The four-argument overload keeps the isSafeRedirect name.
+
+---------
+
+Co-authored-by: Juan Luis Rodriguez Ponce <juanluisrp@gmail.com>
+---
+ .../JeevesNodeAwareLogoutSuccessHandler.java  |  45 ++----
+ ...uestAwareAuthenticationSuccessHandler.java |  67 ++++++++
+ .../geonet/kernel/security/RedirectUtil.java  | 151 +++++++++++++++++
+ ...eycloakAuthenticationProcessingFilter.java |  20 +--
+ ...etworkOAuth2LoginAuthenticationFilter.java |  20 +--
+ ...evesNodeAwareLogoutSuccessHandlerTest.java | 119 ++++++++++++++
+ ...AwareAuthenticationSuccessHandlerTest.java |  95 +++++++++++
+ .../kernel/security/RedirectUtilTest.java     | 152 ++++++++++++++++++
+ .../config-security/config-security-core.xml  |   2 +-
+ 9 files changed, 606 insertions(+), 65 deletions(-)
+ create mode 100644 core/src/main/java/org/fao/geonet/kernel/security/GeonetworkSavedRequestAwareAuthenticationSuccessHandler.java
+ create mode 100644 core/src/main/java/org/fao/geonet/kernel/security/RedirectUtil.java
+ create mode 100644 core/src/test/java/jeeves/config/springutil/JeevesNodeAwareLogoutSuccessHandlerTest.java
+ create mode 100644 core/src/test/java/org/fao/geonet/kernel/security/GeonetworkSavedRequestAwareAuthenticationSuccessHandlerTest.java
+ create mode 100644 core/src/test/java/org/fao/geonet/kernel/security/RedirectUtilTest.java
+
+diff --git a/core/src/main/java/jeeves/config/springutil/JeevesNodeAwareLogoutSuccessHandler.java b/core/src/main/java/jeeves/config/springutil/JeevesNodeAwareLogoutSuccessHandler.java
+index 8442c90959a7..ec2951720a82 100644
+--- a/core/src/main/java/jeeves/config/springutil/JeevesNodeAwareLogoutSuccessHandler.java
++++ b/core/src/main/java/jeeves/config/springutil/JeevesNodeAwareLogoutSuccessHandler.java
+@@ -24,21 +24,20 @@
+ package jeeves.config.springutil;
+ 
+ import org.fao.geonet.NodeInfo;
++import org.fao.geonet.kernel.security.RedirectUtil;
+ import org.fao.geonet.kernel.setting.SettingManager;
+ import org.fao.geonet.kernel.setting.Settings;
+ import org.fao.geonet.constants.Geonet;
++import org.fao.geonet.utils.Log;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.context.ConfigurableApplicationContext;
+ import org.springframework.security.core.Authentication;
+ import org.springframework.security.web.authentication.AbstractAuthenticationTargetUrlRequestHandler;
+ import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
+ import org.apache.commons.lang3.StringUtils;
+-import org.fao.geonet.kernel.setting.SettingInfo;
+ 
+ 
+ import java.io.IOException;
+-import java.net.MalformedURLException;
+-import java.net.URL;
+ 
+ import javax.servlet.ServletContext;
+ import javax.servlet.ServletException;
+@@ -74,35 +73,19 @@ protected String determineTargetUrl(HttpServletRequest request, HttpServletRespo
+ 
+         String urlPatternValue = super.determineTargetUrl(request, response);
+ 
+-        if (urlPatternValue != null) {
+-
+-            if (!urlPatternValue.startsWith("/")) {
+-                // Check the url to redirect it's from the same site, otherwise use the default target url
+-                URL urlPattern = null;
+-                try {
+-                    urlPattern = new URL(urlPatternValue);
+-
+-                    String hostName = urlPattern.getHost();
+-                    String protocol = urlPattern.getProtocol();
+-                    int port = urlPattern.getPort() == -1 ? urlPattern.getDefaultPort() : urlPattern.getPort();
+-
+-                    String siteHost = settingManager.getValue(Settings.SYSTEM_SERVER_HOST);
+-                    String siteProtocol = settingManager.getValue(Settings.SYSTEM_SERVER_PROTOCOL);
+-                    
+-                    // some conditional logic to handle the case where there's no port in the settings
+-                    SettingInfo si = new SettingInfo();
+-                    int sitePort = si.getSitePort(); 
+-
+-                    if (!hostName.equalsIgnoreCase(siteHost) ||
+-                        !protocol.equalsIgnoreCase(siteProtocol) ||
+-                        port != sitePort) {
+-                        urlPatternValue = getDefaultTargetUrl();
+-                    }
+-                } catch (MalformedURLException e) {
+-                    urlPatternValue = getDefaultTargetUrl();
+-                }
++        // Only honour the requested target when it is relative to the current server
++        // or an absolute URL pointing back to this same site. Otherwise fall back to
++        // the configured default target URL. This also rejects protocol-relative URLs
++        // such as "//evil.example.com", which would otherwise resolve to an external host.
++        String siteHost = settingManager.getValue(Settings.SYSTEM_SERVER_HOST);
++        String siteProtocol = settingManager.getValue(Settings.SYSTEM_SERVER_PROTOCOL);
++        Integer sitePort = settingManager.getServerPort();
++
++        if (!RedirectUtil.isSafeRedirect(urlPatternValue, siteHost, siteProtocol, sitePort)) {
++            if (StringUtils.isNotEmpty(urlPatternValue)) {
++                Log.warning(Geonet.SECURITY,
++                    "Refused unsafe logout redirect to '" + urlPatternValue + "'. Redirected to the default target instead.");
+             }
+-        } else {
+             urlPatternValue = getDefaultTargetUrl();
+         }
+ 
+diff --git a/core/src/main/java/org/fao/geonet/kernel/security/GeonetworkSavedRequestAwareAuthenticationSuccessHandler.java b/core/src/main/java/org/fao/geonet/kernel/security/GeonetworkSavedRequestAwareAuthenticationSuccessHandler.java
+new file mode 100644
+index 000000000000..be69bf77b707
+--- /dev/null
++++ b/core/src/main/java/org/fao/geonet/kernel/security/GeonetworkSavedRequestAwareAuthenticationSuccessHandler.java
+@@ -0,0 +1,67 @@
++/*
++ * Copyright (C) 2001-2026 Food and Agriculture Organization of the
++ * United Nations (FAO-UN), United Nations World Food Programme (WFP)
++ * and United Nations Environment Programme (UNEP)
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or (at
++ * your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
++ *
++ * Contact: Jeroen Ticheler - FAO - Viale delle Terme di Caracalla 2,
++ * Rome - Italy. email: geonetwork@osgeo.org
++ */
++package org.fao.geonet.kernel.security;
++
++import org.fao.geonet.constants.Geonet;
++import org.fao.geonet.kernel.setting.SettingManager;
++import org.fao.geonet.kernel.setting.Settings;
++import org.fao.geonet.utils.Log;
++import org.springframework.beans.factory.annotation.Autowired;
++import org.springframework.security.web.authentication.SavedRequestAwareAuthenticationSuccessHandler;
++
++import javax.servlet.http.HttpServletRequest;
++import javax.servlet.http.HttpServletResponse;
++
++/**
++ * {@link SavedRequestAwareAuthenticationSuccessHandler} that restricts the
++ * post-login redirect supplied through the {@code targetUrlParameter}
++ * (e.g. {@code redirectUrl}) to safe destinations.
++ *
++ * <p>A destination is honoured when it is relative to the current server or an
++ * absolute URL pointing back to this same site. Any other target (a cross-site
++ * absolute URL or a protocol-relative URL such as {@code //evil.example.com})
++ * falls back to the configured default target URL.</p>
++ */
++public class GeonetworkSavedRequestAwareAuthenticationSuccessHandler
++    extends SavedRequestAwareAuthenticationSuccessHandler {
++
++    @Autowired
++    private SettingManager settingManager;
++
++    @Override
++    protected String determineTargetUrl(HttpServletRequest request, HttpServletResponse response) {
++        String targetUrl = super.determineTargetUrl(request, response);
++
++        String siteHost = settingManager.getValue(Settings.SYSTEM_SERVER_HOST);
++        String siteProtocol = settingManager.getValue(Settings.SYSTEM_SERVER_PROTOCOL);
++        Integer sitePort = settingManager.getServerPort();
++
++        if (RedirectUtil.isSafeRedirect(targetUrl, siteHost, siteProtocol, sitePort)) {
++            return targetUrl;
++        }
++
++        Log.warning(Geonet.SECURITY,
++            "Refused unsafe login redirect to '" + targetUrl + "'. Redirected to the default target instead.");
++        return getDefaultTargetUrl();
++    }
++}
+diff --git a/core/src/main/java/org/fao/geonet/kernel/security/RedirectUtil.java b/core/src/main/java/org/fao/geonet/kernel/security/RedirectUtil.java
+new file mode 100644
+index 000000000000..67009d1e9af8
+--- /dev/null
++++ b/core/src/main/java/org/fao/geonet/kernel/security/RedirectUtil.java
+@@ -0,0 +1,151 @@
++/*
++ * Copyright (C) 2001-2026 Food and Agriculture Organization of the
++ * United Nations (FAO-UN), United Nations World Food Programme (WFP)
++ * and United Nations Environment Programme (UNEP)
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or (at
++ * your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
++ *
++ * Contact: Jeroen Ticheler - FAO - Viale delle Terme di Caracalla 2,
++ * Rome - Italy. email: geonetwork@osgeo.org
++ */
++package org.fao.geonet.kernel.security;
++
++import org.apache.commons.lang3.StringUtils;
++import org.fao.geonet.constants.Geonet;
++import org.fao.geonet.utils.Log;
++
++import javax.servlet.http.HttpServletRequest;
++import javax.servlet.http.HttpServletResponse;
++import java.io.IOException;
++import java.net.MalformedURLException;
++import java.net.URI;
++import java.net.URISyntaxException;
++import java.net.URL;
++
++/**
++ * Helper to safely redirect users to a location provided as a request parameter
++ * (e.g. {@code redirectUrl} after login/logout).
++ *
++ * <p>A redirect target is only honoured when it points to a location that is
++ * relative to the current server. Otherwise the request is redirected to the
++ * application context home.</p>
++ */
++public final class RedirectUtil {
++
++    private RedirectUtil() {
++    }
++
++    /**
++     * Redirect the response to {@code redirectUrl} when it is a safe, server-local
++     * relative location; otherwise redirect to the application context home.
++     *
++     * @param request     the current request, used to derive the context home.
++     * @param response     the response to redirect.
++     * @param redirectUrl the candidate redirect location (may be {@code null}).
++     */
++    public static void sendSafeRedirect(HttpServletRequest request, HttpServletResponse response, String redirectUrl)
++        throws IOException {
++        if (isRelativeRedirect(redirectUrl)) {
++            response.sendRedirect(redirectUrl);
++        } else {
++            if (StringUtils.isNotEmpty(redirectUrl)) {
++                Log.warning(Geonet.SECURITY,
++                    "Refused unsafe login redirect to '" + redirectUrl + "'. Redirected to context home instead.");
++            }
++            response.sendRedirect(request.getContextPath());
++        }
++    }
++
++    /**
++     * A redirect target is considered safe only when it is relative to the
++     * current server. It must:
++     * <ul>
++     *     <li>not be empty,</li>
++     *     <li>be a path starting with a single {@code /} (so it is anchored to the
++     *     current host) but not {@code //} nor {@code /\\}, which browsers resolve
++     *     as protocol-relative URLs pointing to an external host,</li>
++     *     <li>not be an absolute URI (i.e. carry a scheme), and</li>
++     *     <li>not declare any authority/host component.</li>
++     * </ul>
++     *
++     * @param redirectUrl the candidate redirect location (may be {@code null}).
++     * @return {@code true} if the location is a safe, server-local relative path.
++     */
++    public static boolean isRelativeRedirect(String redirectUrl) {
++        if (StringUtils.isEmpty(redirectUrl)) {
++            return false;
++        }
++
++        // Browsers may normalise backslashes to forward slashes, so account for both
++        // when checking for protocol-relative URLs such as "//host" or "/\host".
++        String normalized = redirectUrl.replace('\\', '/');
++
++        // Must be anchored to the current host with a single leading slash.
++        if (!normalized.startsWith("/") || normalized.startsWith("//")) {
++            return false;
++        }
++
++        try {
++            URI redirectUri = new URI(redirectUrl);
++            // Reject absolute URLs (with a scheme) and any URL declaring a host/authority.
++            if (redirectUri.isAbsolute()
++                || redirectUri.getHost() != null
++                || redirectUri.getAuthority() != null) {
++                return false;
++            }
++        } catch (URISyntaxException e) {
++            return false;
++        }
++
++        return true;
++    }
++
++    /**
++     * Like {@link #isRelativeRedirect(String)} but, in addition to server-local
++     * relative locations, also accepts absolute URLs that point back to the
++     * current site (matching host, protocol and port).
++     *
++     * <p>This is used where redirecting to an absolute same-site URL is a
++     * legitimate feature, e.g. returning the user to the page they were on
++     * before signing in.</p>
++     *
++     * @param redirectUrl the candidate redirect location (may be {@code null}).
++     * @param siteHost     the configured site host, e.g. {@code www.example.org}.
++     * @param siteProtocol the configured site protocol, e.g. {@code https}.
++     * @param sitePort     the configured site port (may be {@code null}).
++     * @return {@code true} if the location is safe to redirect to.
++     */
++    public static boolean isSafeRedirect(String redirectUrl, String siteHost, String siteProtocol, Integer sitePort) {
++        if (isRelativeRedirect(redirectUrl)) {
++            return true;
++        }
++
++        if (StringUtils.isEmpty(redirectUrl) || StringUtils.isEmpty(siteHost)
++            || StringUtils.isEmpty(siteProtocol) || sitePort == null) {
++            return false;
++        }
++
++        try {
++            URL url = new URL(redirectUrl);
++            int port = url.getPort() == -1 ? url.getDefaultPort() : url.getPort();
++            return siteHost.equalsIgnoreCase(url.getHost())
++                && siteProtocol.equalsIgnoreCase(url.getProtocol())
++                && sitePort == port;
++        } catch (MalformedURLException e) {
++            // Not a valid absolute URL (this also rejects protocol-relative "//host").
++            return false;
++        }
++    }
++}
+diff --git a/core/src/main/java/org/fao/geonet/kernel/security/keycloak/KeycloakAuthenticationProcessingFilter.java b/core/src/main/java/org/fao/geonet/kernel/security/keycloak/KeycloakAuthenticationProcessingFilter.java
+index 16d6a44a7d8c..95a3eeb5982c 100644
+--- a/core/src/main/java/org/fao/geonet/kernel/security/keycloak/KeycloakAuthenticationProcessingFilter.java
++++ b/core/src/main/java/org/fao/geonet/kernel/security/keycloak/KeycloakAuthenticationProcessingFilter.java
+@@ -27,6 +27,7 @@
+ 
+ import org.apache.commons.lang3.StringUtils;
+ import org.fao.geonet.constants.Geonet;
++import org.fao.geonet.kernel.security.RedirectUtil;
+ import org.fao.geonet.utils.Log;
+ import org.keycloak.KeycloakPrincipal;
+ 
+@@ -53,7 +54,6 @@
+ import javax.servlet.http.HttpServletResponse;
+ import java.io.IOException;
+ import java.io.UnsupportedEncodingException;
+-import java.net.URI;
+ import java.net.URLDecoder;
+ import java.util.IllformedLocaleException;
+ import java.util.LinkedHashMap;
+@@ -147,20 +147,10 @@ protected void successfulAuthentication(HttpServletRequest request, HttpServletR
+                             }
+                         } else {
+                             Map<String, List<String>> qsMap = splitQueryString(request.getQueryString());
+-                            if (qsMap.containsKey("redirectUrl")) {
+-                                URI redirectUri = new URI(qsMap.get("redirectUrl").get(0));
+-                                // redirectUrl should only be relative to the current server. So only redirect if it is not an absolute path
+-                                if (redirectUri != null && !redirectUri.isAbsolute()) {
+-                                    response.sendRedirect(redirectUri.toString());
+-                                } else {
+-                                    // If the redirect url ends up being null or absolute url then lets redirect back to the context home.
+-                                    Log.warning(Geonet.SECURITY, "Failed to perform login redirect to '" + qsMap.get("redirectUrl").get(0) + "'. Redirected to context home");
+-                                    response.sendRedirect(request.getContextPath());
+-                                }
+-                            } else {
+-                                // If the redirect url did not exist then lets redirect back to the context home.
+-                                response.sendRedirect(request.getContextPath());
+-                            }
++                            // redirectUrl should only be relative to the current server, otherwise
++                            // fall back to the context home.
++                            String redirectUrl = qsMap.containsKey("redirectUrl") ? qsMap.get("redirectUrl").get(0) : null;
++                            RedirectUtil.sendSafeRedirect(request, response, redirectUrl);
+                         }
+ 
+                     } else {
+diff --git a/core/src/main/java/org/fao/geonet/kernel/security/openidconnect/GeonetworkOAuth2LoginAuthenticationFilter.java b/core/src/main/java/org/fao/geonet/kernel/security/openidconnect/GeonetworkOAuth2LoginAuthenticationFilter.java
+index 0addd983026b..a40b90452830 100644
+--- a/core/src/main/java/org/fao/geonet/kernel/security/openidconnect/GeonetworkOAuth2LoginAuthenticationFilter.java
++++ b/core/src/main/java/org/fao/geonet/kernel/security/openidconnect/GeonetworkOAuth2LoginAuthenticationFilter.java
+@@ -25,6 +25,7 @@
+ import org.apache.commons.lang.LocaleUtils;
+ import org.apache.commons.lang3.StringUtils;
+ import org.fao.geonet.constants.Geonet;
++import org.fao.geonet.kernel.security.RedirectUtil;
+ import org.fao.geonet.utils.Log;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.security.authentication.event.InteractiveAuthenticationSuccessEvent;
+@@ -45,8 +46,6 @@
+ import javax.servlet.http.HttpServletRequest;
+ import javax.servlet.http.HttpServletResponse;
+ import java.io.IOException;
+-import java.net.URI;
+-import java.net.URISyntaxException;
+ import java.util.IllformedLocaleException;
+ import java.util.Locale;
+ 
+@@ -120,22 +119,7 @@ protected void successfulAuthentication(HttpServletRequest request,
+ 
+             //cf GN keycloak
+             String redirectURL = findQueryParameter(request, "redirectUrl");
+-            if (redirectURL != null) {
+-                try {
+-                    URI redirectUri = new URI(redirectURL);
+-                    if (redirectUri != null && !redirectUri.isAbsolute()) {
+-                        response.sendRedirect(redirectUri.toString());
+-                    } else {
+-                        // If the redirect url ends up being null or absolute url then lets redirect back to the context home.
+-                        Log.warning(Geonet.SECURITY, "Failed to perform login redirect to '" + redirectURL + "'. Redirected to context home");
+-                        response.sendRedirect(request.getContextPath());
+-                    }
+-                } catch (URISyntaxException e) {
+-                    response.sendRedirect(request.getContextPath());
+-                }
+-            } else {
+-                response.sendRedirect(request.getContextPath());
+-            }
++            RedirectUtil.sendSafeRedirect(request, response, redirectURL);
+ 
+             // Set users preferred locale if it exists. - cf. keycloak
+             String localeString = oidcUser.getLocale();
+diff --git a/core/src/test/java/jeeves/config/springutil/JeevesNodeAwareLogoutSuccessHandlerTest.java b/core/src/test/java/jeeves/config/springutil/JeevesNodeAwareLogoutSuccessHandlerTest.java
+new file mode 100644
+index 000000000000..1ae966bd5cf0
+--- /dev/null
++++ b/core/src/test/java/jeeves/config/springutil/JeevesNodeAwareLogoutSuccessHandlerTest.java
+@@ -0,0 +1,119 @@
++/*
++ * Copyright (C) 2001-2026 Food and Agriculture Organization of the
++ * United Nations (FAO-UN), United Nations World Food Programme (WFP)
++ * and United Nations Environment Programme (UNEP)
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or (at
++ * your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
++ *
++ * Contact: Jeroen Ticheler - FAO - Viale delle Terme di Caracalla 2,
++ * Rome - Italy. email: geonetwork@osgeo.org
++ */
++package jeeves.config.springutil;
++
++import org.fao.geonet.NodeInfo;
++import org.fao.geonet.kernel.setting.SettingManager;
++import org.fao.geonet.kernel.setting.Settings;
++import org.junit.After;
++import org.junit.Before;
++import org.junit.Test;
++import org.mockito.MockedStatic;
++import org.springframework.context.ConfigurableApplicationContext;
++import org.springframework.test.util.ReflectionTestUtils;
++
++import javax.servlet.ServletContext;
++import javax.servlet.http.HttpServletRequest;
++import javax.servlet.http.HttpServletResponse;
++
++import static org.junit.Assert.assertEquals;
++import static org.mockito.ArgumentMatchers.any;
++import static org.mockito.Mockito.mock;
++import static org.mockito.Mockito.when;
++
++public class JeevesNodeAwareLogoutSuccessHandlerTest {
++
++    private JeevesNodeAwareLogoutSuccessHandler handler;
++    private SettingManager settingManager;
++    private MockedStatic<JeevesDelegatingFilterProxy> proxyStatic;
++
++    @Before
++    public void setUp() {
++        handler = new JeevesNodeAwareLogoutSuccessHandler();
++        handler.setTargetUrlParameter("redirectUrl");
++        handler.setDefaultTargetUrl("/srv/@@nodeId@@/catalog.search");
++
++        settingManager = mock(SettingManager.class);
++        when(settingManager.getValue(Settings.SYSTEM_SERVER_HOST)).thenReturn("www.example.org");
++        when(settingManager.getValue(Settings.SYSTEM_SERVER_PROTOCOL)).thenReturn("https");
++        when(settingManager.getServerPort()).thenReturn(443);
++
++        ReflectionTestUtils.setField(handler, "settingManager", settingManager);
++        ReflectionTestUtils.setField(handler, "context", mock(ServletContext.class));
++
++        NodeInfo nodeInfo = new NodeInfo();
++        nodeInfo.setId("srv");
++        ConfigurableApplicationContext applicationContext = mock(ConfigurableApplicationContext.class);
++        when(applicationContext.getBean(NodeInfo.class)).thenReturn(nodeInfo);
++
++        proxyStatic = org.mockito.Mockito.mockStatic(JeevesDelegatingFilterProxy.class);
++        proxyStatic.when(() -> JeevesDelegatingFilterProxy.getServletContext(any()))
++            .thenReturn(mock(ServletContext.class));
++        proxyStatic.when(() -> JeevesDelegatingFilterProxy.getApplicationContextFromServletContext(any()))
++            .thenReturn(applicationContext);
++    }
++
++    @After
++    public void tearDown() {
++        proxyStatic.close();
++    }
++
++    private String determineTargetUrl(String redirectUrlParam) {
++        HttpServletRequest request = mock(HttpServletRequest.class);
++        HttpServletResponse response = mock(HttpServletResponse.class);
++        when(request.getParameter("redirectUrl")).thenReturn(redirectUrlParam);
++        return (String) ReflectionTestUtils.invokeMethod(handler, "determineTargetUrl", request, response);
++    }
++
++    @Test
++    public void relativeTargetIsHonoured() {
++        assertEquals("/portal/srv/eng/catalog.search", determineTargetUrl("/portal/srv/eng/catalog.search"));
++    }
++
++    @Test
++    public void sameSiteAbsoluteTargetIsHonoured() {
++        assertEquals("https://www.example.org/portal", determineTargetUrl("https://www.example.org/portal"));
++    }
++
++    @Test
++    public void protocolRelativeTargetFallsBackToDefault() {
++        // The //host bypass: starts with "/" but resolves to an external host.
++        assertEquals("/srv/srv/catalog.search", determineTargetUrl("//evil.example.com"));
++    }
++
++    @Test
++    public void backslashProtocolRelativeTargetFallsBackToDefault() {
++        assertEquals("/srv/srv/catalog.search", determineTargetUrl("/\\evil.example.com"));
++    }
++
++    @Test
++    public void crossSiteAbsoluteTargetFallsBackToDefault() {
++        assertEquals("/srv/srv/catalog.search", determineTargetUrl("https://evil.example.com/phish"));
++    }
++
++    @Test
++    public void noRedirectParameterUsesDefaultTarget() {
++        // Default target has its @@nodeId@@ placeholder substituted with the node id.
++        assertEquals("/srv/srv/catalog.search", determineTargetUrl(null));
++    }
++}
+diff --git a/core/src/test/java/org/fao/geonet/kernel/security/GeonetworkSavedRequestAwareAuthenticationSuccessHandlerTest.java b/core/src/test/java/org/fao/geonet/kernel/security/GeonetworkSavedRequestAwareAuthenticationSuccessHandlerTest.java
+new file mode 100644
+index 000000000000..15ab34441dd3
+--- /dev/null
++++ b/core/src/test/java/org/fao/geonet/kernel/security/GeonetworkSavedRequestAwareAuthenticationSuccessHandlerTest.java
+@@ -0,0 +1,95 @@
++/*
++ * Copyright (C) 2001-2026 Food and Agriculture Organization of the
++ * United Nations (FAO-UN), United Nations World Food Programme (WFP)
++ * and United Nations Environment Programme (UNEP)
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or (at
++ * your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
++ *
++ * Contact: Jeroen Ticheler - FAO - Viale delle Terme di Caracalla 2,
++ * Rome - Italy. email: geonetwork@osgeo.org
++ */
++package org.fao.geonet.kernel.security;
++
++import org.fao.geonet.kernel.setting.SettingManager;
++import org.fao.geonet.kernel.setting.Settings;
++import org.junit.Before;
++import org.junit.Test;
++import org.junit.runner.RunWith;
++import org.mockito.Mock;
++import org.mockito.junit.MockitoJUnitRunner;
++import org.springframework.test.util.ReflectionTestUtils;
++
++import javax.servlet.http.HttpServletRequest;
++import javax.servlet.http.HttpServletResponse;
++
++import static org.junit.Assert.assertEquals;
++import static org.mockito.Mockito.lenient;
++import static org.mockito.Mockito.mock;
++import static org.mockito.Mockito.when;
++
++@RunWith(MockitoJUnitRunner.class)
++public class GeonetworkSavedRequestAwareAuthenticationSuccessHandlerTest {
++
++    @Mock
++    private SettingManager settingManager;
++
++    private GeonetworkSavedRequestAwareAuthenticationSuccessHandler handler;
++
++    @Before
++    public void setUp() {
++        handler = new GeonetworkSavedRequestAwareAuthenticationSuccessHandler();
++        handler.setTargetUrlParameter("redirectUrl");
++        handler.setDefaultTargetUrl("/");
++        ReflectionTestUtils.setField(handler, "settingManager", settingManager);
++
++        lenient().when(settingManager.getValue(Settings.SYSTEM_SERVER_HOST)).thenReturn("www.example.org");
++        lenient().when(settingManager.getValue(Settings.SYSTEM_SERVER_PROTOCOL)).thenReturn("https");
++        lenient().when(settingManager.getServerPort()).thenReturn(443);
++    }
++
++    private String determineTargetUrl(String redirectUrlParam) {
++        HttpServletRequest request = mock(HttpServletRequest.class);
++        HttpServletResponse response = mock(HttpServletResponse.class);
++        when(request.getParameter("redirectUrl")).thenReturn(redirectUrlParam);
++        return (String) ReflectionTestUtils.invokeMethod(handler, "determineTargetUrl", request, response);
++    }
++
++    @Test
++    public void relativeTargetIsHonoured() {
++        assertEquals("/geonetwork/srv/eng/catalog.search",
++            determineTargetUrl("/geonetwork/srv/eng/catalog.search"));
++    }
++
++    @Test
++    public void sameSiteAbsoluteTargetIsHonoured() {
++        assertEquals("https://www.example.org/geonetwork/srv/eng/catalog.search",
++            determineTargetUrl("https://www.example.org/geonetwork/srv/eng/catalog.search"));
++    }
++
++    @Test
++    public void protocolRelativeTargetFallsBackToDefault() {
++        assertEquals("/", determineTargetUrl("//evil.example.com"));
++    }
++
++    @Test
++    public void crossSiteAbsoluteTargetFallsBackToDefault() {
++        assertEquals("/", determineTargetUrl("https://evil.example.com/phish"));
++    }
++
++    @Test
++    public void noRedirectParameterUsesDefaultTarget() {
++        assertEquals("/", determineTargetUrl(null));
++    }
++}
+diff --git a/core/src/test/java/org/fao/geonet/kernel/security/RedirectUtilTest.java b/core/src/test/java/org/fao/geonet/kernel/security/RedirectUtilTest.java
+new file mode 100644
+index 000000000000..2606bec76b92
+--- /dev/null
++++ b/core/src/test/java/org/fao/geonet/kernel/security/RedirectUtilTest.java
+@@ -0,0 +1,152 @@
++/*
++ * Copyright (C) 2001-2026 Food and Agriculture Organization of the
++ * United Nations (FAO-UN), United Nations World Food Programme (WFP)
++ * and United Nations Environment Programme (UNEP)
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or (at
++ * your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
++ *
++ * Contact: Jeroen Ticheler - FAO - Viale delle Terme di Caracalla 2,
++ * Rome - Italy. email: geonetwork@osgeo.org
++ */
++package org.fao.geonet.kernel.security;
++
++import org.junit.Test;
++import org.junit.runner.RunWith;
++import org.mockito.junit.MockitoJUnitRunner;
++
++import javax.servlet.http.HttpServletRequest;
++import javax.servlet.http.HttpServletResponse;
++import java.io.IOException;
++
++import static org.junit.Assert.assertFalse;
++import static org.junit.Assert.assertTrue;
++import static org.mockito.Mockito.mock;
++import static org.mockito.Mockito.verify;
++import static org.mockito.Mockito.when;
++
++@RunWith(MockitoJUnitRunner.class)
++public class RedirectUtilTest {
++
++    @Test
++    public void serverLocalPathsAreSafe() {
++        assertTrue(RedirectUtil.isRelativeRedirect("/geonetwork"));
++        assertTrue(RedirectUtil.isRelativeRedirect("/geonetwork/srv/eng/catalog.search"));
++        assertTrue(RedirectUtil.isRelativeRedirect("/geonetwork/srv/eng/catalog.search#/home"));
++        assertTrue(RedirectUtil.isRelativeRedirect("/geonetwork/srv/eng/catalog.search?a=b&c=d"));
++    }
++
++    @Test
++    public void emptyOrNullIsNotSafe() {
++        assertFalse(RedirectUtil.isRelativeRedirect(null));
++        assertFalse(RedirectUtil.isRelativeRedirect(""));
++    }
++
++    @Test
++    public void absoluteUrlsAreNotSafe() {
++        assertFalse(RedirectUtil.isRelativeRedirect("http://evil.example.com"));
++        assertFalse(RedirectUtil.isRelativeRedirect("https://evil.example.com/path"));
++        assertFalse(RedirectUtil.isRelativeRedirect("javascript:alert(1)"));
++    }
++
++    @Test
++    public void protocolRelativeUrlsAreNotSafe() {
++        // No scheme, so URI.isAbsolute() returns false, but the browser still
++        // resolves these to an external host.
++        assertFalse(RedirectUtil.isRelativeRedirect("//evil.example.com"));
++        assertFalse(RedirectUtil.isRelativeRedirect("//evil.example.com/path"));
++        assertFalse(RedirectUtil.isRelativeRedirect("/\\evil.example.com"));
++        assertFalse(RedirectUtil.isRelativeRedirect("\\\\evil.example.com"));
++        assertFalse(RedirectUtil.isRelativeRedirect("\\/evil.example.com"));
++    }
++
++    @Test
++    public void pathsNotAnchoredToHostAreNotSafe() {
++        assertFalse(RedirectUtil.isRelativeRedirect("evil.example.com"));
++        assertFalse(RedirectUtil.isRelativeRedirect("catalog.search"));
++    }
++
++    @Test
++    public void sameSiteAbsoluteUrlsAreSafe() {
++        // Relative server-local paths remain safe regardless of site settings.
++        assertTrue(RedirectUtil.isSafeRedirect("/geonetwork/srv/eng/catalog.search",
++            "www.example.org", "https", 443));
++
++        // Absolute URLs to the same host/protocol/port are accepted.
++        assertTrue(RedirectUtil.isSafeRedirect("https://www.example.org/geonetwork/srv/eng/catalog.search",
++            "www.example.org", "https", 443));
++        assertTrue(RedirectUtil.isSafeRedirect("https://www.example.org:8443/geonetwork",
++            "www.example.org", "https", 8443));
++        // Host comparison is case-insensitive.
++        assertTrue(RedirectUtil.isSafeRedirect("https://WWW.EXAMPLE.ORG/geonetwork",
++            "www.example.org", "https", 443));
++    }
++
++    @Test
++    public void differentSiteAbsoluteUrlsAreNotSafe() {
++        assertFalse(RedirectUtil.isSafeRedirect("https://evil.example.com/geonetwork",
++            "www.example.org", "https", 443));
++        // Same host but different protocol.
++        assertFalse(RedirectUtil.isSafeRedirect("http://www.example.org/geonetwork",
++            "www.example.org", "https", 443));
++        // Same host but different port.
++        assertFalse(RedirectUtil.isSafeRedirect("https://www.example.org:9999/geonetwork",
++            "www.example.org", "https", 443));
++        // Protocol-relative URLs are still rejected even with site settings.
++        assertFalse(RedirectUtil.isSafeRedirect("//evil.example.com",
++            "www.example.org", "https", 443));
++    }
++
++    @Test
++    public void sameSiteCheckIsSafeWhenSiteSettingsAreIncomplete() {
++        // Relative paths still pass, absolute URLs cannot be validated and are rejected.
++        assertTrue(RedirectUtil.isSafeRedirect("/geonetwork", null, null, null));
++        assertFalse(RedirectUtil.isSafeRedirect("https://www.example.org/geonetwork", null, null, null));
++        assertFalse(RedirectUtil.isSafeRedirect("https://www.example.org/geonetwork",
++            "www.example.org", "https", null));
++    }
++
++    @Test
++    public void sendSafeRedirectFollowsSafeTarget() throws IOException {
++        HttpServletRequest request = mock(HttpServletRequest.class);
++        HttpServletResponse response = mock(HttpServletResponse.class);
++        when(request.getContextPath()).thenReturn("/geonetwork");
++
++        RedirectUtil.sendSafeRedirect(request, response, "/geonetwork/srv/eng/catalog.search");
++
++        verify(response).sendRedirect("/geonetwork/srv/eng/catalog.search");
++    }
++
++    @Test
++    public void sendSafeRedirectFallsBackToContextHomeForUnsafeTarget() throws IOException {
++        HttpServletRequest request = mock(HttpServletRequest.class);
++        HttpServletResponse response = mock(HttpServletResponse.class);
++        when(request.getContextPath()).thenReturn("/geonetwork");
++
++        RedirectUtil.sendSafeRedirect(request, response, "//evil.example.com");
++
++        verify(response).sendRedirect("/geonetwork");
++    }
++
++    @Test
++    public void sendSafeRedirectFallsBackToContextHomeForNullTarget() throws IOException {
++        HttpServletRequest request = mock(HttpServletRequest.class);
++        HttpServletResponse response = mock(HttpServletResponse.class);
++        when(request.getContextPath()).thenReturn("/geonetwork");
++
++        RedirectUtil.sendSafeRedirect(request, response, null);
++
++        verify(response).sendRedirect("/geonetwork");
++    }
++}
+diff --git a/web/src/main/webapp/WEB-INF/config-security/config-security-core.xml b/web/src/main/webapp/WEB-INF/config-security/config-security-core.xml
+index db1ed02ef30b..dd9d70c8966b 100644
+--- a/web/src/main/webapp/WEB-INF/config-security/config-security-core.xml
++++ b/web/src/main/webapp/WEB-INF/config-security/config-security-core.xml
+@@ -166,7 +166,7 @@
+     </property>
+     <property name="authenticationSuccessHandler">
+       <bean
+-        class="org.springframework.security.web.authentication.SavedRequestAwareAuthenticationSuccessHandler">
++        class="org.fao.geonet.kernel.security.GeonetworkSavedRequestAwareAuthenticationSuccessHandler">
+         <property name="defaultTargetUrl" value="/"/>
+         <property name="targetUrlParameter" value="redirectUrl"/>
+         <property name="requestCache" ref="requestCache"/>

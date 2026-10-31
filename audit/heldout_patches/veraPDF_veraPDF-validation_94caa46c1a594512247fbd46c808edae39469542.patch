@@ -1,0 +1,69 @@
+From 94caa46c1a594512247fbd46c808edae39469542 Mon Sep 17 00:00:00 2001
+From: Maxim <maxplusim@mail.ru>
+Date: Tue, 19 May 2026 18:17:05 +0300
+Subject: [PATCH] Improve security of the DocumentBuilder
+
+---
+ .../main/java/org/verapdf/gf/model/impl/pd/GFPDAcroForm.java | 5 ++---
+ .../org/verapdf/gf/model/tools/DictionaryKeysHelper.java     | 5 ++---
+ 2 files changed, 4 insertions(+), 6 deletions(-)
+
+diff --git a/validation-model/src/main/java/org/verapdf/gf/model/impl/pd/GFPDAcroForm.java b/validation-model/src/main/java/org/verapdf/gf/model/impl/pd/GFPDAcroForm.java
+index 614022b5f..f3bd6520d 100644
+--- a/validation-model/src/main/java/org/verapdf/gf/model/impl/pd/GFPDAcroForm.java
++++ b/validation-model/src/main/java/org/verapdf/gf/model/impl/pd/GFPDAcroForm.java
+@@ -30,13 +30,13 @@
+ import org.verapdf.model.baselayer.Object;
+ import org.verapdf.model.pdlayer.PDAcroForm;
+ import org.verapdf.model.pdlayer.PDFormField;
++import org.verapdf.xmp.tools.SecureXML;
+ import org.w3c.dom.Document;
+ import org.w3c.dom.Node;
+ import org.w3c.dom.NodeList;
+ import org.xml.sax.InputSource;
+ 
+ import javax.xml.parsers.DocumentBuilder;
+-import javax.xml.parsers.DocumentBuilderFactory;
+ import java.util.ArrayList;
+ import java.util.Collections;
+ import java.util.List;
+@@ -104,8 +104,7 @@ public String getdynamicRender() {
+         }
+         if (object != null && object.getType() == COSObjType.COS_STREAM) {
+             try (ASInputStream asInputStream = object.getData(COSStream.FilterFlags.DECODE)) {
+-                DocumentBuilder builder = DocumentBuilderFactory.newInstance().newDocumentBuilder();
+-                builder.setErrorHandler(null);
++                DocumentBuilder builder = SecureXML.newSafeDocumentBuilder();
+                 Document doc = builder.parse(new InputSource(new ByteBuffer(asInputStream).getByteStream()));
+                 Node configParent = getProperty(doc, XDP);
+                 if (configParent == null) {
+diff --git a/validation-model/src/main/java/org/verapdf/gf/model/tools/DictionaryKeysHelper.java b/validation-model/src/main/java/org/verapdf/gf/model/tools/DictionaryKeysHelper.java
+index a44e3e881..7baf864a8 100644
+--- a/validation-model/src/main/java/org/verapdf/gf/model/tools/DictionaryKeysHelper.java
++++ b/validation-model/src/main/java/org/verapdf/gf/model/tools/DictionaryKeysHelper.java
+@@ -20,6 +20,7 @@
+  */
+ package org.verapdf.gf.model.tools;
+ 
++import org.verapdf.xmp.tools.SecureXML;
+ import org.xml.sax.InputSource;
+ import org.verapdf.as.ASAtom;
+ import org.verapdf.cos.*;
+@@ -29,7 +30,6 @@
+ import org.verapdf.xmp.impl.ByteBuffer;
+ 
+ import javax.xml.parsers.DocumentBuilder;
+-import javax.xml.parsers.DocumentBuilderFactory;
+ import java.io.InputStream;
+ import java.util.logging.Level;
+ import java.util.logging.Logger;
+@@ -67,8 +67,7 @@ public static String getRichTextStringOrStreamEntryStringRepresentation(COSObjec
+             } else {
+                 return null;
+             }
+-            DocumentBuilder builder = DocumentBuilderFactory.newInstance().newDocumentBuilder();
+-            builder.setErrorHandler(null);
++            DocumentBuilder builder = SecureXML.newSafeDocumentBuilder();
+             Document doc = builder.parse(new InputSource(inputStream));
+             return getAllNodeText(doc);
+         } catch (Exception e) {

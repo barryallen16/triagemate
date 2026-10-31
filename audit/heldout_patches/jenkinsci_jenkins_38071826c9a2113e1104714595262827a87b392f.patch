@@ -1,0 +1,79 @@
+From 38071826c9a2113e1104714595262827a87b392f Mon Sep 17 00:00:00 2001
+From: Kevin-CB <kguerroudj@cloudbees.com>
+Date: Fri, 29 May 2026 07:39:27 +0000
+Subject: [PATCH] [SECURITY-3721]
+
+---
+ core/src/main/java/jenkins/model/Jenkins.java |  4 +-
+ .../java/jenkins/model/Security3721Test.java  | 47 +++++++++++++++++++
+ 2 files changed, 49 insertions(+), 2 deletions(-)
+ create mode 100644 test/src/test/java/jenkins/model/Security3721Test.java
+
+diff --git a/core/src/main/java/jenkins/model/Jenkins.java b/core/src/main/java/jenkins/model/Jenkins.java
+index c775e2bec982..7cfac6f3b3c6 100644
+--- a/core/src/main/java/jenkins/model/Jenkins.java
++++ b/core/src/main/java/jenkins/model/Jenkins.java
+@@ -4340,8 +4340,8 @@ public void doLoginEntry(StaplerRequest2 req, StaplerResponse2 rsp) throws IOExc
+         // TODO fire something in SecurityListener?
+ 
+         String from = req.getParameter("from");
+-        if (from != null && from.startsWith("/") && !from.equals("/loginError")) {
+-            rsp.sendRedirect2(from);    // I'm bit uncomfortable letting users redirected to other sites, make sure the URL falls into this domain
++        if (from != null && Util.isSafeToRedirectTo(from)) {
++            rsp.sendRedirect2(from);
+             return;
+         }
+ 
+diff --git a/test/src/test/java/jenkins/model/Security3721Test.java b/test/src/test/java/jenkins/model/Security3721Test.java
+new file mode 100644
+index 000000000000..b07b1e30cce4
+--- /dev/null
++++ b/test/src/test/java/jenkins/model/Security3721Test.java
+@@ -0,0 +1,47 @@
++package jenkins.model;
++
++import static org.hamcrest.MatcherAssert.assertThat;
++import static org.hamcrest.Matchers.is;
++import static org.junit.jupiter.api.Assertions.assertThrows;
++
++import hudson.security.LegacySecurityRealm;
++import java.util.List;
++import org.htmlunit.FailingHttpStatusCodeException;
++import org.junit.jupiter.api.Test;
++import org.jvnet.hudson.test.Issue;
++import org.jvnet.hudson.test.JenkinsRule;
++import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
++
++@Issue("SECURITY-3721")
++@WithJenkins
++public class Security3721Test {
++
++    @Test
++    void openRedirectIsBlocked(JenkinsRule j) throws Exception {
++        j.jenkins.setSecurityRealm(new LegacySecurityRealm());
++
++        List<String> prohibitedPaths = List.of("%5C%5Cexample.org", "%5C/example.org", "/%5Cexample.org", "//example.org", "https://example.org", "\\example.org");
++        for (String path : prohibitedPaths) {
++            try (JenkinsRule.WebClient wc = j.createWebClient()) {
++                wc.login("alice");
++                wc.setRedirectEnabled(false);
++                final FailingHttpStatusCodeException fhsce = assertThrows(FailingHttpStatusCodeException.class, () -> wc.goTo("loginEntry?from=" + path));
++
++                assertThat(fhsce.getStatusCode(), is(302));
++                assertThat(fhsce.getResponse().getResponseHeaderValue("Location"), is("/jenkins/"));
++            }
++        }
++
++        List<String> allowedPaths = List.of("configure", "manage/security");
++        for (String path : allowedPaths) {
++            try (JenkinsRule.WebClient wc = j.createWebClient()) {
++                wc.login("alice");
++                wc.setRedirectEnabled(false);
++                final FailingHttpStatusCodeException fhsce = assertThrows(FailingHttpStatusCodeException.class, () -> wc.goTo("loginEntry?from=" + path));
++
++                assertThat(fhsce.getStatusCode(), is(302));
++                assertThat(fhsce.getResponse().getResponseHeaderValue("Location"), is("/jenkins/" + path));
++            }
++        }
++    }
++}

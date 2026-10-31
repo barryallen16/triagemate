@@ -1,0 +1,23 @@
+From 351a46798cdc10479cb6966f05a51bc2174806a0 Mon Sep 17 00:00:00 2001
+From: Jatin Vasnani <jvasnani@bmc.com>
+Date: Thu, 25 Aug 2022 16:56:07 +0530
+Subject: [PATCH] SECURITY-2832
+
+Made changes for XXE vulnerability security issue
+---
+ .../com/compuware/jenkins/common/utils/CLIVersionUtils.java     | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/src/main/java/com/compuware/jenkins/common/utils/CLIVersionUtils.java b/src/main/java/com/compuware/jenkins/common/utils/CLIVersionUtils.java
+index 14a5b82..a4eb182 100644
+--- a/src/main/java/com/compuware/jenkins/common/utils/CLIVersionUtils.java
++++ b/src/main/java/com/compuware/jenkins/common/utils/CLIVersionUtils.java
+@@ -189,6 +189,8 @@ private static String parseXml(InputStream versionfile) throws IOException
+ 		try
+ 		{
+ 		    DocumentBuilderFactory dbFactory = DocumentBuilderFactory.newInstance();
++		    dbFactory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true); 
++		    dbFactory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+ 		    DocumentBuilder dBuilder = dbFactory.newDocumentBuilder();
+ 		    Document document = dBuilder.parse(versionfile);
+ 		    

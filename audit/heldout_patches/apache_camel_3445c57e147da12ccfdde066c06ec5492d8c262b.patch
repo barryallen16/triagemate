@@ -1,0 +1,612 @@
+From 3445c57e147da12ccfdde066c06ec5492d8c262b Mon Sep 17 00:00:00 2001
+From: Andrea Cosentino <ancosen@gmail.com>
+Date: Tue, 9 Jun 2026 15:20:00 +0200
+Subject: [PATCH] CAMEL-23716: camel-salesforce - align Exchange header
+ constant names with Camel naming convention (#23887)
+
+Renames the producer-read Exchange header string values in
+SalesforceEndpointConfig (sObjectQuery, sObjectName, sObjectId, sObjectSearch,
+apexUrl, apexMethod, the apexQueryParam. prefix, and the Bulk / Analytics / RAW
+/ event parameters) to the CamelSalesforce<Name> convention, following the
+pattern established in CAMEL-23576 (camel-jira), CAMEL-23578 (camel-web3j),
+CAMEL-23597 (camel-solr) and the other CAMEL-23577 sub-tasks. This brings the
+constants under the default HeaderFilterStrategy (which only filters
+Camel/camel-prefixed headers).
+
+The Java field names are unchanged, so routes that reference the constants
+symbolically continue to compile and run. The endpoint option spelling (for
+example salesforce:query?sObjectQuery=...) is also unchanged, because it is
+bound to the @UriParam field name rather than to these constants. Only the
+header name changes, so routes that set these values as literal-string message
+headers must be updated (documented in the 4.21 upgrade guide as a potential
+breaking change).
+
+39 header-readable constants are renamed. The configuration-only options that
+are never read from a message header (apiVersion, format, rawPayload,
+defaultReplayId, fallBackReplayId, initialReplayIdMap, replayPreset,
+pubSubDeserializeType, pubSubPojoClass, notFoundBehaviour and
+fallbackToLatestReplayId) are left unchanged, as is the Approval API
+approval / approval.<property> mechanism whose endpoint-option and header
+spellings are intentionally identical and bound to the approval parameter name.
+
+Updates the affected tests and the salesforce component documentation, and adds
+the 4.21 upgrade-guide entry.
+
+Tracker: CAMEL-23577
+
+Reported by Claude Code on behalf of Andrea Cosentino
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+---
+ .../src/main/docs/salesforce-component.adoc   | 20 +++++
+ .../salesforce/SalesforceEndpointConfig.java  | 78 ++++++++--------
+ .../BulkApiV2IngestJobManualIT.java           | 18 ++--
+ .../salesforce/BulkApiV2QueryJobManualIT.java | 20 ++---
+ .../salesforce/CompositeApiBatchManualIT.java |  2 +-
+ .../CompositeApiCollectionsManualIT.java      | 14 +--
+ .../salesforce/CompositeApiManualIT.java      |  2 +-
+ .../component/salesforce/RawPayloadTest.java  |  4 +-
+ .../component/salesforce/RestApiManualIT.java | 33 ++++---
+ .../pages/camel-4x-upgrade-guide-4_21.adoc    | 89 +++++++++++++++++++
+ 10 files changed, 198 insertions(+), 82 deletions(-)
+
+diff --git a/components/camel-salesforce/camel-salesforce-component/src/main/docs/salesforce-component.adoc b/components/camel-salesforce/camel-salesforce-component/src/main/docs/salesforce-component.adoc
+index 91b04d1fc639c..7907f3c83f3c6 100644
+--- a/components/camel-salesforce/camel-salesforce-component/src/main/docs/salesforce-component.adoc
++++ b/components/camel-salesforce/camel-salesforce-component/src/main/docs/salesforce-component.adoc
+@@ -129,6 +129,26 @@ The request message body should be an SObject DTO generated using the maven plug
+ ...to("salesforce:upsertSObject?sObjectIdName=Name")...
+ ----
+ 
++==== Supplying operation parameters as message headers
++
++The operation parameters described in the per-operation tables below (such as `sObjectQuery`,
++`sObjectName`, `sObjectId`, `sObjectSearch`, `apexUrl`, `apexMethod`, the `apexQueryParam.` prefix and
++the Bulk/Analytics/RAW parameters) can be supplied either as endpoint options or as message headers.
++
++[IMPORTANT]
++====
++Starting with Camel 4.21, when these parameters are supplied as *message headers*, the header names
++follow the standard `CamelSalesforce` naming convention so that they are governed by the default
++`HeaderFilterStrategy` (which only filters `Camel`/`camel`-prefixed headers). For example, set the
++`CamelSalesforceSObjectQuery` header instead of `sObjectQuery`, `CamelSalesforceApexUrl` instead of
++`apexUrl`, and use the `CamelSalesforceApexQueryParam.` prefix instead of `apexQueryParam.`. The
++*endpoint option* spelling is unchanged (for example `salesforce:query?sObjectQuery=...` still works).
++
++Prefer referencing the constants in `SalesforceEndpointConfig` (for example
++`SalesforceEndpointConfig.SOBJECT_QUERY`) when setting these headers, so route code is unaffected by
++the value change. See the Camel 4.21 upgrade guide for the full list of renamed header names.
++====
++
+ === Passing in Salesforce headers and fetching Salesforce response headers
+ 
+ There is support to pass https://developer.salesforce.com/docs/atlas.en-us.api_rest.meta/api_rest/headers.htm[Salesforce headers]
+diff --git a/components/camel-salesforce/camel-salesforce-component/src/main/java/org/apache/camel/component/salesforce/SalesforceEndpointConfig.java b/components/camel-salesforce/camel-salesforce-component/src/main/java/org/apache/camel/component/salesforce/SalesforceEndpointConfig.java
+index e931392757c6f..6b8f3f4d0778c 100644
+--- a/components/camel-salesforce/camel-salesforce-component/src/main/java/org/apache/camel/component/salesforce/SalesforceEndpointConfig.java
++++ b/components/camel-salesforce/camel-salesforce-component/src/main/java/org/apache/camel/component/salesforce/SalesforceEndpointConfig.java
+@@ -52,47 +52,47 @@ public class SalesforceEndpointConfig implements Cloneable {
+     public static final String FORMAT = "format";
+     public static final String RAW_PAYLOAD = "rawPayload";
+ 
+-    public static final String SOBJECT_NAME = "sObjectName";
+-    public static final String SOBJECT_ID = "sObjectId";
+-    public static final String SOBJECT_IDS = "sObjectIds";
+-    public static final String SOBJECT_FIELDS = "sObjectFields";
+-    public static final String SOBJECT_EXT_ID_NAME = "sObjectIdName";
+-    public static final String SOBJECT_EXT_ID_VALUE = "sObjectIdValue";
+-    public static final String SOBJECT_BLOB_FIELD_NAME = "sObjectBlobFieldName";
+-    public static final String SOBJECT_CLASS = "sObjectClass";
+-    public static final String SOBJECT_QUERY = "sObjectQuery";
+-    public static final String STREAM_QUERY_RESULT = "streamQueryResult";
+-    public static final String SOBJECT_SEARCH = "sObjectSearch";
+-    public static final String APEX_METHOD = "apexMethod";
+-    public static final String APEX_URL = "apexUrl";
+-    public static final String COMPOSITE_METHOD = "compositeMethod";
+-    public static final String LIMIT = "limit";
+-    public static final String ALL_OR_NONE = "allOrNone";
+-    public static final String EVENT_NAME = "eventName";
+-    public static final String EVENT_SCHEMA_ID = "eventSchemaId";
+-    public static final String EVENT_SCHEMA_FORMAT = "eventSchemaFormat";
++    public static final String SOBJECT_NAME = "CamelSalesforceSObjectName";
++    public static final String SOBJECT_ID = "CamelSalesforceSObjectId";
++    public static final String SOBJECT_IDS = "CamelSalesforceSObjectIds";
++    public static final String SOBJECT_FIELDS = "CamelSalesforceSObjectFields";
++    public static final String SOBJECT_EXT_ID_NAME = "CamelSalesforceSObjectIdName";
++    public static final String SOBJECT_EXT_ID_VALUE = "CamelSalesforceSObjectIdValue";
++    public static final String SOBJECT_BLOB_FIELD_NAME = "CamelSalesforceSObjectBlobFieldName";
++    public static final String SOBJECT_CLASS = "CamelSalesforceSObjectClass";
++    public static final String SOBJECT_QUERY = "CamelSalesforceSObjectQuery";
++    public static final String STREAM_QUERY_RESULT = "CamelSalesforceStreamQueryResult";
++    public static final String SOBJECT_SEARCH = "CamelSalesforceSObjectSearch";
++    public static final String APEX_METHOD = "CamelSalesforceApexMethod";
++    public static final String APEX_URL = "CamelSalesforceApexUrl";
++    public static final String COMPOSITE_METHOD = "CamelSalesforceCompositeMethod";
++    public static final String LIMIT = "CamelSalesforceLimit";
++    public static final String ALL_OR_NONE = "CamelSalesforceAllOrNone";
++    public static final String EVENT_NAME = "CamelSalesforceEventName";
++    public static final String EVENT_SCHEMA_ID = "CamelSalesforceEventSchemaId";
++    public static final String EVENT_SCHEMA_FORMAT = "CamelSalesforceEventSchemaFormat";
+ 
+     // prefix for parameters in headers
+-    public static final String APEX_QUERY_PARAM_PREFIX = "apexQueryParam.";
++    public static final String APEX_QUERY_PARAM_PREFIX = "CamelSalesforceApexQueryParam.";
+ 
+     // parameters for Bulk API
+-    public static final String CONTENT_TYPE = "contentType";
+-    public static final String JOB_ID = "jobId";
+-    public static final String BATCH_ID = "batchId";
+-    public static final String RESULT_ID = "resultId";
+-    public static final String QUERY_LOCATOR = "queryLocator";
+-    public static final String LOCATOR = "locator";
+-    public static final String MAX_RECORDS = "maxRecords";
+-    public static final String PK_CHUNKING = "pkChunking";
+-    public static final String PK_CHUNKING_CHUNK_SIZE = "pkChunkingChunkSize";
+-    public static final String PK_CHUNKING_PARENT = "pkChunkingParent";
+-    public static final String PK_CHUNKING_START_ROW = "pkChunkingStartRow";
++    public static final String CONTENT_TYPE = "CamelSalesforceContentType";
++    public static final String JOB_ID = "CamelSalesforceJobId";
++    public static final String BATCH_ID = "CamelSalesforceBatchId";
++    public static final String RESULT_ID = "CamelSalesforceResultId";
++    public static final String QUERY_LOCATOR = "CamelSalesforceQueryLocator";
++    public static final String LOCATOR = "CamelSalesforceLocator";
++    public static final String MAX_RECORDS = "CamelSalesforceMaxRecords";
++    public static final String PK_CHUNKING = "CamelSalesforcePkChunking";
++    public static final String PK_CHUNKING_CHUNK_SIZE = "CamelSalesforcePkChunkingChunkSize";
++    public static final String PK_CHUNKING_PARENT = "CamelSalesforcePkChunkingParent";
++    public static final String PK_CHUNKING_START_ROW = "CamelSalesforcePkChunkingStartRow";
+ 
+     // parameters for Analytics API
+-    public static final String REPORT_ID = "reportId";
+-    public static final String INCLUDE_DETAILS = "includeDetails";
+-    public static final String REPORT_METADATA = "reportMetadata";
+-    public static final String INSTANCE_ID = "instanceId";
++    public static final String REPORT_ID = "CamelSalesforceReportId";
++    public static final String INCLUDE_DETAILS = "CamelSalesforceIncludeDetails";
++    public static final String REPORT_METADATA = "CamelSalesforceReportMetadata";
++    public static final String INSTANCE_ID = "CamelSalesforceInstanceId";
+ 
+     // parameters for Streaming API
+     public static final String DEFAULT_REPLAY_ID = "defaultReplayId";
+@@ -109,10 +109,10 @@ public class SalesforceEndpointConfig implements Cloneable {
+     public static final String APPROVAL = "approval";
+ 
+     // parameters for the RAW operation
+-    public static final String RAW_PATH = "rawPath";
+-    public static final String RAW_METHOD = "rawMethod";
+-    public static final String RAW_QUERY_PARAMETERS = "rawQueryParameters";
+-    public static final String RAW_HTTP_HEADERS = "rawHttpHeaders";
++    public static final String RAW_PATH = "CamelSalesforceRawPath";
++    public static final String RAW_METHOD = "CamelSalesforceRawMethod";
++    public static final String RAW_QUERY_PARAMETERS = "CamelSalesforceRawQueryParameters";
++    public static final String RAW_HTTP_HEADERS = "CamelSalesforceRawHttpHeaders";
+ 
+     // default maximum authentication retries on failed authentication or
+     // expired session
+diff --git a/components/camel-salesforce/camel-salesforce-component/src/test/java/org/apache/camel/component/salesforce/BulkApiV2IngestJobManualIT.java b/components/camel-salesforce/camel-salesforce-component/src/test/java/org/apache/camel/component/salesforce/BulkApiV2IngestJobManualIT.java
+index b24263146e073..b80bf0d195ec9 100644
+--- a/components/camel-salesforce/camel-salesforce-component/src/test/java/org/apache/camel/component/salesforce/BulkApiV2IngestJobManualIT.java
++++ b/components/camel-salesforce/camel-salesforce-component/src/test/java/org/apache/camel/component/salesforce/BulkApiV2IngestJobManualIT.java
+@@ -55,39 +55,39 @@ public void testLifecycle() throws Exception {
+ 
+         Exchange exchange = new DefaultExchange(context());
+         exchange.getIn().setBody("FirstName,LastName\nTestFirst,TestLast");
+-        exchange.getIn().setHeader("jobId", job.getId());
++        exchange.getIn().setHeader("CamelSalesforceJobId", job.getId());
+         template.send("salesforce:bulk2CreateBatch", exchange);
+         assertNull(exchange.getException());
+ 
+         job = template().requestBody("salesforce:bulk2GetJob", job, Job.class);
+         assertSame(JobStateEnum.OPEN, job.getState(), "Job state");
+ 
+-        job = template().requestBodyAndHeader("salesforce:bulk2CloseJob", "", "jobId", job.getId(),
++        job = template().requestBodyAndHeader("salesforce:bulk2CloseJob", "", "CamelSalesforceJobId", job.getId(),
+                 Job.class);
+         assertEquals(JobStateEnum.UPLOAD_COMPLETE, job.getState(), "Job state");
+ 
+         // wait for job to finish
+         while (job.getState() != JobStateEnum.JOB_COMPLETE) {
+             Thread.sleep(2000);
+-            job = template().requestBodyAndHeader("salesforce:bulk2GetJob", "", "jobId",
++            job = template().requestBodyAndHeader("salesforce:bulk2GetJob", "", "CamelSalesforceJobId",
+                     job.getId(), Job.class);
+         }
+ 
+         InputStream is = template().requestBodyAndHeader("salesforce:bulk2GetSuccessfulResults",
+-                "", "jobId", job.getId(), InputStream.class);
++                "", "CamelSalesforceJobId", job.getId(), InputStream.class);
+         assertNotNull(is, "Successful results");
+         List<String> successful = IOUtils.readLines(is, StandardCharsets.UTF_8);
+         assertEquals(2, successful.size());
+         assertTrue(successful.get(1).contains("TestFirst"));
+ 
+         is = template().requestBodyAndHeader("salesforce:bulk2GetFailedResults",
+-                "", "jobId", job.getId(), InputStream.class);
++                "", "CamelSalesforceJobId", job.getId(), InputStream.class);
+         assertNotNull(is, "Failed results");
+         List<String> failed = IOUtils.readLines(is, StandardCharsets.UTF_8);
+         assertEquals(1, failed.size());
+ 
+         is = template().requestBodyAndHeader("salesforce:bulk2GetUnprocessedRecords",
+-                "", "jobId", job.getId(), InputStream.class);
++                "", "CamelSalesforceJobId", job.getId(), InputStream.class);
+         assertNotNull(is, "Unprocessed records");
+         List<String> unprocessed = IOUtils.readLines(is, StandardCharsets.UTF_8);
+         assertEquals(1, unprocessed.size());
+@@ -104,7 +104,7 @@ public void testAbort() {
+         job = template().requestBody("salesforce:bulk2GetJob", job, Job.class);
+         assertSame(JobStateEnum.OPEN, job.getState(), "Job should be OPEN");
+ 
+-        template().sendBodyAndHeader("salesforce:bulk2AbortJob", "", "jobId", job.getId());
++        template().sendBodyAndHeader("salesforce:bulk2AbortJob", "", "CamelSalesforceJobId", job.getId());
+ 
+         job = template().requestBody("salesforce:bulk2GetJob", job, Job.class);
+         assertSame(JobStateEnum.ABORTED, job.getState(), "Job state");
+@@ -120,12 +120,12 @@ public void testDelete() {
+         job = template().requestBody("salesforce:bulk2GetJob", job, Job.class);
+         assertSame(JobStateEnum.OPEN, job.getState(), "Job should be OPEN");
+ 
+-        template().sendBodyAndHeader("salesforce:bulk2AbortJob", "", "jobId", job.getId());
++        template().sendBodyAndHeader("salesforce:bulk2AbortJob", "", "CamelSalesforceJobId", job.getId());
+ 
+         job = template().requestBody("salesforce:bulk2GetJob", job, Job.class);
+         assertSame(JobStateEnum.ABORTED, job.getState(), "Job state");
+ 
+-        template().sendBodyAndHeader("salesforce:bulk2DeleteJob", "", "jobId", job.getId());
++        template().sendBodyAndHeader("salesforce:bulk2DeleteJob", "", "CamelSalesforceJobId", job.getId());
+ 
+         final Job finalJob = job;
+         CamelExecutionException ex = Assertions.assertThrows(CamelExecutionException.class,
+diff --git a/components/camel-salesforce/camel-salesforce-component/src/test/java/org/apache/camel/component/salesforce/BulkApiV2QueryJobManualIT.java b/components/camel-salesforce/camel-salesforce-component/src/test/java/org/apache/camel/component/salesforce/BulkApiV2QueryJobManualIT.java
+index e6549ee79b72c..e9edde6cc00f5 100644
+--- a/components/camel-salesforce/camel-salesforce-component/src/test/java/org/apache/camel/component/salesforce/BulkApiV2QueryJobManualIT.java
++++ b/components/camel-salesforce/camel-salesforce-component/src/test/java/org/apache/camel/component/salesforce/BulkApiV2QueryJobManualIT.java
+@@ -69,19 +69,19 @@ public void testQueryLifecycle() throws Exception {
+         job = template().requestBody("salesforce:bulk2CreateQueryJob", job, QueryJob.class);
+         assertNotNull(job.getId(), "JobId");
+ 
+-        job = template().requestBodyAndHeader("salesforce:bulk2GetQueryJob", "", "jobId",
++        job = template().requestBodyAndHeader("salesforce:bulk2GetQueryJob", "", "CamelSalesforceJobId",
+                 job.getId(), QueryJob.class);
+ 
+         // wait for job to finish
+         while (job.getState() != JobStateEnum.JOB_COMPLETE) {
+             Thread.sleep(2000);
+-            job = template().requestBodyAndHeader("salesforce:bulk2GetQueryJob", "", "jobId",
++            job = template().requestBodyAndHeader("salesforce:bulk2GetQueryJob", "", "CamelSalesforceJobId",
+                     job.getId(), QueryJob.class);
+         }
+ 
+         Exchange exchange = new DefaultExchange(context);
+-        exchange.getIn().setHeader("jobId", job.getId());
+-        exchange.getIn().setHeader("maxRecords", 1);
++        exchange.getIn().setHeader("CamelSalesforceJobId", job.getId());
++        exchange.getIn().setHeader("CamelSalesforceMaxRecords", 1);
+         template().send("salesforce:bulk2GetQueryJobResults?maxRecords=1",
+                 exchange);
+         InputStream is = exchange.getIn().getBody(InputStream.class);
+@@ -93,7 +93,7 @@ public void testQueryLifecycle() throws Exception {
+         assertNotNull(locator);
+ 
+         exchange = new DefaultExchange(context);
+-        exchange.getIn().setHeader("jobId", job.getId());
++        exchange.getIn().setHeader("CamelSalesforceJobId", job.getId());
+         exchange.getIn().setHeader("locator", locator);
+         template().send("salesforce:bulk2GetQueryJobResults",
+                 exchange);
+@@ -113,18 +113,18 @@ public void testQueryAllLifecycle() throws Exception {
+         job = template().requestBody("salesforce:bulk2CreateQueryJob", job, QueryJob.class);
+         assertNotNull(job.getId(), "JobId");
+ 
+-        job = template().requestBodyAndHeader("salesforce:bulk2GetQueryJob", "", "jobId",
++        job = template().requestBodyAndHeader("salesforce:bulk2GetQueryJob", "", "CamelSalesforceJobId",
+                 job.getId(), QueryJob.class);
+ 
+         // wait for job to finish
+         while (job.getState() != JobStateEnum.JOB_COMPLETE) {
+             Thread.sleep(2000);
+-            job = template().requestBodyAndHeader("salesforce:bulk2GetQueryJob", "", "jobId",
++            job = template().requestBodyAndHeader("salesforce:bulk2GetQueryJob", "", "CamelSalesforceJobId",
+                     job.getId(), QueryJob.class);
+         }
+ 
+         InputStream is = template().requestBodyAndHeader("salesforce:bulk2GetQueryJobResults",
+-                "", "jobId", job.getId(), InputStream.class);
++                "", "CamelSalesforceJobId", job.getId(), InputStream.class);
+         assertNotNull(is, "Query Job results");
+         List<String> results = IOUtils.readLines(is, StandardCharsets.UTF_8);
+         assertTrue(results.size() > 0, "Query Job results");
+@@ -139,7 +139,7 @@ public void testAbort() {
+         job = template().requestBody("salesforce:bulk2CreateQueryJob", job, QueryJob.class);
+         assertNotNull(job.getId(), "JobId");
+ 
+-        template().sendBodyAndHeader("salesforce:bulk2AbortQueryJob", "", "jobId", job.getId());
++        template().sendBodyAndHeader("salesforce:bulk2AbortQueryJob", "", "CamelSalesforceJobId", job.getId());
+ 
+         job = template().requestBody("salesforce:bulk2GetQueryJob", job, QueryJob.class);
+         assertTrue(job.getState() == JobStateEnum.ABORTED || job.getState() == JobStateEnum.FAILED,
+@@ -166,7 +166,7 @@ public void testDelete() throws InterruptedException {
+             job = template().requestBody("salesforce:bulk2GetQueryJob", job, QueryJob.class);
+         }
+ 
+-        template().sendBodyAndHeader("salesforce:bulk2DeleteQueryJob", "", "jobId", job.getId());
++        template().sendBodyAndHeader("salesforce:bulk2DeleteQueryJob", "", "CamelSalesforceJobId", job.getId());
+ 
+         final QueryJob finalJob = job;
+         CamelExecutionException ex = Assertions.assertThrows(CamelExecutionException.class,
+diff --git a/components/camel-salesforce/camel-salesforce-component/src/test/java/org/apache/camel/component/salesforce/CompositeApiBatchManualIT.java b/components/camel-salesforce/camel-salesforce-component/src/test/java/org/apache/camel/component/salesforce/CompositeApiBatchManualIT.java
+index 85ba765d72066..51bd9a692e110 100644
+--- a/components/camel-salesforce/camel-salesforce-component/src/test/java/org/apache/camel/component/salesforce/CompositeApiBatchManualIT.java
++++ b/components/camel-salesforce/camel-salesforce-component/src/test/java/org/apache/camel/component/salesforce/CompositeApiBatchManualIT.java
+@@ -360,7 +360,7 @@ public void configure() throws Exception {
+                 from("direct:deleteBatchAccounts")
+                         .to("salesforce:query?sObjectClass=" + Accounts.class.getName()
+                             + "&sObjectQuery=SELECT Id FROM Account WHERE Name = 'Account created from Composite batch API'")
+-                        .split(simple("${body.records}")).setHeader("sObjectId", simple("${body.id}"))
++                        .split(simple("${body.records}")).setHeader("CamelSalesforceSObjectId", simple("${body.id}"))
+                         .to("salesforce:deleteSObject?sObjectName=Account").end();
+             }
+         };
+diff --git a/components/camel-salesforce/camel-salesforce-component/src/test/java/org/apache/camel/component/salesforce/CompositeApiCollectionsManualIT.java b/components/camel-salesforce/camel-salesforce-component/src/test/java/org/apache/camel/component/salesforce/CompositeApiCollectionsManualIT.java
+index 54d73b8d49a41..48328d0360ea2 100644
+--- a/components/camel-salesforce/camel-salesforce-component/src/test/java/org/apache/camel/component/salesforce/CompositeApiCollectionsManualIT.java
++++ b/components/camel-salesforce/camel-salesforce-component/src/test/java/org/apache/camel/component/salesforce/CompositeApiCollectionsManualIT.java
+@@ -62,9 +62,9 @@ public void retrieve() {
+ 
+         List<AbstractDescribedSObjectBase> result
+                 = (List<AbstractDescribedSObjectBase>) fluentTemplate.to("salesforce:compositeRetrieveSObjectCollections")
+-                        .withHeader("sObjectIds", Collections.singletonList(accountId))
+-                        .withHeader("sObjectFields", Arrays.asList("Id", "Name"))
+-                        .withHeader("sObjectName", "Account")
++                        .withHeader("CamelSalesforceSObjectIds", Collections.singletonList(accountId))
++                        .withHeader("CamelSalesforceSObjectFields", Arrays.asList("Id", "Name"))
++                        .withHeader("CamelSalesforceSObjectName", "Account")
+                         .request();
+         assertNotNull(result, "Response was null.");
+         assertEquals(1, result.size());
+@@ -77,7 +77,7 @@ public void delete() {
+         final List<String> ids = Arrays.asList(accountId, account2Id, "001000000000000000");
+         List<DeleteSObjectResult> result
+                 = (List<DeleteSObjectResult>) fluentTemplate.to("salesforce:compositeDeleteSObjectCollections")
+-                        .withHeader("sObjectIds", ids)
++                        .withHeader("CamelSalesforceSObjectIds", ids)
+                         .request();
+         assertNotNull(result, "Response was null.");
+         assertEquals(3, result.size());
+@@ -92,8 +92,8 @@ public void deleteAllOrNone() {
+         final List<String> ids = Arrays.asList(accountId, "001000000000000000");
+         List<DeleteSObjectResult> result
+                 = (List<DeleteSObjectResult>) fluentTemplate.to("salesforce:compositeDeleteSObjectCollections")
+-                        .withHeader("sObjectIds", ids)
+-                        .withHeader("allOrNone", constant(true))
++                        .withHeader("CamelSalesforceSObjectIds", ids)
++                        .withHeader("CamelSalesforceAllOrNone", constant(true))
+                         .request();
+         assertNotNull(result, "Response was null.");
+         assertEquals(2, result.size());
+@@ -170,7 +170,7 @@ public void configure() {
+                 from("direct:deleteCompositeAccounts")
+                         .to("salesforce:query?sObjectClass=" + Account.class.getName()
+                                 + "&sObjectQuery=SELECT Id FROM Account WHERE Name = 'Account created from Composite Collections API'")
+-                        .split(simple("${body.records}")).setHeader("sObjectId", simple("${body.id}"))
++                        .split(simple("${body.records}")).setHeader("CamelSalesforceSObjectId", simple("${body.id}"))
+                         .to("salesforce:deleteSObject?sObjectName=Account").end();
+             }
+         };
+diff --git a/components/camel-salesforce/camel-salesforce-component/src/test/java/org/apache/camel/component/salesforce/CompositeApiManualIT.java b/components/camel-salesforce/camel-salesforce-component/src/test/java/org/apache/camel/component/salesforce/CompositeApiManualIT.java
+index 28874d33ac1df..797b173ec6bbe 100644
+--- a/components/camel-salesforce/camel-salesforce-component/src/test/java/org/apache/camel/component/salesforce/CompositeApiManualIT.java
++++ b/components/camel-salesforce/camel-salesforce-component/src/test/java/org/apache/camel/component/salesforce/CompositeApiManualIT.java
+@@ -247,7 +247,7 @@ public void configure() throws Exception {
+                 from("direct:deleteBatchAccounts")
+                         .to("salesforce:query?sObjectClass=" + Accounts.class.getName()
+                             + "&sObjectQuery=SELECT Id FROM Account WHERE Name = 'Account created from Composite batch API'")
+-                        .split(simple("${body.records}")).setHeader("sObjectId", simple("${body.id}"))
++                        .split(simple("${body.records}")).setHeader("CamelSalesforceSObjectId", simple("${body.id}"))
+                         .to("salesforce:deleteSObject?sObjectName=Account").end();
+             }
+         };
+diff --git a/components/camel-salesforce/camel-salesforce-component/src/test/java/org/apache/camel/component/salesforce/RawPayloadTest.java b/components/camel-salesforce/camel-salesforce-component/src/test/java/org/apache/camel/component/salesforce/RawPayloadTest.java
+index 7569f7e7b8e86..79681f99fb11f 100644
+--- a/components/camel-salesforce/camel-salesforce-component/src/test/java/org/apache/camel/component/salesforce/RawPayloadTest.java
++++ b/components/camel-salesforce/camel-salesforce-component/src/test/java/org/apache/camel/component/salesforce/RawPayloadTest.java
+@@ -145,8 +145,8 @@ public void setupRequestResponse() {
+                 requestBody = "{ \"request\" : \"mock\" }";
+             }
+             headers = new HashMap<>();
+-            headers.put("sObjectId", "mockId");
+-            headers.put("sObjectIdValue", "mockIdValue");
++            headers.put("CamelSalesforceSObjectId", "mockId");
++            headers.put("CamelSalesforceSObjectIdValue", "mockIdValue");
+             headers.put("id", "mockId");
+             headers.put(SalesforceEndpointConfig.APEX_QUERY_PARAM_PREFIX + "id", "mockId");
+ 
+diff --git a/components/camel-salesforce/camel-salesforce-component/src/test/java/org/apache/camel/component/salesforce/RestApiManualIT.java b/components/camel-salesforce/camel-salesforce-component/src/test/java/org/apache/camel/component/salesforce/RestApiManualIT.java
+index a71dee5fa3473..e7980bc45df66 100644
+--- a/components/camel-salesforce/camel-salesforce-component/src/test/java/org/apache/camel/component/salesforce/RestApiManualIT.java
++++ b/components/camel-salesforce/camel-salesforce-component/src/test/java/org/apache/camel/component/salesforce/RestApiManualIT.java
+@@ -348,10 +348,12 @@ public void testRelationshipCreateDelete() throws Exception {
+         assertTrue(contactResult.getSuccess(), "Create success");
+ 
+         // delete the Contact
+-        template().requestBodyAndHeader("salesforce:deleteSObject", contactResult.getId(), "sObjectName", "Contact");
++        template().requestBodyAndHeader("salesforce:deleteSObject", contactResult.getId(), "CamelSalesforceSObjectName",
++                "Contact");
+ 
+         // delete the Account
+-        template().requestBodyAndHeader("salesforce:deleteSObject", accountResult.getId(), "sObjectName", "Account");
++        template().requestBodyAndHeader("salesforce:deleteSObject", accountResult.getId(), "CamelSalesforceSObjectName",
++                "Account");
+     }
+ 
+     @Test
+@@ -373,11 +375,12 @@ public void testFieldsToNull() throws Exception {
+         assertNotNull(updateAccountResult);
+ 
+         Account updatedAccount = (Account) template().requestBodyAndHeader("salesforce:getSObject?sObjectFields=Id,Name,Site",
+-                account.getId(), "sObjectName", "Account");
++                account.getId(), "CamelSalesforceSObjectName", "Account");
+         assertNull(updatedAccount.getSite());
+ 
+         // delete the Account
+-        template().requestBodyAndHeader("salesforce:deleteSObject", accountResult.getId(), "sObjectName", "Account");
++        template().requestBodyAndHeader("salesforce:deleteSObject", accountResult.getId(), "CamelSalesforceSObjectName",
++                "Account");
+     }
+ 
+     @Test
+@@ -408,10 +411,12 @@ public void testRelationshipUpdate() throws Exception {
+         assertNotNull(updateContactResult);
+ 
+         // delete the Contact
+-        template().requestBodyAndHeader("salesforce:deleteSObject", contactResult.getId(), "sObjectName", "Contact");
++        template().requestBodyAndHeader("salesforce:deleteSObject", contactResult.getId(), "CamelSalesforceSObjectName",
++                "Contact");
+ 
+         // delete the Account
+-        template().requestBodyAndHeader("salesforce:deleteSObject", accountResult.getId(), "sObjectName", "Account");
++        template().requestBodyAndHeader("salesforce:deleteSObject", accountResult.getId(), "CamelSalesforceSObjectName",
++                "Account");
+     }
+ 
+     @Test
+@@ -802,9 +807,10 @@ public void testSearch() throws Exception {
+     public void testStatus300() throws Exception {
+         // get test merchandise
+         // note that the header value overrides sObjectFields in endpoint
+-        final Merchandise__c merchandise = template().requestBodyAndHeader("direct:getSObject", merchandiseId, "sObjectFields",
+-                "Name,Description__c,Price__c,Total_Inventory__c",
+-                Merchandise__c.class);
++        final Merchandise__c merchandise
++                = template().requestBodyAndHeader("direct:getSObject", merchandiseId, "CamelSalesforceSObjectFields",
++                        "Name,Description__c,Price__c,Total_Inventory__c",
++                        Merchandise__c.class);
+         assertNotNull(merchandise);
+         assertNotNull(merchandise.getName());
+         assertNotNull(merchandise.getPrice__c());
+@@ -844,8 +850,9 @@ public void testStatus300() throws Exception {
+     public void testStatus400() throws Exception {
+         // get test merchandise
+         // note that the header value overrides sObjectFields in endpoint
+-        final Merchandise__c merchandise = template().requestBodyAndHeader("direct:getSObject", merchandiseId, "sObjectFields",
+-                "Description__c,Price__c", Merchandise__c.class);
++        final Merchandise__c merchandise
++                = template().requestBodyAndHeader("direct:getSObject", merchandiseId, "CamelSalesforceSObjectFields",
++                        "Description__c,Price__c", Merchandise__c.class);
+         assertNotNull(merchandise);
+         assertNotNull(merchandise.getPrice__c());
+         assertNull(merchandise.getTotal_Inventory__c());
+@@ -981,14 +988,14 @@ public void configure() {
+ 
+                 // testQuery
+                 from("direct:queryStreamResult")
+-                        .setHeader("sObjectClass", constant(QueryRecordsLine_Item__c.class.getName()))
++                        .setHeader("CamelSalesforceSObjectClass", constant(QueryRecordsLine_Item__c.class.getName()))
+                         .setHeader("Sforce-Query-Options", constant("batchSize=200"))
+                         .to("salesforce:query?sObjectQuery=SELECT Id, name, Typeof Owner WHEN User Then Username End, recordTypeId, RecordType.Name from Line_Item__c Order By Name"
+                             + "&streamQueryResult=true");
+ 
+                 // testQuery
+                 from("direct:queryAllStreamResult")
+-                        .setHeader("sObjectClass", constant(QueryRecordsLine_Item__c.class.getName()))
++                        .setHeader("CamelSalesforceSObjectClass", constant(QueryRecordsLine_Item__c.class.getName()))
+                         .setHeader("Sforce-Query-Options", constant("batchSize=200"))
+                         .to("salesforce:queryAll?sObjectQuery=SELECT Id, name, Typeof Owner WHEN User Then Username End, recordTypeId, RecordType.Name from Line_Item__c Order By Name"
+                             + "&streamQueryResult=true");
+diff --git a/docs/user-manual/modules/ROOT/pages/camel-4x-upgrade-guide-4_21.adoc b/docs/user-manual/modules/ROOT/pages/camel-4x-upgrade-guide-4_21.adoc
+index 9a21a138eb596..37048c4a06eda 100644
+--- a/docs/user-manual/modules/ROOT/pages/camel-4x-upgrade-guide-4_21.adoc
++++ b/docs/user-manual/modules/ROOT/pages/camel-4x-upgrade-guide-4_21.adoc
+@@ -2008,3 +2008,92 @@ transport `from` and the `irc:` `to`. Allowing untrusted senders to drive
+ `IrcConstants.IRC_SEND_TO` without such a mapping step is not the intended use
+ of the component.
+ 
++
++=== camel-salesforce - potential breaking change
++
++The Exchange header constants in `SalesforceEndpointConfig` have been renamed to
++follow the Camel naming convention used across the rest of the component catalog,
++so that they are governed by the default `HeaderFilterStrategy` (which only filters
++`Camel`/`camel`-prefixed headers). The Java field names are unchanged; only the
++header string values have changed.
++
++These parameters are dual-use: they can be supplied either as endpoint options (for
++example `salesforce:query?sObjectQuery=...`) or as message headers. *The endpoint
++option spelling is unchanged* -- only the *header* name has changed.
++
++[options="header"]
++|===
++| Constant | Previous value | New value
++| `SalesforceEndpointConfig.SOBJECT_NAME` | `sObjectName` | `CamelSalesforceSObjectName`
++| `SalesforceEndpointConfig.SOBJECT_ID` | `sObjectId` | `CamelSalesforceSObjectId`
++| `SalesforceEndpointConfig.SOBJECT_IDS` | `sObjectIds` | `CamelSalesforceSObjectIds`
++| `SalesforceEndpointConfig.SOBJECT_FIELDS` | `sObjectFields` | `CamelSalesforceSObjectFields`
++| `SalesforceEndpointConfig.SOBJECT_EXT_ID_NAME` | `sObjectIdName` | `CamelSalesforceSObjectIdName`
++| `SalesforceEndpointConfig.SOBJECT_EXT_ID_VALUE` | `sObjectIdValue` | `CamelSalesforceSObjectIdValue`
++| `SalesforceEndpointConfig.SOBJECT_BLOB_FIELD_NAME` | `sObjectBlobFieldName` | `CamelSalesforceSObjectBlobFieldName`
++| `SalesforceEndpointConfig.SOBJECT_CLASS` | `sObjectClass` | `CamelSalesforceSObjectClass`
++| `SalesforceEndpointConfig.SOBJECT_QUERY` | `sObjectQuery` | `CamelSalesforceSObjectQuery`
++| `SalesforceEndpointConfig.STREAM_QUERY_RESULT` | `streamQueryResult` | `CamelSalesforceStreamQueryResult`
++| `SalesforceEndpointConfig.SOBJECT_SEARCH` | `sObjectSearch` | `CamelSalesforceSObjectSearch`
++| `SalesforceEndpointConfig.APEX_METHOD` | `apexMethod` | `CamelSalesforceApexMethod`
++| `SalesforceEndpointConfig.APEX_URL` | `apexUrl` | `CamelSalesforceApexUrl`
++| `SalesforceEndpointConfig.APEX_QUERY_PARAM_PREFIX` | `apexQueryParam.` | `CamelSalesforceApexQueryParam.`
++| `SalesforceEndpointConfig.COMPOSITE_METHOD` | `compositeMethod` | `CamelSalesforceCompositeMethod`
++| `SalesforceEndpointConfig.LIMIT` | `limit` | `CamelSalesforceLimit`
++| `SalesforceEndpointConfig.ALL_OR_NONE` | `allOrNone` | `CamelSalesforceAllOrNone`
++| `SalesforceEndpointConfig.EVENT_NAME` | `eventName` | `CamelSalesforceEventName`
++| `SalesforceEndpointConfig.EVENT_SCHEMA_ID` | `eventSchemaId` | `CamelSalesforceEventSchemaId`
++| `SalesforceEndpointConfig.EVENT_SCHEMA_FORMAT` | `eventSchemaFormat` | `CamelSalesforceEventSchemaFormat`
++| `SalesforceEndpointConfig.CONTENT_TYPE` | `contentType` | `CamelSalesforceContentType`
++| `SalesforceEndpointConfig.JOB_ID` | `jobId` | `CamelSalesforceJobId`
++| `SalesforceEndpointConfig.BATCH_ID` | `batchId` | `CamelSalesforceBatchId`
++| `SalesforceEndpointConfig.RESULT_ID` | `resultId` | `CamelSalesforceResultId`
++| `SalesforceEndpointConfig.QUERY_LOCATOR` | `queryLocator` | `CamelSalesforceQueryLocator`
++| `SalesforceEndpointConfig.LOCATOR` | `locator` | `CamelSalesforceLocator`
++| `SalesforceEndpointConfig.MAX_RECORDS` | `maxRecords` | `CamelSalesforceMaxRecords`
++| `SalesforceEndpointConfig.PK_CHUNKING` | `pkChunking` | `CamelSalesforcePkChunking`
++| `SalesforceEndpointConfig.PK_CHUNKING_CHUNK_SIZE` | `pkChunkingChunkSize` | `CamelSalesforcePkChunkingChunkSize`
++| `SalesforceEndpointConfig.PK_CHUNKING_PARENT` | `pkChunkingParent` | `CamelSalesforcePkChunkingParent`
++| `SalesforceEndpointConfig.PK_CHUNKING_START_ROW` | `pkChunkingStartRow` | `CamelSalesforcePkChunkingStartRow`
++| `SalesforceEndpointConfig.REPORT_ID` | `reportId` | `CamelSalesforceReportId`
++| `SalesforceEndpointConfig.INCLUDE_DETAILS` | `includeDetails` | `CamelSalesforceIncludeDetails`
++| `SalesforceEndpointConfig.REPORT_METADATA` | `reportMetadata` | `CamelSalesforceReportMetadata`
++| `SalesforceEndpointConfig.INSTANCE_ID` | `instanceId` | `CamelSalesforceInstanceId`
++| `SalesforceEndpointConfig.RAW_PATH` | `rawPath` | `CamelSalesforceRawPath`
++| `SalesforceEndpointConfig.RAW_METHOD` | `rawMethod` | `CamelSalesforceRawMethod`
++| `SalesforceEndpointConfig.RAW_QUERY_PARAMETERS` | `rawQueryParameters` | `CamelSalesforceRawQueryParameters`
++| `SalesforceEndpointConfig.RAW_HTTP_HEADERS` | `rawHttpHeaders` | `CamelSalesforceRawHttpHeaders`
++|===
++
++Routes that reference the constants symbolically (for example
++`setHeader(SalesforceEndpointConfig.SOBJECT_QUERY, ...)`) continue to work without
++changes. Routes that set the value as a *header* by its literal string (for example
++`setHeader("sObjectQuery", ...)`) must be updated to the new value
++(`setHeader("CamelSalesforceSObjectQuery", ...)`), or preferably switch to the
++symbolic constant. The `apexQueryParam.` header prefix is likewise renamed to
++`CamelSalesforceApexQueryParam.`, so a header such as `apexQueryParam.foo` must now
++be set as `CamelSalesforceApexQueryParam.foo`.
++
++The configuration-only options that are never read from a message header --
++`apiVersion`, `format`, `rawPayload`, `defaultReplayId`, `fallBackReplayId`,
++`initialReplayIdMap`, `replayPreset`, `pubSubDeserializeType`, `pubSubPojoClass`,
++`notFoundBehaviour` and `fallbackToLatestReplayId` -- are unchanged, as is the
++Approval API `approval` / `approval.<property>` mechanism (whose endpoint-option and
++header spellings are intentionally identical and bound to the `approval` endpoint
++parameter name).
++
++==== Behaviour change: cross-transport propagation
++
++Because the renamed header values now begin with `Camel`, they are filtered by the
++standard transport `HeaderFilterStrategy` (`HttpHeaderFilterStrategy`,
++`JmsHeaderFilterStrategy`, etc.) when crossing a transport boundary, by design --
++`Camel*` headers are framework-internal and are not propagated over the wire.
++
++Routes that bridge an external transport (HTTP, JMS, ...) into a `salesforce:`
++producer and let the sender choose, for example, the SOQL query, the target SObject
++or the Apex endpoint via these headers must carry those values in
++non-`Camel`-prefixed application headers and map them to the corresponding
++`SalesforceEndpointConfig` constants in the route between the transport `from` and
++the `salesforce:` `to`. As defence-in-depth, strip inbound Camel-internal headers
++arriving from untrusted producers with `removeHeaders("CamelSalesforce*")` (or the
++broader `removeHeaders("Camel*")`) before the producer.

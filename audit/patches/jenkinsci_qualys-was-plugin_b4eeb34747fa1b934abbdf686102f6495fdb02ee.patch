@@ -1,0 +1,48 @@
+From b4eeb34747fa1b934abbdf686102f6495fdb02ee Mon Sep 17 00:00:00 2001
+From: Shubham Rai <srai@qualys.com>
+Date: Mon, 30 Oct 2023 11:32:11 +0530
+Subject: [PATCH] Remove unused code.
+
+---
+ .../qualys/plugins/wasPlugin/util/Helper.java | 27 -------------------
+ 1 file changed, 27 deletions(-)
+
+diff --git a/src/main/java/com/qualys/plugins/wasPlugin/util/Helper.java b/src/main/java/com/qualys/plugins/wasPlugin/util/Helper.java
+index 26e0064..9aef1ee 100644
+--- a/src/main/java/com/qualys/plugins/wasPlugin/util/Helper.java
++++ b/src/main/java/com/qualys/plugins/wasPlugin/util/Helper.java
+@@ -122,34 +122,7 @@ public static String secondsToReadableTime(long duration){
+ 	    }
+ 	    return msg.toString();
+ 	}
+-	
+-	public static Object execXPath(String xml, String xPath, QName type) {
+-
+-        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+ 
+-        try {
+-            DocumentBuilder builder = factory.newDocumentBuilder();
+-            Document doc = builder
+-                    .parse(new InputSource(new StringReader(xml)));
+-            return execXPath(doc, xPath, type);
+-        } catch (Exception e) {
+-            e.printStackTrace();
+-        }
+-
+-        return null;
+-    }
+-    public static Object execXPath(Node node, String xPath, QName type) {
+-
+-        XPath xpath = XPathFactory.newInstance().newXPath();
+-
+-        Object object = null;
+-        try {
+-            object = xpath.evaluate(xPath, node, type);
+-        } catch (XPathExpressionException e) {
+-            e.printStackTrace();
+-        }
+-        return object;
+-    }
+     
+     public static Logger getLogger(String loggerName) {
+     	Logger pluginLogger = Logger.getLogger(loggerName);

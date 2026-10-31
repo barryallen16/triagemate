@@ -1,0 +1,436 @@
+From 46220e69c220bacf8eb23911c8feba9dd68d1a26 Mon Sep 17 00:00:00 2001
+From: Tony Noble <tony.noble@gmail.com>
+Date: Tue, 13 Mar 2018 16:42:38 +0000
+Subject: [PATCH] Added ability to manually set request headers.  Added option
+ to use global environment variables rather than 'last job' vars.  Tidied
+ handling of URLs containing environment variables.
+
+---
+ .../plugins/urltrigger/URLTrigger.java        | 87 +++++++++++++++++--
+ .../plugins/urltrigger/URLTriggerEntry.java   | 43 ++++++++-
+ .../urltrigger/URLTriggerRequestHeader.java   | 44 ++++++++++
+ .../urltrigger/URLTrigger/config.jelly        | 33 ++++++-
+ .../URLTrigger/help-headerName.html           |  6 ++
+ .../URLTrigger/help-headerValue.html          |  5 ++
+ .../URLTrigger/help-useGlobalEnvVars.html     |  7 ++
+ 7 files changed, 216 insertions(+), 9 deletions(-)
+ create mode 100644 src/main/java/org/jenkinsci/plugins/urltrigger/URLTriggerRequestHeader.java
+ create mode 100644 src/main/resources/org/jenkinsci/plugins/urltrigger/URLTrigger/help-headerName.html
+ create mode 100644 src/main/resources/org/jenkinsci/plugins/urltrigger/URLTrigger/help-headerValue.html
+ create mode 100644 src/main/resources/org/jenkinsci/plugins/urltrigger/URLTrigger/help-useGlobalEnvVars.html
+
+diff --git a/src/main/java/org/jenkinsci/plugins/urltrigger/URLTrigger.java b/src/main/java/org/jenkinsci/plugins/urltrigger/URLTrigger.java
+index ddb847f..6e18590 100755
+--- a/src/main/java/org/jenkinsci/plugins/urltrigger/URLTrigger.java
++++ b/src/main/java/org/jenkinsci/plugins/urltrigger/URLTrigger.java
+@@ -3,6 +3,7 @@
+ import antlr.ANTLRException;
+ import com.sun.jersey.api.client.Client;
+ import com.sun.jersey.api.client.ClientResponse;
++import com.sun.jersey.api.client.WebResource;
+ import com.sun.jersey.api.client.config.ClientConfig;
+ import com.sun.jersey.api.client.config.DefaultClientConfig;
+ import com.sun.jersey.api.client.filter.HTTPBasicAuthFilter;
+@@ -10,11 +11,16 @@
+ import com.sun.jersey.client.apache.config.DefaultApacheHttpClientConfig;
+ import com.sun.jersey.client.urlconnection.HTTPSProperties;
+ import hudson.DescriptorExtensionList;
++import hudson.EnvVars;
+ import hudson.Extension;
+ import hudson.ProxyConfiguration;
+ import hudson.Util;
+ import hudson.console.AnnotatedLargeText;
+ import hudson.model.*;
++import hudson.slaves.EnvironmentVariablesNodeProperty;
++import hudson.slaves.NodeProperty;
++import hudson.slaves.NodePropertyDescriptor;
++import hudson.util.DescribableList;
+ import hudson.util.FormValidation;
+ import hudson.util.Secret;
+ import hudson.util.SequentialExecutionQueue;
+@@ -37,6 +43,7 @@
+ import org.jenkinsci.plugins.urltrigger.service.HTTPResponse;
+ import org.jenkinsci.plugins.urltrigger.service.URLResponse;
+ import org.jenkinsci.plugins.urltrigger.service.URLTriggerService;
++import org.jfree.util.Log;
+ import org.kohsuke.stapler.DataBoundConstructor;
+ import org.kohsuke.stapler.QueryParameter;
+ import org.kohsuke.stapler.StaplerRequest;
+@@ -173,13 +180,30 @@ public void writeLogTo(XMLOutput out) throws IOException {
+ 
+     }
+ 
+-    private String getURLValue(URLTriggerEntry entry, Node node) throws XTriggerException {
++    private String getURLValue(URLTriggerEntry entry, Node node , XTriggerLog log) throws XTriggerException {
+         String entryURL = entry.getUrl();
+         if (entryURL != null) {
+             EnvVarsResolver varsRetriever = new EnvVarsResolver();
+             Map<String, String> envVars;
+             try {
+-                envVars = varsRetriever.getPollingEnvVars((AbstractProject) job, node);
++            	if( entry.isUseGlobalEnvVars() ) {
++            		log.info( "Resolving environment variables using global values" );
++            		envVars = new EnvVars() ;
++                    Hudson hudson = Hudson.getInstance();
++                    if (hudson != null) {
++                        DescribableList<NodeProperty<?>, NodePropertyDescriptor> globalNodeProperties = hudson.getGlobalNodeProperties();
++                        if (globalNodeProperties != null) {
++                            for (NodeProperty nodeProperty : globalNodeProperties) {
++                                if (nodeProperty != null && nodeProperty instanceof EnvironmentVariablesNodeProperty) {
++                                    envVars.putAll(((EnvironmentVariablesNodeProperty) nodeProperty).getEnvVars());
++                                }
++                            }
++                        }
++                    }
++            	} else {
++            		log.info( "Resolving environment variables using last build values" );
++            		envVars = varsRetriever.getPollingEnvVars((AbstractProject) job, node);           		
++            	}
+             } catch (EnvInjectException e) {
+                 throw new XTriggerException(e);
+             }
+@@ -188,6 +212,7 @@ private String getURLValue(URLTriggerEntry entry, Node node) throws XTriggerExce
+         return null;
+     }
+ 
++
+     @Override
+     protected boolean checkIfModified(Node pollingNode, XTriggerLog log) throws XTriggerException {
+ 
+@@ -207,12 +232,18 @@ protected boolean checkIfModified(Node pollingNode, XTriggerLog log) throws XTri
+     }
+ 
+     private boolean checkIfModifiedEntry(URLTriggerEntry entry, Node pollingNode, XTriggerLog log) throws XTriggerException {
+-        String resolvedURL = getURLValue(entry, pollingNode);
++        String resolvedURL = getURLValue(entry, pollingNode , log);
+         URLTriggerResolvedEntry resolvedEntry = new URLTriggerResolvedEntry(resolvedURL, entry);
+ 
+         if (!resolvedEntry.isURLTriggerValidURL())
+             throw new IllegalArgumentException("Only http(s) and ftp URLs are supported. For non-http/ftp protocols, consider other XTrigger plugins");
+ 
++        if( resolvedEntry.getResolvedURL().contains( "$" ) ) {
++        		log.info( "URL contains unresolved environment variables." ) ;
++            log.info( "Skipping URLTrigger initialization. Waiting next schedule" ) ;
++            return false ;
++        }
++        
+         if (resolvedEntry.isHttp() || resolvedEntry.isHttps()) {
+             return checkIfModifiedEntryForHttpOrHttpsURL(resolvedEntry, log);
+         }
+@@ -225,12 +256,23 @@ private boolean checkIfModifiedEntryForHttpOrHttpsURL(URLTriggerResolvedEntry re
+         Client client = getClientObject(resolvedEntry, log);
+ 
+         String url = resolvedEntry.getResolvedURL();
++        WebResource.Builder webResourceBuilder = client.resource(url).getRequestBuilder() ;
++        
++        List< URLTriggerRequestHeader > requestHeaders = resolvedEntry.getEntry().getRequestHeaders() ;
++        if( requestHeaders.size() > 0 ) {
++        	for( URLTriggerRequestHeader requestHeader : requestHeaders ) {
++        		log.info("Adding header - " + requestHeader.headerName + ":" + requestHeader.headerValue) ;
++        		webResourceBuilder = webResourceBuilder.header(requestHeader.headerName, requestHeader.headerValue) ;
++        	}
++        }
++        
+         log.info(String.format("Invoking the url: \n %s", url));
+-        ClientResponse clientResponse = client.resource(url).get(ClientResponse.class);
++        ClientResponse clientResponse = webResourceBuilder.get(ClientResponse.class);
+ 
+         URLTriggerEntry entry = resolvedEntry.getEntry();
+ 
+-        if (isServiceUnavailableAndNotExpected(clientResponse, entry)) {
++        if (isServiceUnavailableAndNotExpected(clientResponse, entry)
++        		|| isURLNotFoundAndNotExpected( clientResponse , entry )) {
+             log.info("URL to poll unavailable.");
+             log.info("Skipping URLTrigger initialization. Waiting next schedule");
+             return false;
+@@ -265,6 +307,11 @@ private boolean isServiceUnavailableAndNotExpected(ClientResponse clientResponse
+                 && entry.getStatusCode() != HttpServletResponse.SC_SERVICE_UNAVAILABLE;
+     }
+ 
++    private boolean isURLNotFoundAndNotExpected( ClientResponse clientResponse , URLTriggerEntry entry ) {
++    		return HttpServletResponse.SC_NOT_FOUND == clientResponse.getStatus()
++    				&& entry.getStatusCode() != HttpServletResponse.SC_NOT_FOUND ;
++    }
++    
+     @Override
+     public String getCause() {
+         return URLTriggerCause.CAUSE;
+@@ -516,7 +563,6 @@ private FTPResponse getFTPResponse(URLTriggerResolvedEntry resolvedEntry) throws
+     }
+ 
+     @Extension
+-    @SuppressWarnings("unused")
+     public static class URLTriggerDescriptor extends XTriggerDescriptor {
+ 
+         private transient final SequentialExecutionQueue queue = new SequentialExecutionQueue(Executors.newSingleThreadExecutor(new ThreadFactory() {
+@@ -580,6 +626,7 @@ private URLTriggerEntry fillAndGetEntry(StaplerRequest req, JSONObject entryObje
+             URLTriggerEntry urlTriggerEntry = new URLTriggerEntry();
+             urlTriggerEntry.setUrl(entryObject.getString("url"));
+             urlTriggerEntry.setProxyActivated(entryObject.getBoolean("proxyActivated"));
++            urlTriggerEntry.setUseGlobalEnvVars(entryObject.getBoolean("useGlobalEnvVars"));
+             String username = Util.fixEmpty(entryObject.getString("username"));
+             if (username != null) {
+                 urlTriggerEntry.setUsername(username);
+@@ -620,6 +667,30 @@ private URLTriggerEntry fillAndGetEntry(StaplerRequest req, JSONObject entryObje
+ 
+             //Process checkLastModifiedDate
+             urlTriggerEntry.setCheckLastModificationDate(entryObject.getBoolean("checkLastModificationDate"));
++            
++            //Process requestHeaders
++            List< URLTriggerRequestHeader > requestHeaders = new ArrayList<URLTriggerRequestHeader>() ;
++            Object requestHeaderListObject = entryObject.get("urlRequestHeaders") ;
++            if( requestHeaderListObject instanceof JSONObject ) {
++            	JSONObject requestHeaderItem = (JSONObject) requestHeaderListObject ;
++            	String headerName = Util.fixEmpty(requestHeaderItem.getString("headerName")) ;
++            	String headerValue = Util.fixEmpty(requestHeaderItem.getString("headerValue" )) ;
++            	if( headerName != null && headerValue != null ) {
++            		requestHeaders.add( new URLTriggerRequestHeader( headerName , headerValue ) ) ;
++            	}
++            } else {
++            	JSONArray requestHeaderListArray = (JSONArray) requestHeaderListObject ;
++            	if( requestHeaderListArray != null ) {
++            		for( Object requestHeaderItemObject : requestHeaderListArray ) {
++                    	JSONObject requestHeaderItem = (JSONObject) requestHeaderItemObject ;
++                    	String headerName = Util.fixEmpty(requestHeaderItem.getString("headerName")) ;
++                    	String headerValue = Util.fixEmpty(requestHeaderItem.getString("headerValue" )) ;
++                    	if( headerName != null && headerValue != null ) {
++                    		requestHeaders.add( new URLTriggerRequestHeader( headerName , headerValue ) ) ;
++                    	}            		}
++            	}
++            }
++            urlTriggerEntry.setRequestHeaders(requestHeaders);
+ 
+             //Process inspectingContent
+             Object inspectingContentObject = entryObject.get("inspectingContent");
+@@ -669,6 +740,10 @@ public FormValidation doCheckURL(@QueryParameter String value) {
+             if (!value.startsWith("http") && !value.startsWith("ftp"))
+                 return FormValidation.error("Only http(s) and ftp URLs are supported. For non-http/ftp protocols, consider other XTrigger plugins");
+ 
++            if ( value.contains( "$" ) ) {
++            	return FormValidation.warning( "URL is parameterised and cannot be fully validated" ) ;
++            }
++
+             try {
+                 URI uri = new URI(value);
+                 if (uri.getScheme().equals("ftp")) {
+diff --git a/src/main/java/org/jenkinsci/plugins/urltrigger/URLTriggerEntry.java b/src/main/java/org/jenkinsci/plugins/urltrigger/URLTriggerEntry.java
+index d4dc59e..e508ff2 100755
+--- a/src/main/java/org/jenkinsci/plugins/urltrigger/URLTriggerEntry.java
++++ b/src/main/java/org/jenkinsci/plugins/urltrigger/URLTriggerEntry.java
+@@ -1,16 +1,24 @@
+ package org.jenkinsci.plugins.urltrigger;
+ 
+ import com.sun.jersey.api.client.ClientResponse;
++
++import hudson.Extension;
++import hudson.model.Describable;
++import hudson.model.Descriptor;
+ import hudson.util.Secret;
++
+ import org.jenkinsci.plugins.urltrigger.content.URLTriggerContentType;
+ import org.kohsuke.stapler.DataBoundConstructor;
+ 
+ import java.io.Serializable;
++import java.util.ArrayList;
++import java.util.List;
+ 
+ /**
+  * @author Gregory Boissinot
+  */
+-public class URLTriggerEntry implements Serializable {
++@SuppressWarnings("serial")
++public class URLTriggerEntry implements Serializable , Describable< URLTriggerEntry> {
+ 
+     public static final int DEFAULT_STATUS_CODE = ClientResponse.Status.OK.getStatusCode();
+ 
+@@ -24,7 +32,9 @@ public class URLTriggerEntry implements Serializable {
+     private boolean checkETag;
+     private boolean checkLastModificationDate;
+     private boolean inspectingContent;
++    private boolean useGlobalEnvVars;
+     private URLTriggerContentType[] contentTypes;
++    private List<URLTriggerRequestHeader> requestHeaders = new ArrayList<URLTriggerRequestHeader>() ;
+ 
+     private transient String ETag;
+     private transient long lastModificationDate;
+@@ -174,4 +184,35 @@ public boolean isHttp() {
+     public boolean isHttps() {
+         return url.startsWith("https");
+     }
++
++	public List<URLTriggerRequestHeader> getRequestHeaders() {
++		return requestHeaders;
++	}
++
++	public void setRequestHeaders(List<URLTriggerRequestHeader> requestHeaders) {
++		this.requestHeaders = requestHeaders;
++	}
++	
++    public Descriptor<URLTriggerEntry> getDescriptor() {
++        return DESCRIPTOR;
++    }
++
++    public boolean isUseGlobalEnvVars() {
++		return useGlobalEnvVars;
++	}
++
++	public void setUseGlobalEnvVars(boolean useGlobalEnvVars) {
++		this.useGlobalEnvVars = useGlobalEnvVars;
++	}
++
++    @Extension
++    public final static DescriptorImpl DESCRIPTOR = new DescriptorImpl();
++
++
++    public static class DescriptorImpl extends Descriptor<URLTriggerEntry> {
++        @Override
++        public String getDisplayName() {
++          return "UrlTriggerEntry";
++        }
++    }
+ }
+diff --git a/src/main/java/org/jenkinsci/plugins/urltrigger/URLTriggerRequestHeader.java b/src/main/java/org/jenkinsci/plugins/urltrigger/URLTriggerRequestHeader.java
+new file mode 100644
+index 0000000..1c08fb3
+--- /dev/null
++++ b/src/main/java/org/jenkinsci/plugins/urltrigger/URLTriggerRequestHeader.java
+@@ -0,0 +1,44 @@
++package org.jenkinsci.plugins.urltrigger ;
++
++import hudson.Extension;
++import org.kohsuke.stapler.DataBoundConstructor;
++import org.kohsuke.stapler.export.Exported;
++
++import hudson.model.Describable;
++import hudson.model.Descriptor;
++
++
++/**
++ * @author  Tony Noble
++ */
++public class URLTriggerRequestHeader implements Describable<URLTriggerRequestHeader>{
++    @Exported public String headerName = "";
++    @Exported public String headerValue = "";
++    
++    @DataBoundConstructor
++    public URLTriggerRequestHeader(String headerName, String headerValue) {
++      this.headerName=headerName;
++      this.headerValue=headerValue;
++    }
++    
++    public Descriptor<URLTriggerRequestHeader> getDescriptor() {
++        return DESCRIPTOR;
++    }
++
++    @Extension
++    public final static DescriptorImpl DESCRIPTOR = new DescriptorImpl();
++
++
++    public static class DescriptorImpl extends Descriptor<URLTriggerRequestHeader> {
++        @Override
++        public String getDisplayName() {
++          return "UrlTriggerRequestHeader";
++        }
++    }
++    
++    
++    public static URLTriggerRequestHeader[] getDefaults() {
++    	return new URLTriggerRequestHeader[] { new URLTriggerRequestHeader( "" , "" ) } ;
++    }
++    
++}
+\ No newline at end of file
+diff --git a/src/main/resources/org/jenkinsci/plugins/urltrigger/URLTrigger/config.jelly b/src/main/resources/org/jenkinsci/plugins/urltrigger/URLTrigger/config.jelly
+index fccf9a6..d8b36e8 100644
+--- a/src/main/resources/org/jenkinsci/plugins/urltrigger/URLTrigger/config.jelly
++++ b/src/main/resources/org/jenkinsci/plugins/urltrigger/URLTrigger/config.jelly
+@@ -10,7 +10,7 @@
+                                checkUrl="'${rootURL}/trigger/URLTrigger/checkURL?value='+encodeURIComponent(this.value)"
+                                value="${urlElements.url}"/>
+                 </f:entry>
+-
++                
+                 <f:advanced>
+ 
+                     <f:entry field="proxyActivated">
+@@ -21,7 +21,15 @@
+                                 title="${%Activate the Jenkins Proxy}"/>
+                     </f:entry>
+ 
+-                    <f:section title="${%Client parameters}">
++                    <f:entry field="useGlobalEnvVars">
++                        <f:checkbox
++                                field="useGlobalEnvVars"
++                                name="urlElements.useGlobalEnvVars"
++                                checked="${urlElements.useGlobalEnvVars}"
++                                title="${%Use global variables to resolve URL}"/>
++                    </f:entry>
++
++                     <f:section title="${%Client parameters}">
+                         <f:entry field="timeout" title="${%Timeout}">
+                             <f:textbox name="timeout"
+                                        checkUrl="'${rootURL}/trigger/URLTrigger/checkTimeout?value='+encodeURIComponent(this.value)"
+@@ -39,6 +47,27 @@
+                                         value="${urlElements.realPassword}"/>
+                         </f:entry>
+                     </f:section>
++
++					<f:section title="${%Request Headers}">
++		                <f:entry title="">
++	    		            <f:repeatable var="urlRequestHeaders" items="${urlElements.requestHeaders}" add="${%Add request header}" minimum="0">
++	            		    	<table width="100%">
++	                				<f:entry title="${%Header name}" field="headerName">
++				                		<f:textbox value="${urlRequestHeaders.headerName}"/>
++	        			        	</f:entry>
++	                				<f:entry title="${%Header value}" field="headerValue">
++				                		<f:textbox value="${urlRequestHeaders.headerValue}"/>
++	        			        	</f:entry>
++                					<f:entry title="">
++					                    <div align="right">
++					                        <f:repeatableDeleteButton/>
++                    					</div>
++					                </f:entry>
++	                			</table>
++		    	            </f:repeatable>
++    			        </f:entry>
++    	        	</f:section>
++
+                 </f:advanced>
+ 
+                 <f:section title="${%URL Response Check}">
+diff --git a/src/main/resources/org/jenkinsci/plugins/urltrigger/URLTrigger/help-headerName.html b/src/main/resources/org/jenkinsci/plugins/urltrigger/URLTrigger/help-headerName.html
+new file mode 100644
+index 0000000..0f14135
+--- /dev/null
++++ b/src/main/resources/org/jenkinsci/plugins/urltrigger/URLTrigger/help-headerName.html
+@@ -0,0 +1,6 @@
++<div>
++    <p>
++        The name of the HTTP header to set.  e.g. ContentType<br>
++        This will only be used for http or https requests
++    </p>
++</div>
+diff --git a/src/main/resources/org/jenkinsci/plugins/urltrigger/URLTrigger/help-headerValue.html b/src/main/resources/org/jenkinsci/plugins/urltrigger/URLTrigger/help-headerValue.html
+new file mode 100644
+index 0000000..f777345
+--- /dev/null
++++ b/src/main/resources/org/jenkinsci/plugins/urltrigger/URLTrigger/help-headerValue.html
+@@ -0,0 +1,5 @@
++<div>
++    <p>
++        The value to set for the HTTP header.  e.g. application/xml
++    </p>
++</div>
+diff --git a/src/main/resources/org/jenkinsci/plugins/urltrigger/URLTrigger/help-useGlobalEnvVars.html b/src/main/resources/org/jenkinsci/plugins/urltrigger/URLTrigger/help-useGlobalEnvVars.html
+new file mode 100644
+index 0000000..5a9a6c3
+--- /dev/null
++++ b/src/main/resources/org/jenkinsci/plugins/urltrigger/URLTrigger/help-useGlobalEnvVars.html
+@@ -0,0 +1,7 @@
++<div>
++    <p>
++        By default, environment variables used by polling mechanism are taken from the last build.<br/>
++        If you would prefer to use global Jenkins variables (where a variable may change regularly and<br/>
++        you always want to be polling based on the latest value), this box should be checked
++    </p>
++</div>

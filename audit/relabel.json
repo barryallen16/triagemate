@@ -1,0 +1,1568 @@
+[
+  {
+    "id": "GHSA-2jc4-r94c-rp7h:java.lang.security.audit.xxe.transformerfactory-dtds-not-disabled.transformerfactory-dtds-not-disabled:src/java/org/apache/ivy/ant/IvyReport.java:317",
+    "vul_id": "GHSA-2jc4-r94c-rp7h",
+    "path": "src/java/org/apache/ivy/ant/IvyReport.java",
+    "line": 317,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-2jc4-r94c-rp7h:java.lang.security.audit.xxe.saxparserfactory-disallow-doctype-decl-missing.saxparserfactory-disallow-doctype-decl-missing:src/java/org/apache/ivy/util/XMLHelper.java:65",
+    "vul_id": "GHSA-2jc4-r94c-rp7h",
+    "path": "src/java/org/apache/ivy/util/XMLHelper.java",
+    "line": 65,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-2jc4-r94c-rp7h:java.lang.security.audit.xxe.saxparserfactory-disallow-doctype-decl-missing.saxparserfactory-disallow-doctype-decl-missing:src/java/org/apache/ivy/util/XMLHelper.java:76",
+    "vul_id": "GHSA-2jc4-r94c-rp7h",
+    "path": "src/java/org/apache/ivy/util/XMLHelper.java",
+    "line": 76,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-2jc4-r94c-rp7h:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:src/java/org/apache/ivy/util/XMLHelper.java:227",
+    "vul_id": "GHSA-2jc4-r94c-rp7h",
+    "path": "src/java/org/apache/ivy/util/XMLHelper.java",
+    "line": 227,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-353m-jh2m-72v4:java.lang.security.audit.object-deserialization.object-deserialization:src/edu/stanford/nlp/io/IOUtils.java:278",
+    "vul_id": "GHSA-353m-jh2m-72v4",
+    "path": "src/edu/stanford/nlp/io/IOUtils.java",
+    "line": 278,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-353m-jh2m-72v4:java.lang.security.audit.object-deserialization.object-deserialization:src/edu/stanford/nlp/io/IOUtils.java:283",
+    "vul_id": "GHSA-353m-jh2m-72v4",
+    "path": "src/edu/stanford/nlp/io/IOUtils.java",
+    "line": 283,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-353m-jh2m-72v4:java.lang.security.audit.object-deserialization.object-deserialization:src/edu/stanford/nlp/io/IOUtils.java:309",
+    "vul_id": "GHSA-353m-jh2m-72v4",
+    "path": "src/edu/stanford/nlp/io/IOUtils.java",
+    "line": 309,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-353m-jh2m-72v4:java.lang.security.audit.object-deserialization.object-deserialization:src/edu/stanford/nlp/io/IOUtils.java:356",
+    "vul_id": "GHSA-353m-jh2m-72v4",
+    "path": "src/edu/stanford/nlp/io/IOUtils.java",
+    "line": 356,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-353m-jh2m-72v4:java.lang.security.audit.object-deserialization.object-deserialization:src/edu/stanford/nlp/io/IOUtils.java:403",
+    "vul_id": "GHSA-353m-jh2m-72v4",
+    "path": "src/edu/stanford/nlp/io/IOUtils.java",
+    "line": 403,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-3gm7-v7vw-866c:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:solr/contrib/dataimporthandler/src/java/org/apache/solr/handler/dataimport/DataImporter.java:205",
+    "vul_id": "GHSA-3gm7-v7vw-866c",
+    "path": "solr/contrib/dataimporthandler/src/java/org/apache/solr/handler/dataimport/DataImporter.java",
+    "line": 205,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-3mcp-9wr4-cjqf:java.lang.security.audit.el-injection.el-injection:dropwizard-validation/src/main/java/io/dropwizard/validation/selfvalidating/ViolationCollector.java:24",
+    "vul_id": "GHSA-3mcp-9wr4-cjqf",
+    "path": "dropwizard-validation/src/main/java/io/dropwizard/validation/selfvalidating/ViolationCollector.java",
+    "line": 24,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-3ppr-72x5-x67q:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:src/main/java/hudson/plugins/mstest/MSTestReportConverter.java:116",
+    "vul_id": "GHSA-3ppr-72x5-x67q",
+    "path": "src/main/java/hudson/plugins/mstest/MSTestReportConverter.java",
+    "line": 116,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-3ppr-72x5-x67q:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:src/main/java/hudson/plugins/mstest/MSTestReportConverter.java:151",
+    "vul_id": "GHSA-3ppr-72x5-x67q",
+    "path": "src/main/java/hudson/plugins/mstest/MSTestReportConverter.java",
+    "line": 151,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-3ppr-72x5-x67q:java.lang.security.audit.xxe.transformerfactory-dtds-not-disabled.transformerfactory-dtds-not-disabled:src/main/java/hudson/plugins/mstest/XslTransformer.java:25",
+    "vul_id": "GHSA-3ppr-72x5-x67q",
+    "path": "src/main/java/hudson/plugins/mstest/XslTransformer.java",
+    "line": 25,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-3ppr-72x5-x67q:java.lang.security.audit.xxe.transformerfactory-dtds-not-disabled.transformerfactory-dtds-not-disabled:src/main/java/hudson/plugins/mstest/XslTransformer.java:31",
+    "vul_id": "GHSA-3ppr-72x5-x67q",
+    "path": "src/main/java/hudson/plugins/mstest/XslTransformer.java",
+    "line": 31,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-3vrc-rrpw-r5pw:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:src/main/java/com/jamesmurty/utils/BaseXMLBuilder.java:134",
+    "vul_id": "GHSA-3vrc-rrpw-r5pw",
+    "path": "src/main/java/com/jamesmurty/utils/BaseXMLBuilder.java",
+    "line": 134,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-3vrc-rrpw-r5pw:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:src/main/java/com/jamesmurty/utils/BaseXMLBuilder.java:165",
+    "vul_id": "GHSA-3vrc-rrpw-r5pw",
+    "path": "src/main/java/com/jamesmurty/utils/BaseXMLBuilder.java",
+    "line": 165,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-3vrc-rrpw-r5pw:java.lang.security.audit.xxe.transformerfactory-dtds-not-disabled.transformerfactory-dtds-not-disabled:src/main/java/com/jamesmurty/utils/BaseXMLBuilder.java:1222",
+    "vul_id": "GHSA-3vrc-rrpw-r5pw",
+    "path": "src/main/java/com/jamesmurty/utils/BaseXMLBuilder.java",
+    "line": 1222,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-3xrr-7m6p-p7xh:java.lang.security.audit.xxe.transformerfactory-dtds-not-disabled.transformerfactory-dtds-not-disabled:src/main/java/com/gargoylesoftware/htmlunit/javascript/host/xml/XSLTProcessor.java:144",
+    "vul_id": "GHSA-3xrr-7m6p-p7xh",
+    "path": "src/main/java/com/gargoylesoftware/htmlunit/javascript/host/xml/XSLTProcessor.java",
+    "line": 144,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-3xrr-7m6p-p7xh:java.lang.security.audit.xxe.transformerfactory-dtds-not-disabled.transformerfactory-dtds-not-disabled:src/main/java/com/gargoylesoftware/htmlunit/javascript/host/xml/XSLTProcessor.java:171",
+    "vul_id": "GHSA-3xrr-7m6p-p7xh",
+    "path": "src/main/java/com/gargoylesoftware/htmlunit/javascript/host/xml/XSLTProcessor.java",
+    "line": 171,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-3xrr-7m6p-p7xh:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:src/main/java/com/gargoylesoftware/htmlunit/javascript/host/xml/XSLTProcessor.java:177",
+    "vul_id": "GHSA-3xrr-7m6p-p7xh",
+    "path": "src/main/java/com/gargoylesoftware/htmlunit/javascript/host/xml/XSLTProcessor.java",
+    "line": 177,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-463r-5m89-4xfr:java.lang.security.audit.crypto.use-of-md5.use-of-md5:core/src/main/java/hudson/Util.java:666",
+    "vul_id": "GHSA-463r-5m89-4xfr",
+    "path": "core/src/main/java/hudson/Util.java",
+    "line": 666,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-478x-m3mx-7j3f:java.lang.security.audit.crypto.use-of-sha1.use-of-sha1:src/main/java/htmlpublisher/HtmlPublisher.java:107",
+    "vul_id": "GHSA-478x-m3mx-7j3f",
+    "path": "src/main/java/htmlpublisher/HtmlPublisher.java",
+    "line": 107,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-47qw-ccjm-9c2c:java.lang.security.audit.crypto.unencrypted-socket.unencrypted-socket:local-s3-rest/src/main/java/com/robothy/s3/rest/LocalS3.java:316",
+    "vul_id": "GHSA-47qw-ccjm-9c2c",
+    "path": "local-s3-rest/src/main/java/com/robothy/s3/rest/LocalS3.java",
+    "line": 316,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-4fq3-mr56-cg6r:java.spring.security.audit.spel-injection.spel-injection:src/main/java/org/springframework/data/web/MapDataBinder.java:172",
+    "vul_id": "GHSA-4fq3-mr56-cg6r",
+    "path": "src/main/java/org/springframework/data/web/MapDataBinder.java",
+    "line": 172,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-4h5h-p23f-hjqf:java.lang.security.audit.formatted-sql-string.formatted-sql-string:tenant/src/main/java/org/folio/spring/tenant/hibernate/HibernateSchemaService.java:139",
+    "vul_id": "GHSA-4h5h-p23f-hjqf",
+    "path": "tenant/src/main/java/org/folio/spring/tenant/hibernate/HibernateSchemaService.java",
+    "line": 139,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-4h5h-p23f-hjqf:java.lang.security.audit.formatted-sql-string.formatted-sql-string:tenant/src/main/java/org/folio/spring/tenant/hibernate/HibernateSchemaService.java:175",
+    "vul_id": "GHSA-4h5h-p23f-hjqf",
+    "path": "tenant/src/main/java/org/folio/spring/tenant/hibernate/HibernateSchemaService.java",
+    "line": 175,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-4h5h-p23f-hjqf:java.lang.security.audit.formatted-sql-string.formatted-sql-string:tenant/src/main/java/org/folio/spring/tenant/hibernate/HibernateSchemaService.java:182",
+    "vul_id": "GHSA-4h5h-p23f-hjqf",
+    "path": "tenant/src/main/java/org/folio/spring/tenant/hibernate/HibernateSchemaService.java",
+    "line": 182,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-4hvc-qwr2-f8rv:java.lang.security.audit.object-deserialization.object-deserialization:redisson/src/main/java/org/redisson/codec/SerializationCodec.java:56",
+    "vul_id": "GHSA-4hvc-qwr2-f8rv",
+    "path": "redisson/src/main/java/org/redisson/codec/SerializationCodec.java",
+    "line": 56,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-54wc-49qj-5ghj:java.lang.security.audit.crypto.use-of-md5.use-of-md5:src/main/java/net/mingsoft/cms/action/BaseAction.java:157",
+    "vul_id": "GHSA-54wc-49qj-5ghj",
+    "path": "src/main/java/net/mingsoft/cms/action/BaseAction.java",
+    "line": 157,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-5gwh-r76w-934h:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:src/main/java/com/qualys/plugins/wasPlugin/util/Helper.java:131",
+    "vul_id": "GHSA-5gwh-r76w-934h",
+    "path": "src/main/java/com/qualys/plugins/wasPlugin/util/Helper.java",
+    "line": 131,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-5w3j-gwgh-4rfv:java.lang.security.audit.formatted-sql-string.formatted-sql-string:h2o-core/src/main/java/water/jdbc/SQLManager.java:855",
+    "vul_id": "GHSA-5w3j-gwgh-4rfv",
+    "path": "h2o-core/src/main/java/water/jdbc/SQLManager.java",
+    "line": 855,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-65hj-9ppw-77xc:java.lang.security.audit.crlf-injection-logs.crlf-injection-logs:ff4j-web/src/main/java/org/ff4j/web/embedded/ConsoleOperations.java:87",
+    "vul_id": "GHSA-65hj-9ppw-77xc",
+    "path": "ff4j-web/src/main/java/org/ff4j/web/embedded/ConsoleOperations.java",
+    "line": 87,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-65hj-9ppw-77xc:java.lang.security.audit.crlf-injection-logs.crlf-injection-logs:ff4j-web/src/main/java/org/ff4j/web/embedded/ConsoleOperations.java:283",
+    "vul_id": "GHSA-65hj-9ppw-77xc",
+    "path": "ff4j-web/src/main/java/org/ff4j/web/embedded/ConsoleOperations.java",
+    "line": 283,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-68r5-9hpg-7qw9:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:opendj-dsml-servlet/src/main/java/org/opends/dsml/protocol/DSMLServlet.java:899",
+    "vul_id": "GHSA-68r5-9hpg-7qw9",
+    "path": "opendj-dsml-servlet/src/main/java/org/opends/dsml/protocol/DSMLServlet.java",
+    "line": 899,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-68r5-9hpg-7qw9:java.lang.security.audit.xxe.saxparserfactory-disallow-doctype-decl-missing.saxparserfactory-disallow-doctype-decl-missing:opendj-dsml-servlet/src/main/java/org/opends/dsml/protocol/DSMLServlet.java:927",
+    "vul_id": "GHSA-68r5-9hpg-7qw9",
+    "path": "opendj-dsml-servlet/src/main/java/org/opends/dsml/protocol/DSMLServlet.java",
+    "line": 927,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-6rmm-pg23-5f8q:java.spring.security.audit.spel-injection.spel-injection:dynamic-datasource-spring/src/main/java/com/baomidou/dynamic/datasource/processor/DsSpelExpressionProcessor.java:78",
+    "vul_id": "GHSA-6rmm-pg23-5f8q",
+    "path": "dynamic-datasource-spring/src/main/java/com/baomidou/dynamic/datasource/processor/DsSpelExpressionProcessor.java",
+    "line": 78,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-763j-q7wv-vf3m:java.lang.security.audit.unvalidated-redirect.unvalidated-redirect:dspace-jspui/src/main/java/org/dspace/app/webui/servlet/ControlledVocabularyServlet.java:31",
+    "vul_id": "GHSA-763j-q7wv-vf3m",
+    "path": "dspace-jspui/src/main/java/org/dspace/app/webui/servlet/ControlledVocabularyServlet.java",
+    "line": 31,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-763j-q7wv-vf3m:java.lang.security.audit.tainted-session-from-http-request.tainted-session-from-http-request:dspace-jspui/src/main/java/org/dspace/app/webui/servlet/ControlledVocabularyServlet.java:51",
+    "vul_id": "GHSA-763j-q7wv-vf3m",
+    "path": "dspace-jspui/src/main/java/org/dspace/app/webui/servlet/ControlledVocabularyServlet.java",
+    "line": 51,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-763j-q7wv-vf3m:java.lang.security.audit.tainted-session-from-http-request.tainted-session-from-http-request:dspace-jspui/src/main/java/org/dspace/app/webui/servlet/ControlledVocabularyServlet.java:52",
+    "vul_id": "GHSA-763j-q7wv-vf3m",
+    "path": "dspace-jspui/src/main/java/org/dspace/app/webui/servlet/ControlledVocabularyServlet.java",
+    "line": 52,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-77cc-w3wm-6whp:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:dssp-client/src/main/java/be/e_contract/dssp/client/SignResponseVerifier.java:133",
+    "vul_id": "GHSA-77cc-w3wm-6whp",
+    "path": "dssp-client/src/main/java/be/e_contract/dssp/client/SignResponseVerifier.java",
+    "line": 133,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-7c5v-895v-w4q5:java.lang.security.audit.object-deserialization.object-deserialization:modules/jooby-pac4j/src/main/java/io/jooby/internal/pac4j/SessionStoreImpl.java:131",
+    "vul_id": "GHSA-7c5v-895v-w4q5",
+    "path": "modules/jooby-pac4j/src/main/java/io/jooby/internal/pac4j/SessionStoreImpl.java",
+    "line": 131,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-7gq2-vwq9-w8vw:java.lang.security.audit.url-rewriting.url-rewriting:appserver/web/web-core/src/main/java/org/apache/catalina/authenticator/FormAuthenticator.java:101",
+    "vul_id": "GHSA-7gq2-vwq9-w8vw",
+    "path": "appserver/web/web-core/src/main/java/org/apache/catalina/authenticator/FormAuthenticator.java",
+    "line": 101,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-7gq2-vwq9-w8vw:java.lang.security.audit.cookie-missing-httponly.cookie-missing-httponly:appserver/web/web-core/src/main/java/org/apache/catalina/authenticator/FormAuthenticator.java:333",
+    "vul_id": "GHSA-7gq2-vwq9-w8vw",
+    "path": "appserver/web/web-core/src/main/java/org/apache/catalina/authenticator/FormAuthenticator.java",
+    "line": 333,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-7gq2-vwq9-w8vw:java.lang.security.audit.cookie-missing-secure-flag.cookie-missing-secure-flag:appserver/web/web-core/src/main/java/org/apache/catalina/authenticator/FormAuthenticator.java:333",
+    "vul_id": "GHSA-7gq2-vwq9-w8vw",
+    "path": "appserver/web/web-core/src/main/java/org/apache/catalina/authenticator/FormAuthenticator.java",
+    "line": 333,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-7gq2-vwq9-w8vw:java.lang.security.audit.cookie-missing-httponly.cookie-missing-httponly:appserver/web/web-core/src/main/java/org/apache/catalina/authenticator/FormAuthenticator.java:467",
+    "vul_id": "GHSA-7gq2-vwq9-w8vw",
+    "path": "appserver/web/web-core/src/main/java/org/apache/catalina/authenticator/FormAuthenticator.java",
+    "line": 467,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-7gq2-vwq9-w8vw:java.lang.security.audit.cookie-missing-secure-flag.cookie-missing-secure-flag:appserver/web/web-core/src/main/java/org/apache/catalina/authenticator/FormAuthenticator.java:467",
+    "vul_id": "GHSA-7gq2-vwq9-w8vw",
+    "path": "appserver/web/web-core/src/main/java/org/apache/catalina/authenticator/FormAuthenticator.java",
+    "line": 467,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-7v6m-28jr-rg84:java.lang.security.audit.el-injection.el-injection:engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/ElTermResolver.java:31",
+    "vul_id": "GHSA-7v6m-28jr-rg84",
+    "path": "engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/ElTermResolver.java",
+    "line": 31,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-83w4-x5w9-hf4h:java.spring.security.unrestricted-request-mapping.unrestricted-request-mapping:xxl-job-admin/src/main/java/com/xxl/job/admin/controller/JobLogController.java:50",
+    "vul_id": "GHSA-83w4-x5w9-hf4h",
+    "path": "xxl-job-admin/src/main/java/com/xxl/job/admin/controller/JobLogController.java",
+    "line": 50,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-83w4-x5w9-hf4h:java.spring.security.unrestricted-request-mapping.unrestricted-request-mapping:xxl-job-admin/src/main/java/com/xxl/job/admin/controller/JobLogController.java:80",
+    "vul_id": "GHSA-83w4-x5w9-hf4h",
+    "path": "xxl-job-admin/src/main/java/com/xxl/job/admin/controller/JobLogController.java",
+    "line": 80,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-83w4-x5w9-hf4h:java.spring.security.unrestricted-request-mapping.unrestricted-request-mapping:xxl-job-admin/src/main/java/com/xxl/job/admin/controller/JobLogController.java:87",
+    "vul_id": "GHSA-83w4-x5w9-hf4h",
+    "path": "xxl-job-admin/src/main/java/com/xxl/job/admin/controller/JobLogController.java",
+    "line": 87,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-83w4-x5w9-hf4h:java.spring.security.unrestricted-request-mapping.unrestricted-request-mapping:xxl-job-admin/src/main/java/com/xxl/job/admin/controller/JobLogController.java:120",
+    "vul_id": "GHSA-83w4-x5w9-hf4h",
+    "path": "xxl-job-admin/src/main/java/com/xxl/job/admin/controller/JobLogController.java",
+    "line": 120,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-83w4-x5w9-hf4h:java.spring.security.unrestricted-request-mapping.unrestricted-request-mapping:xxl-job-admin/src/main/java/com/xxl/job/admin/controller/JobLogController.java:138",
+    "vul_id": "GHSA-83w4-x5w9-hf4h",
+    "path": "xxl-job-admin/src/main/java/com/xxl/job/admin/controller/JobLogController.java",
+    "line": 138,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-83w4-x5w9-hf4h:java.spring.security.unrestricted-request-mapping.unrestricted-request-mapping:xxl-job-admin/src/main/java/com/xxl/job/admin/controller/JobLogController.java:160",
+    "vul_id": "GHSA-83w4-x5w9-hf4h",
+    "path": "xxl-job-admin/src/main/java/com/xxl/job/admin/controller/JobLogController.java",
+    "line": 160,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-83w4-x5w9-hf4h:java.spring.security.unrestricted-request-mapping.unrestricted-request-mapping:xxl-job-admin/src/main/java/com/xxl/job/admin/controller/JobLogController.java:194",
+    "vul_id": "GHSA-83w4-x5w9-hf4h",
+    "path": "xxl-job-admin/src/main/java/com/xxl/job/admin/controller/JobLogController.java",
+    "line": 194,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-8c3x-hq82-gjcm:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:org.hl7.fhir.publisher.core/src/main/java/org/hl7/fhir/igtools/publisher/Publisher.java:14317",
+    "vul_id": "GHSA-8c3x-hq82-gjcm",
+    "path": "org.hl7.fhir.publisher.core/src/main/java/org/hl7/fhir/igtools/publisher/Publisher.java",
+    "line": 14317,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-8c3x-hq82-gjcm:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:org.hl7.fhir.publisher.core/src/main/java/org/hl7/fhir/igtools/publisher/utils/PackageReleaser.java:844",
+    "vul_id": "GHSA-8c3x-hq82-gjcm",
+    "path": "org.hl7.fhir.publisher.core/src/main/java/org/hl7/fhir/igtools/publisher/utils/PackageReleaser.java",
+    "line": 844,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-8c3x-hq82-gjcm:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:org.hl7.fhir.publisher.core/src/main/java/org/hl7/fhir/igtools/publisher/utils/TemplateReleaser.java:605",
+    "vul_id": "GHSA-8c3x-hq82-gjcm",
+    "path": "org.hl7.fhir.publisher.core/src/main/java/org/hl7/fhir/igtools/publisher/utils/TemplateReleaser.java",
+    "line": 605,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-8gqp-hr9g-pg62:java.lang.security.audit.script-engine-injection.script-engine-injection:conductor-clients/java/conductor-java-sdk/sdk/src/main/java/com/netflix/conductor/sdk/workflow/def/tasks/Javascript.java:102",
+    "vul_id": "GHSA-8gqp-hr9g-pg62",
+    "path": "conductor-clients/java/conductor-java-sdk/sdk/src/main/java/com/netflix/conductor/sdk/workflow/def/tasks/Javascript.java",
+    "line": 102,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-8gqp-hr9g-pg62:java.lang.security.audit.script-engine-injection.script-engine-injection:conductor-clients/java/conductor-java-sdk/sdk/src/main/java/com/netflix/conductor/sdk/workflow/def/tasks/Javascript.java:129",
+    "vul_id": "GHSA-8gqp-hr9g-pg62",
+    "path": "conductor-clients/java/conductor-java-sdk/sdk/src/main/java/com/netflix/conductor/sdk/workflow/def/tasks/Javascript.java",
+    "line": 129,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-8gqp-hr9g-pg62:java.lang.security.audit.script-engine-injection.script-engine-injection:core/src/main/java/com/netflix/conductor/core/events/ScriptEvaluator.java:50",
+    "vul_id": "GHSA-8gqp-hr9g-pg62",
+    "path": "core/src/main/java/com/netflix/conductor/core/events/ScriptEvaluator.java",
+    "line": 50,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-8h4x-xvjp-vf99:java.lang.security.audit.crypto.unencrypted-socket.unencrypted-socket:hazelcast/src/main/java/com/hazelcast/security/impl/function/SecuredFunctions.java:350",
+    "vul_id": "GHSA-8h4x-xvjp-vf99",
+    "path": "hazelcast/src/main/java/com/hazelcast/security/impl/function/SecuredFunctions.java",
+    "line": 350,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-99c3-qc2q-p94m:java.lang.security.audit.formatted-sql-string.formatted-sql-string:modules/plugin/jdbc/jdbc-oracle/src/main/java/org/geotools/data/oracle/OracleDialect.java:1106",
+    "vul_id": "GHSA-99c3-qc2q-p94m",
+    "path": "modules/plugin/jdbc/jdbc-oracle/src/main/java/org/geotools/data/oracle/OracleDialect.java",
+    "line": 1106,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-99c3-qc2q-p94m:java.lang.security.audit.formatted-sql-string.formatted-sql-string:modules/plugin/jdbc/jdbc-oracle/src/main/java/org/geotools/data/oracle/OracleDialect.java:1388",
+    "vul_id": "GHSA-99c3-qc2q-p94m",
+    "path": "modules/plugin/jdbc/jdbc-oracle/src/main/java/org/geotools/data/oracle/OracleDialect.java",
+    "line": 1388,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-99c3-qc2q-p94m:java.lang.security.audit.formatted-sql-string.formatted-sql-string:modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/PostGISDialect.java:642",
+    "vul_id": "GHSA-99c3-qc2q-p94m",
+    "path": "modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/PostGISDialect.java",
+    "line": 642,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-99c3-qc2q-p94m:java.lang.security.audit.formatted-sql-string.formatted-sql-string:modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/PostGISDialect.java:761",
+    "vul_id": "GHSA-99c3-qc2q-p94m",
+    "path": "modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/PostGISDialect.java",
+    "line": 761,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-99c3-qc2q-p94m:java.lang.security.audit.formatted-sql-string.formatted-sql-string:modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/PostGISDialect.java:796",
+    "vul_id": "GHSA-99c3-qc2q-p94m",
+    "path": "modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/PostGISDialect.java",
+    "line": 796,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-99c3-qc2q-p94m:java.lang.security.audit.formatted-sql-string.formatted-sql-string:modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/PostGISDialect.java:834",
+    "vul_id": "GHSA-99c3-qc2q-p94m",
+    "path": "modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/PostGISDialect.java",
+    "line": 834,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-99c3-qc2q-p94m:java.lang.security.audit.formatted-sql-string.formatted-sql-string:modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/PostGISDialect.java:869",
+    "vul_id": "GHSA-99c3-qc2q-p94m",
+    "path": "modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/PostGISDialect.java",
+    "line": 869,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-99c3-qc2q-p94m:java.lang.security.audit.formatted-sql-string.formatted-sql-string:modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/PostGISDialect.java:902",
+    "vul_id": "GHSA-99c3-qc2q-p94m",
+    "path": "modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/PostGISDialect.java",
+    "line": 902,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-99c3-qc2q-p94m:java.lang.security.audit.formatted-sql-string.formatted-sql-string:modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/PostGISDialect.java:962",
+    "vul_id": "GHSA-99c3-qc2q-p94m",
+    "path": "modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/PostGISDialect.java",
+    "line": 962,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-99c3-qc2q-p94m:java.lang.security.audit.formatted-sql-string.formatted-sql-string:modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/PostGISDialect.java:998",
+    "vul_id": "GHSA-99c3-qc2q-p94m",
+    "path": "modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/PostGISDialect.java",
+    "line": 998,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-99c3-qc2q-p94m:java.lang.security.audit.formatted-sql-string.formatted-sql-string:modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/PostGISDialect.java:1021",
+    "vul_id": "GHSA-99c3-qc2q-p94m",
+    "path": "modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/PostGISDialect.java",
+    "line": 1021,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-99c3-qc2q-p94m:java.lang.security.audit.formatted-sql-string.formatted-sql-string:modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/PostGISDialect.java:1064",
+    "vul_id": "GHSA-99c3-qc2q-p94m",
+    "path": "modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/PostGISDialect.java",
+    "line": 1064,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-99c3-qc2q-p94m:java.lang.security.audit.formatted-sql-string.formatted-sql-string:modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/PostGISDialect.java:1213",
+    "vul_id": "GHSA-99c3-qc2q-p94m",
+    "path": "modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/PostGISDialect.java",
+    "line": 1213,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-99c3-qc2q-p94m:java.lang.security.audit.formatted-sql-string.formatted-sql-string:modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/PostGISDialect.java:1231",
+    "vul_id": "GHSA-99c3-qc2q-p94m",
+    "path": "modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/PostGISDialect.java",
+    "line": 1231,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-99c3-qc2q-p94m:java.lang.security.audit.formatted-sql-string.formatted-sql-string:modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/PostGISDialect.java:1252",
+    "vul_id": "GHSA-99c3-qc2q-p94m",
+    "path": "modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/PostGISDialect.java",
+    "line": 1252,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-99c3-qc2q-p94m:java.lang.security.audit.formatted-sql-string.formatted-sql-string:modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/PostGISDialect.java:1269",
+    "vul_id": "GHSA-99c3-qc2q-p94m",
+    "path": "modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/PostGISDialect.java",
+    "line": 1269,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-99c3-qc2q-p94m:java.lang.security.audit.formatted-sql-string.formatted-sql-string:modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/PostGISDialect.java:1287",
+    "vul_id": "GHSA-99c3-qc2q-p94m",
+    "path": "modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/PostGISDialect.java",
+    "line": 1287,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-99c3-qc2q-p94m:java.lang.security.audit.formatted-sql-string.formatted-sql-string:modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/PostGISDialect.java:1356",
+    "vul_id": "GHSA-99c3-qc2q-p94m",
+    "path": "modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/PostGISDialect.java",
+    "line": 1356,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-9xc6-c2rm-f27p:java.lang.security.audit.bad-hexa-conversion.bad-hexa-conversion:xwiki-platform-core/xwiki-platform-oldcore/src/main/java/com/xpn/xwiki/doc/XWikiDocument.java:8775",
+    "vul_id": "GHSA-9xc6-c2rm-f27p",
+    "path": "xwiki-platform-core/xwiki-platform-oldcore/src/main/java/com/xpn/xwiki/doc/XWikiDocument.java",
+    "line": 8775,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-9xc6-c2rm-f27p:java.lang.security.audit.crypto.use-of-md5.use-of-md5:xwiki-platform-core/xwiki-platform-oldcore/src/main/java/com/xpn/xwiki/doc/XWikiDocument.java:8780",
+    "vul_id": "GHSA-9xc6-c2rm-f27p",
+    "path": "xwiki-platform-core/xwiki-platform-oldcore/src/main/java/com/xpn/xwiki/doc/XWikiDocument.java",
+    "line": 8780,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-c438-8cvq-pxxx:java.lang.security.audit.object-deserialization.object-deserialization:tapestry-core/src/main/java/org/apache/tapestry5/internal/services/ClientDataEncoderImpl.java:58",
+    "vul_id": "GHSA-c438-8cvq-pxxx",
+    "path": "tapestry-core/src/main/java/org/apache/tapestry5/internal/services/ClientDataEncoderImpl.java",
+    "line": 58,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-cr8h-fr86-8vfv:java.lang.security.audit.script-engine-injection.script-engine-injection:components/template-manager/org.wso2.carbon.event.template.manager.core/src/main/java/org/wso2/carbon/event/template/manager/core/internal/util/TemplateManagerHelper.java:263",
+    "vul_id": "GHSA-cr8h-fr86-8vfv",
+    "path": "components/template-manager/org.wso2.carbon.event.template.manager.core/src/main/java/org/wso2/carbon/event/template/manager/core/internal/util/TemplateManagerHelper.java",
+    "line": 263,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-f5h9-qx38-2hgp:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:aws-android-sdk-core/src/main/java/com/amazonaws/regions/RegionMetadataParser.java:115",
+    "vul_id": "GHSA-f5h9-qx38-2hgp",
+    "path": "aws-android-sdk-core/src/main/java/com/amazonaws/regions/RegionMetadataParser.java",
+    "line": 115,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-f5h9-qx38-2hgp:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:aws-android-sdk-core/src/main/java/com/amazonaws/util/XpathUtils.java:61",
+    "vul_id": "GHSA-f5h9-qx38-2hgp",
+    "path": "aws-android-sdk-core/src/main/java/com/amazonaws/util/XpathUtils.java",
+    "line": 61,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-f63g-88cj-hjf9:java.lang.security.audit.object-deserialization.object-deserialization:izpack-installer/src/main/java/com/izforge/izpack/installer/container/provider/AbstractInstallDataProvider.java:91",
+    "vul_id": "GHSA-f63g-88cj-hjf9",
+    "path": "izpack-installer/src/main/java/com/izforge/izpack/installer/container/provider/AbstractInstallDataProvider.java",
+    "line": 91,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-f63g-88cj-hjf9:java.lang.security.audit.object-deserialization.object-deserialization:izpack-installer/src/main/java/com/izforge/izpack/installer/unpacker/UnpackerBase.java:312",
+    "vul_id": "GHSA-f63g-88cj-hjf9",
+    "path": "izpack-installer/src/main/java/com/izforge/izpack/installer/unpacker/UnpackerBase.java",
+    "line": 312,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-f63g-88cj-hjf9:java.lang.security.audit.object-deserialization.object-deserialization:izpack-installer/src/main/java/com/izforge/izpack/installer/unpacker/UnpackerBase.java:1206",
+    "vul_id": "GHSA-f63g-88cj-hjf9",
+    "path": "izpack-installer/src/main/java/com/izforge/izpack/installer/unpacker/UnpackerBase.java",
+    "line": 1206,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-f729-58x4-gqgf:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/backend/rest/FsResource.java:130",
+    "vul_id": "GHSA-f729-58x4-gqgf",
+    "path": "bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/backend/rest/FsResource.java",
+    "line": 130,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-f729-58x4-gqgf:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/backend/rest/FsResource.java:132",
+    "vul_id": "GHSA-f729-58x4-gqgf",
+    "path": "bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/backend/rest/FsResource.java",
+    "line": 132,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-f729-58x4-gqgf:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/backend/rest/FsResource.java:136",
+    "vul_id": "GHSA-f729-58x4-gqgf",
+    "path": "bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/backend/rest/FsResource.java",
+    "line": 136,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-f729-58x4-gqgf:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:140",
+    "vul_id": "GHSA-f729-58x4-gqgf",
+    "path": "bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java",
+    "line": 140,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-f729-58x4-gqgf:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:190",
+    "vul_id": "GHSA-f729-58x4-gqgf",
+    "path": "bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java",
+    "line": 190,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-f729-58x4-gqgf:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:194",
+    "vul_id": "GHSA-f729-58x4-gqgf",
+    "path": "bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java",
+    "line": 194,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-f729-58x4-gqgf:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:204",
+    "vul_id": "GHSA-f729-58x4-gqgf",
+    "path": "bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java",
+    "line": 204,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-f729-58x4-gqgf:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:439",
+    "vul_id": "GHSA-f729-58x4-gqgf",
+    "path": "bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java",
+    "line": 439,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-f729-58x4-gqgf:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:444",
+    "vul_id": "GHSA-f729-58x4-gqgf",
+    "path": "bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java",
+    "line": 444,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-f729-58x4-gqgf:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:454",
+    "vul_id": "GHSA-f729-58x4-gqgf",
+    "path": "bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java",
+    "line": 454,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-f729-58x4-gqgf:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:456",
+    "vul_id": "GHSA-f729-58x4-gqgf",
+    "path": "bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java",
+    "line": 456,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-fmj2-7wx8-qj4v:java.lang.security.audit.xxe.transformerfactory-dtds-not-disabled.transformerfactory-dtds-not-disabled:src/main/java/org/apache/xmlgraphics/xmp/XMPParser.java:57",
+    "vul_id": "GHSA-fmj2-7wx8-qj4v",
+    "path": "src/main/java/org/apache/xmlgraphics/xmp/XMPParser.java",
+    "line": 57,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-g43x-pcc9-f472:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:src/main/java/com/compuware/jenkins/common/utils/CLIVersionUtils.java:192",
+    "vul_id": "GHSA-g43x-pcc9-f472",
+    "path": "src/main/java/com/compuware/jenkins/common/utils/CLIVersionUtils.java",
+    "line": 192,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-g4r8-28fp-f255:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:src/main/java/de/timroes/axmlrpc/ResponseParser.java:51",
+    "vul_id": "GHSA-g4r8-28fp-f255",
+    "path": "src/main/java/de/timroes/axmlrpc/ResponseParser.java",
+    "line": 51,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-g4r8-28fp-f255:java.lang.security.audit.xxe.transformerfactory-dtds-not-disabled.transformerfactory-dtds-not-disabled:src/main/java/de/timroes/axmlrpc/ResponseParser.java:97",
+    "vul_id": "GHSA-g4r8-28fp-f255",
+    "path": "src/main/java/de/timroes/axmlrpc/ResponseParser.java",
+    "line": 97,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-g5mj-c26g-vmpm:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:src/main/java/com/smartbear/jenkins/plugins/testcomplete/parser/LogNodeUtils.java:172",
+    "vul_id": "GHSA-g5mj-c26g-vmpm",
+    "path": "src/main/java/com/smartbear/jenkins/plugins/testcomplete/parser/LogNodeUtils.java",
+    "line": 172,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-g6wm-2v64-wq36:java.lang.security.audit.crypto.unencrypted-socket.unencrypted-socket:local-s3-rest/src/main/java/com/robothy/s3/rest/LocalS3.java:316",
+    "vul_id": "GHSA-g6wm-2v64-wq36",
+    "path": "local-s3-rest/src/main/java/com/robothy/s3/rest/LocalS3.java",
+    "line": 316,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-ghjw-fcf6-rpr9:java.lang.security.audit.xxe.transformerfactory-dtds-not-disabled.transformerfactory-dtds-not-disabled:src/main/java/hudson/plugins/jobConfigHistory/JobConfigHistoryBaseAction.java:535",
+    "vul_id": "GHSA-ghjw-fcf6-rpr9",
+    "path": "src/main/java/hudson/plugins/jobConfigHistory/JobConfigHistoryBaseAction.java",
+    "line": 535,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-h7qf-qmf3-85qg:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:plugins/junit-xml-plugin/src/main/java/io/qameta/allure/junitxml/JunitXmlPlugin.java:136",
+    "vul_id": "GHSA-h7qf-qmf3-85qg",
+    "path": "plugins/junit-xml-plugin/src/main/java/io/qameta/allure/junitxml/JunitXmlPlugin.java",
+    "line": 136,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-h7qf-qmf3-85qg:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:plugins/trx-plugin/src/main/java/io/qameta/allure/trx/TrxPlugin.java:109",
+    "vul_id": "GHSA-h7qf-qmf3-85qg",
+    "path": "plugins/trx-plugin/src/main/java/io/qameta/allure/trx/TrxPlugin.java",
+    "line": 109,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-h7qf-qmf3-85qg:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:plugins/xunit-xml-plugin/src/main/java/io/qameta/allure/xunitxml/XunitXmlPlugin.java:97",
+    "vul_id": "GHSA-h7qf-qmf3-85qg",
+    "path": "plugins/xunit-xml-plugin/src/main/java/io/qameta/allure/xunitxml/XunitXmlPlugin.java",
+    "line": 97,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-h892-x453-86wc:java.lang.security.audit.object-deserialization.object-deserialization:pippo-session-parent/pippo-session/src/main/java/ro/pippo/session/SerializationSessionDataTranscoder.java:51",
+    "vul_id": "GHSA-h892-x453-86wc",
+    "path": "pippo-session-parent/pippo-session/src/main/java/ro/pippo/session/SerializationSessionDataTranscoder.java",
+    "line": 51,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-h8cj-hpmg-636v:java.lang.security.audit.formatted-sql-string.formatted-sql-string:app/server/appsmith-interfaces/src/main/java/com/appsmith/external/services/ce/FilterDataServiceCE.java:554",
+    "vul_id": "GHSA-h8cj-hpmg-636v",
+    "path": "app/server/appsmith-interfaces/src/main/java/com/appsmith/external/services/ce/FilterDataServiceCE.java",
+    "line": 554,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-hg25-w3vg-7279:java.lang.security.audit.crypto.ssl.defaulthttpclient-is-deprecated.defaulthttpclient-is-deprecated:modules/jpawebapi/src/com/haulmont/addon/jpawebapi/api/controller/RestFileDownloadController.java:148",
+    "vul_id": "GHSA-hg25-w3vg-7279",
+    "path": "modules/jpawebapi/src/com/haulmont/addon/jpawebapi/api/controller/RestFileDownloadController.java",
+    "line": 148,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-j7jm-8gf5-frcm:java.lang.security.audit.crypto.unencrypted-socket.unencrypted-socket:ngrinder-core/src/main/java/net/grinder/communication/Connector.java:98",
+    "vul_id": "GHSA-j7jm-8gf5-frcm",
+    "path": "ngrinder-core/src/main/java/net/grinder/communication/Connector.java",
+    "line": 98,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-j7jm-8gf5-frcm:java.lang.security.audit.object-deserialization.object-deserialization:ngrinder-core/src/main/java/net/grinder/communication/Connector.java:199",
+    "vul_id": "GHSA-j7jm-8gf5-frcm",
+    "path": "ngrinder-core/src/main/java/net/grinder/communication/Connector.java",
+    "line": 199,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-jj95-55cr-9597:java.lang.security.audit.object-deserialization.object-deserialization:client/src/com/aerospike/client/command/Buffer.java:340",
+    "vul_id": "GHSA-jj95-55cr-9597",
+    "path": "client/src/com/aerospike/client/command/Buffer.java",
+    "line": 340,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-jj95-55cr-9597:java.lang.security.audit.object-deserialization.object-deserialization:client/src/com/aerospike/client/util/Unpacker.java:239",
+    "vul_id": "GHSA-jj95-55cr-9597",
+    "path": "client/src/com/aerospike/client/util/Unpacker.java",
+    "line": 239,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-jmw5-58c7-587h:java.lang.security.audit.crypto.unencrypted-socket.unencrypted-socket:collector/log4j-socket/src/main/java/org/apache/karaf/decanter/collector/log/socket/SocketCollector.java:78",
+    "vul_id": "GHSA-jmw5-58c7-587h",
+    "path": "collector/log4j-socket/src/main/java/org/apache/karaf/decanter/collector/log/socket/SocketCollector.java",
+    "line": 78,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-jqfv-jrvq-95jm:java.lang.security.audit.xxe.transformerfactory-dtds-not-disabled.transformerfactory-dtds-not-disabled:fop-core/src/main/java/org/apache/fop/cli/InputHandler.java:272",
+    "vul_id": "GHSA-jqfv-jrvq-95jm",
+    "path": "fop-core/src/main/java/org/apache/fop/cli/InputHandler.java",
+    "line": 272,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-jqfv-jrvq-95jm:java.lang.security.audit.xxe.transformerfactory-dtds-not-disabled.transformerfactory-dtds-not-disabled:fop-core/src/main/java/org/apache/fop/cli/InputHandler.java:274",
+    "vul_id": "GHSA-jqfv-jrvq-95jm",
+    "path": "fop-core/src/main/java/org/apache/fop/cli/InputHandler.java",
+    "line": 274,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-m964-fjrh-xxq2:java.lang.security.audit.object-deserialization.object-deserialization:server/src/main/java/org/apache/seata/server/cluster/raft/sync/RaftSyncMessageSerializer.java:65",
+    "vul_id": "GHSA-m964-fjrh-xxq2",
+    "path": "server/src/main/java/org/apache/seata/server/cluster/raft/sync/RaftSyncMessageSerializer.java",
+    "line": 65,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-q3mw-pvr8-9ggc:java.lang.security.audit.url-rewriting.url-rewriting:java/org/apache/catalina/authenticator/FormAuthenticator.java:158",
+    "vul_id": "GHSA-q3mw-pvr8-9ggc",
+    "path": "java/org/apache/catalina/authenticator/FormAuthenticator.java",
+    "line": 158,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-q3mw-pvr8-9ggc:java.lang.security.audit.cookie-missing-httponly.cookie-missing-httponly:java/org/apache/catalina/authenticator/FormAuthenticator.java:588",
+    "vul_id": "GHSA-q3mw-pvr8-9ggc",
+    "path": "java/org/apache/catalina/authenticator/FormAuthenticator.java",
+    "line": 588,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-q3mw-pvr8-9ggc:java.lang.security.audit.cookie-missing-secure-flag.cookie-missing-secure-flag:java/org/apache/catalina/authenticator/FormAuthenticator.java:588",
+    "vul_id": "GHSA-q3mw-pvr8-9ggc",
+    "path": "java/org/apache/catalina/authenticator/FormAuthenticator.java",
+    "line": 588,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-q3mw-pvr8-9ggc:java.lang.security.audit.cookie-missing-httponly.cookie-missing-httponly:java/org/apache/catalina/authenticator/FormAuthenticator.java:673",
+    "vul_id": "GHSA-q3mw-pvr8-9ggc",
+    "path": "java/org/apache/catalina/authenticator/FormAuthenticator.java",
+    "line": 673,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-q3mw-pvr8-9ggc:java.lang.security.audit.cookie-missing-secure-flag.cookie-missing-secure-flag:java/org/apache/catalina/authenticator/FormAuthenticator.java:673",
+    "vul_id": "GHSA-q3mw-pvr8-9ggc",
+    "path": "java/org/apache/catalina/authenticator/FormAuthenticator.java",
+    "line": 673,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-q74f-rf27-8hxc:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:core/src/main/java/org/opencrx/application/uses/net/sf/webdav/methods/WebDavMethod.java:233",
+    "vul_id": "GHSA-q74f-rf27-8hxc",
+    "path": "core/src/main/java/org/opencrx/application/uses/net/sf/webdav/methods/WebDavMethod.java",
+    "line": 233,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-qm2h-m799-86rc:java.lang.security.audit.formatted-sql-string.formatted-sql-string:linkis-public-enhancements/linkis-datasource/linkis-metadata-query/service/jdbc/src/main/java/org/apache/linkis/metadata/query/service/mysql/SqlConnection.java:118",
+    "vul_id": "GHSA-qm2h-m799-86rc",
+    "path": "linkis-public-enhancements/linkis-datasource/linkis-metadata-query/service/jdbc/src/main/java/org/apache/linkis/metadata/query/service/mysql/SqlConnection.java",
+    "line": 118,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-qm2h-m799-86rc:java.lang.security.audit.formatted-sql-string.formatted-sql-string:linkis-public-enhancements/linkis-datasource/linkis-metadata-query/service/jdbc/src/main/java/org/apache/linkis/metadata/query/service/mysql/SqlConnection.java:138",
+    "vul_id": "GHSA-qm2h-m799-86rc",
+    "path": "linkis-public-enhancements/linkis-datasource/linkis-metadata-query/service/jdbc/src/main/java/org/apache/linkis/metadata/query/service/mysql/SqlConnection.java",
+    "line": 138,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-qmcv-hh7c-3m56:java.lang.security.audit.formatted-sql-string.formatted-sql-string:h2o-core/src/main/java/water/jdbc/SQLManager.java:874",
+    "vul_id": "GHSA-qmcv-hh7c-3m56",
+    "path": "h2o-core/src/main/java/water/jdbc/SQLManager.java",
+    "line": 874,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-qpj9-qcwx-8jv2:java.lang.security.xmlinputfactory-possible-xxe.xmlinputfactory-possible-xxe:cim-anonymiser/src/main/java/com/powsybl/cim/CimAnonymizer.java:67",
+    "vul_id": "GHSA-qpj9-qcwx-8jv2",
+    "path": "cim-anonymiser/src/main/java/com/powsybl/cim/CimAnonymizer.java",
+    "line": 67,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-qpj9-qcwx-8jv2:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:commons/src/main/java/com/powsybl/commons/config/XmlModuleConfigRepository.java:45",
+    "vul_id": "GHSA-qpj9-qcwx-8jv2",
+    "path": "commons/src/main/java/com/powsybl/commons/config/XmlModuleConfigRepository.java",
+    "line": 45,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-qrp9-23p7-g5mf:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:contrib/views/wfmanager/src/main/java/org/apache/oozie/ambari/view/Utils.java:67",
+    "vul_id": "GHSA-qrp9-23p7-g5mf",
+    "path": "contrib/views/wfmanager/src/main/java/org/apache/oozie/ambari/view/Utils.java",
+    "line": 67,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-qrp9-23p7-g5mf:java.lang.security.audit.xxe.transformerfactory-dtds-not-disabled.transformerfactory-dtds-not-disabled:contrib/views/wfmanager/src/main/java/org/apache/oozie/ambari/view/Utils.java:92",
+    "vul_id": "GHSA-qrp9-23p7-g5mf",
+    "path": "contrib/views/wfmanager/src/main/java/org/apache/oozie/ambari/view/Utils.java",
+    "line": 92,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-qrp9-23p7-g5mf:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:contrib/views/wfmanager/src/main/java/org/apache/oozie/ambari/view/Utils.java:170",
+    "vul_id": "GHSA-qrp9-23p7-g5mf",
+    "path": "contrib/views/wfmanager/src/main/java/org/apache/oozie/ambari/view/Utils.java",
+    "line": 170,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-rhqj-4pp8-vvgf:generic.nginx.security.request-host-used.request-host-used:agent/core/src/main/java/org/jolokia/config/ConfigKey.java:87",
+    "vul_id": "GHSA-rhqj-4pp8-vvgf",
+    "path": "agent/core/src/main/java/org/jolokia/config/ConfigKey.java",
+    "line": 87,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-rhqj-4pp8-vvgf:generic.nginx.security.request-host-used.request-host-used:agent/core/src/main/java/org/jolokia/config/ConfigKey.java:185",
+    "vul_id": "GHSA-rhqj-4pp8-vvgf",
+    "path": "agent/core/src/main/java/org/jolokia/config/ConfigKey.java",
+    "line": 185,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-rpj9-pc39-h8j8:java.lang.security.audit.xxe.transformerfactory-dtds-not-disabled.transformerfactory-dtds-not-disabled:portal-impl/src/com/liferay/portlet/xslcontent/util/XSLContentUtil.java:54",
+    "vul_id": "GHSA-rpj9-pc39-h8j8",
+    "path": "portal-impl/src/com/liferay/portlet/xslcontent/util/XSLContentUtil.java",
+    "line": 54,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-rr2m-gffv-mgrj:java.lang.security.audit.object-deserialization.object-deserialization:hadoop-yarn-project/hadoop-yarn/hadoop-yarn-server/hadoop-yarn-server-resourcemanager/src/main/java/org/apache/hadoop/yarn/server/resourcemanager/scheduler/capacity/conf/ZKConfigurationStore.java:317",
+    "vul_id": "GHSA-rr2m-gffv-mgrj",
+    "path": "hadoop-yarn-project/hadoop-yarn/hadoop-yarn-server/hadoop-yarn-server-resourcemanager/src/main/java/org/apache/hadoop/yarn/server/resourcemanager/scheduler/capacity/conf/ZKConfigurationStore.java",
+    "line": 317,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-rr59-h6rh-v84v:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:sap/src/main/java/org/apache/zeppelin/sap/universe/UniverseClient.java:219",
+    "vul_id": "GHSA-rr59-h6rh-v84v",
+    "path": "sap/src/main/java/org/apache/zeppelin/sap/universe/UniverseClient.java",
+    "line": 219,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-rr59-h6rh-v84v:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:sap/src/main/java/org/apache/zeppelin/sap/universe/UniverseClient.java:312",
+    "vul_id": "GHSA-rr59-h6rh-v84v",
+    "path": "sap/src/main/java/org/apache/zeppelin/sap/universe/UniverseClient.java",
+    "line": 312,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-rr59-h6rh-v84v:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:sap/src/main/java/org/apache/zeppelin/sap/universe/UniverseClient.java:387",
+    "vul_id": "GHSA-rr59-h6rh-v84v",
+    "path": "sap/src/main/java/org/apache/zeppelin/sap/universe/UniverseClient.java",
+    "line": 387,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-rr59-h6rh-v84v:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:sap/src/main/java/org/apache/zeppelin/sap/universe/UniverseClient.java:463",
+    "vul_id": "GHSA-rr59-h6rh-v84v",
+    "path": "sap/src/main/java/org/apache/zeppelin/sap/universe/UniverseClient.java",
+    "line": 463,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-rr59-h6rh-v84v:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:sap/src/main/java/org/apache/zeppelin/sap/universe/UniverseClient.java:541",
+    "vul_id": "GHSA-rr59-h6rh-v84v",
+    "path": "sap/src/main/java/org/apache/zeppelin/sap/universe/UniverseClient.java",
+    "line": 541,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-rv87-vcv4-fjvr:java.lang.security.audit.crypto.ssl.insecure-hostname-verifier.insecure-hostname-verifier:src/main/java/org/jenkinsci/plugins/urltrigger/URLTrigger.java:323",
+    "vul_id": "GHSA-rv87-vcv4-fjvr",
+    "path": "src/main/java/org/jenkinsci/plugins/urltrigger/URLTrigger.java",
+    "line": 323,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-rv87-vcv4-fjvr:java.lang.security.audit.weak-ssl-context.weak-ssl-context:src/main/java/org/jenkinsci/plugins/urltrigger/URLTrigger.java:351",
+    "vul_id": "GHSA-rv87-vcv4-fjvr",
+    "path": "src/main/java/org/jenkinsci/plugins/urltrigger/URLTrigger.java",
+    "line": 351,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-v74c-qc46-9gg9:java.lang.security.audit.url-rewriting.url-rewriting:submarine-server/server-core/src/main/java/org/apache/submarine/server/SubmarineServer.java:406",
+    "vul_id": "GHSA-v74c-qc46-9gg9",
+    "path": "submarine-server/server-core/src/main/java/org/apache/submarine/server/SubmarineServer.java",
+    "line": 406,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/backend/sitemap/VisuConfig.java:120",
+    "vul_id": "GHSA-v7gr-mqpj-wwh3",
+    "path": "bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/backend/sitemap/VisuConfig.java",
+    "line": 120,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/backend/sitemap/VisuConfig.java:122",
+    "vul_id": "GHSA-v7gr-mqpj-wwh3",
+    "path": "bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/backend/sitemap/VisuConfig.java",
+    "line": 122,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/backend/sitemap/VisuConfig.java:123",
+    "vul_id": "GHSA-v7gr-mqpj-wwh3",
+    "path": "bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/backend/sitemap/VisuConfig.java",
+    "line": 123,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/backend/sitemap/VisuConfig.java:125",
+    "vul_id": "GHSA-v7gr-mqpj-wwh3",
+    "path": "bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/backend/sitemap/VisuConfig.java",
+    "line": 125,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/backend/sitemap/VisuConfig.java:127",
+    "vul_id": "GHSA-v7gr-mqpj-wwh3",
+    "path": "bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/backend/sitemap/VisuConfig.java",
+    "line": 127,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:194",
+    "vul_id": "GHSA-v7gr-mqpj-wwh3",
+    "path": "bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java",
+    "line": 194,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:223",
+    "vul_id": "GHSA-v7gr-mqpj-wwh3",
+    "path": "bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java",
+    "line": 223,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:291",
+    "vul_id": "GHSA-v7gr-mqpj-wwh3",
+    "path": "bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java",
+    "line": 291,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:295",
+    "vul_id": "GHSA-v7gr-mqpj-wwh3",
+    "path": "bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java",
+    "line": 295,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:307",
+    "vul_id": "GHSA-v7gr-mqpj-wwh3",
+    "path": "bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java",
+    "line": 307,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:545",
+    "vul_id": "GHSA-v7gr-mqpj-wwh3",
+    "path": "bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java",
+    "line": 545,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:548",
+    "vul_id": "GHSA-v7gr-mqpj-wwh3",
+    "path": "bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java",
+    "line": 548,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:558",
+    "vul_id": "GHSA-v7gr-mqpj-wwh3",
+    "path": "bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java",
+    "line": 558,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:560",
+    "vul_id": "GHSA-v7gr-mqpj-wwh3",
+    "path": "bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java",
+    "line": 560,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:851",
+    "vul_id": "GHSA-v7gr-mqpj-wwh3",
+    "path": "bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java",
+    "line": 851,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:873",
+    "vul_id": "GHSA-v7gr-mqpj-wwh3",
+    "path": "bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java",
+    "line": 873,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-vhwv-8897-jm7q:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:src/main/java/com/compuware/jenkins/totaltest/TotalTestCTRunner.java:326",
+    "vul_id": "GHSA-vhwv-8897-jm7q",
+    "path": "src/main/java/com/compuware/jenkins/totaltest/TotalTestCTRunner.java",
+    "line": 326,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-wg5r-wc3x-39vc:java.lang.security.audit.object-deserialization.object-deserialization:openam-core/src/main/java/com/sun/identity/authentication/share/AuthXMLUtils.java:1786",
+    "vul_id": "GHSA-wg5r-wc3x-39vc",
+    "path": "openam-core/src/main/java/com/sun/identity/authentication/share/AuthXMLUtils.java",
+    "line": 1786,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-wp6c-29r3-jqw9:java.spring.security.unrestricted-request-mapping.unrestricted-request-mapping:jeecg-module-system/jeecg-system-biz/src/main/java/org/jeecg/modules/system/controller/SysDictController.java:469",
+    "vul_id": "GHSA-wp6c-29r3-jqw9",
+    "path": "jeecg-module-system/jeecg-system-biz/src/main/java/org/jeecg/modules/system/controller/SysDictController.java",
+    "line": 469,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-wp6c-29r3-jqw9:java.spring.security.unrestricted-request-mapping.unrestricted-request-mapping:jeecg-module-system/jeecg-system-biz/src/main/java/org/jeecg/modules/system/controller/SysDictController.java:508",
+    "vul_id": "GHSA-wp6c-29r3-jqw9",
+    "path": "jeecg-module-system/jeecg-system-biz/src/main/java/org/jeecg/modules/system/controller/SysDictController.java",
+    "line": 508,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-x832-fpvj-r5ph:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:library/src/main/java/org/mustangproject/ZUGFeRD/ZUGFeRDInvoiceImporter.java:263",
+    "vul_id": "GHSA-x832-fpvj-r5ph",
+    "path": "library/src/main/java/org/mustangproject/ZUGFeRD/ZUGFeRDInvoiceImporter.java",
+    "line": 263,
+    "stored": "TP",
+    "hunk_tp": true,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-x832-fpvj-r5ph:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:library/src/main/java/org/mustangproject/ZUGFeRD/ZUGFeRDVisualizer.java:104",
+    "vul_id": "GHSA-x832-fpvj-r5ph",
+    "path": "library/src/main/java/org/mustangproject/ZUGFeRD/ZUGFeRDVisualizer.java",
+    "line": 104,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-x832-fpvj-r5ph:java.lang.security.audit.xxe.transformerfactory-dtds-not-disabled.transformerfactory-dtds-not-disabled:library/src/main/java/org/mustangproject/ZUGFeRD/ZUGFeRDVisualizer.java:349",
+    "vul_id": "GHSA-x832-fpvj-r5ph",
+    "path": "library/src/main/java/org/mustangproject/ZUGFeRD/ZUGFeRDVisualizer.java",
+    "line": 349,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-x832-fpvj-r5ph:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:validator/src/main/java/org/mustangproject/validator/XMLValidator.java:155",
+    "vul_id": "GHSA-x832-fpvj-r5ph",
+    "path": "validator/src/main/java/org/mustangproject/validator/XMLValidator.java",
+    "line": 155,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-x832-fpvj-r5ph:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:validator/src/main/java/org/mustangproject/validator/ZUGFeRDValidator.java:145",
+    "vul_id": "GHSA-x832-fpvj-r5ph",
+    "path": "validator/src/main/java/org/mustangproject/validator/ZUGFeRDValidator.java",
+    "line": 145,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-x832-fpvj-r5ph:java.lang.security.audit.crypto.use-of-sha1.use-of-sha1:validator/src/main/java/org/mustangproject/validator/ZUGFeRDValidator.java:348",
+    "vul_id": "GHSA-x832-fpvj-r5ph",
+    "path": "validator/src/main/java/org/mustangproject/validator/ZUGFeRDValidator.java",
+    "line": 348,
+    "stored": "FP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  },
+  {
+    "id": "GHSA-xrrw-9j78-hpf3:java.lang.security.audit.crypto.use-of-sha1.use-of-sha1:src/main/java/htmlpublisher/HtmlPublisher.java:118",
+    "vul_id": "GHSA-xrrw-9j78-hpf3",
+    "path": "src/main/java/htmlpublisher/HtmlPublisher.java",
+    "line": 118,
+    "stored": "TP",
+    "hunk_tp": false,
+    "file_in_patch": true
+  }
+]

@@ -1,0 +1,342 @@
+From 98be233e79cf4bc1ff3c7126a9189988bd0e87bd Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Franti=C5=A1ek=20Hartman?= <frant.hartm@gmail.com>
+Date: Wed, 4 Oct 2023 13:12:18 +0200
+Subject: [PATCH] Improve permission checks in File connector [HZ-2991]
+ (#25348)
+
+`SqlConnector#resolveAndValidateFields` may try to resolve field names
+from metadata and a sample. This is not covered by any permission check.
+
+Added `SqlConnector#permissionsForResolve` that returns permissions
+required to run the `resolveAndValidateFields`. Propagation of
+SqlSecurityContext was required for the actuall permission check.
+
+Added permission to ProcessorSupplier returned by
+ReadFilesP.MetaSupplier (previously this allowed constructing unsecured
+DAG):
+
+
+https://github.com/hazelcast/hazelcast/blob/ee7e96933748283a01428e306e1b886b06b8a5ba/hazelcast/src/main/java/com/hazelcast/jet/impl/connector/ReadFilesP.java#L179-L191
+
+EE PR https://github.com/hazelcast/hazelcast-enterprise/pull/6421 (adds
+security tests)
+---
+ .../hazelcast/jet/sql/impl/PlanExecutor.java  |  4 +--
+ .../hazelcast/jet/sql/impl/SqlPlanImpl.java   |  2 +-
+ .../jet/sql/impl/connector/SqlConnector.java  | 18 ++++++++++++
+ .../impl/connector/file/FileSqlConnector.java | 10 +++++++
+ .../sql/impl/schema/TableResolverImpl.java    | 29 +++++++++++++------
+ .../jet/sql/impl/PlanExecutorTest.java        |  4 +--
+ .../impl/schema/TableResolverImplTest.java    | 10 +++----
+ .../jet/impl/connector/ReadFilesP.java        |  8 +++--
+ .../impl/function/SecuredFunctions.java       | 21 ++++++++++++++
+ 9 files changed, 84 insertions(+), 22 deletions(-)
+
+diff --git a/hazelcast-sql/src/main/java/com/hazelcast/jet/sql/impl/PlanExecutor.java b/hazelcast-sql/src/main/java/com/hazelcast/jet/sql/impl/PlanExecutor.java
+index 345a211cf68d5..30bc31507cc1c 100644
+--- a/hazelcast-sql/src/main/java/com/hazelcast/jet/sql/impl/PlanExecutor.java
++++ b/hazelcast-sql/src/main/java/com/hazelcast/jet/sql/impl/PlanExecutor.java
+@@ -182,8 +182,8 @@ public PlanExecutor(
+         logger = nodeEngine.getLogger(getClass());
+     }
+ 
+-    SqlResult execute(CreateMappingPlan plan) {
+-        catalog.createMapping(plan.mapping(), plan.replace(), plan.ifNotExists());
++    SqlResult execute(CreateMappingPlan plan, SqlSecurityContext ssc) {
++        catalog.createMapping(plan.mapping(), plan.replace(), plan.ifNotExists(), ssc);
+         return UpdateSqlResultImpl.createUpdateCountResult(0);
+     }
+ 
+diff --git a/hazelcast-sql/src/main/java/com/hazelcast/jet/sql/impl/SqlPlanImpl.java b/hazelcast-sql/src/main/java/com/hazelcast/jet/sql/impl/SqlPlanImpl.java
+index 8f8acf95da1f1..be101dbd9ef52 100644
+--- a/hazelcast-sql/src/main/java/com/hazelcast/jet/sql/impl/SqlPlanImpl.java
++++ b/hazelcast-sql/src/main/java/com/hazelcast/jet/sql/impl/SqlPlanImpl.java
+@@ -152,7 +152,7 @@ public boolean producesRows() {
+         public SqlResult execute(QueryId queryId, List<Object> arguments, long timeout, SqlSecurityContext ssc) {
+             SqlPlanImpl.ensureNoArguments("CREATE MAPPING", arguments);
+             SqlPlanImpl.ensureNoTimeout("CREATE MAPPING", timeout);
+-            return planExecutor.execute(this);
++            return planExecutor.execute(this, ssc);
+         }
+     }
+ 
+diff --git a/hazelcast-sql/src/main/java/com/hazelcast/jet/sql/impl/connector/SqlConnector.java b/hazelcast-sql/src/main/java/com/hazelcast/jet/sql/impl/connector/SqlConnector.java
+index a45e71a8d7b4c..bcb89d030b168 100644
+--- a/hazelcast-sql/src/main/java/com/hazelcast/jet/sql/impl/connector/SqlConnector.java
++++ b/hazelcast-sql/src/main/java/com/hazelcast/jet/sql/impl/connector/SqlConnector.java
+@@ -39,6 +39,7 @@
+ import javax.annotation.Nullable;
+ import java.io.Serializable;
+ import java.lang.reflect.Method;
++import java.security.Permission;
+ import java.util.Arrays;
+ import java.util.HashSet;
+ import java.util.List;
+@@ -47,6 +48,7 @@
+ import java.util.Set;
+ import java.util.function.Consumer;
+ 
++import static java.util.Collections.emptyList;
+ import static java.util.Collections.emptyMap;
+ import static java.util.Objects.requireNonNull;
+ 
+@@ -258,6 +260,22 @@ List<MappingField> resolveAndValidateFields(
+             @Nonnull List<MappingField> userFields
+     );
+ 
++    /**
++     * Returns the required permissions to execute
++     * {@link #resolveAndValidateFields(NodeEngine, SqlExternalResource, List)} method.
++     * <p>
++     * Implementors of {@link SqlConnector} don't need to override this method when {@code resolveAndValidateFields}
++     * doesn't support field resolution or when validation doesn't access the external resource.
++     * <p>
++     * The permissions are usually the same as required permissions to read from the external resource.
++     *
++     * @return list of permissions required to run {@link #resolveAndValidateFields}
++     */
++    @Nonnull
++    default List<Permission> permissionsForResolve(SqlExternalResource resource, NodeEngine nodeEngine) {
++        return emptyList();
++    }
++
+     /**
+      * Creates a {@link Table} object with the given fields. Should return
+      * quickly; specifically it should not attempt to connect to the remote
+diff --git a/hazelcast-sql/src/main/java/com/hazelcast/jet/sql/impl/connector/file/FileSqlConnector.java b/hazelcast-sql/src/main/java/com/hazelcast/jet/sql/impl/connector/file/FileSqlConnector.java
+index 1bdffa6b230f1..eb15eca68e5eb 100644
+--- a/hazelcast-sql/src/main/java/com/hazelcast/jet/sql/impl/connector/file/FileSqlConnector.java
++++ b/hazelcast-sql/src/main/java/com/hazelcast/jet/sql/impl/connector/file/FileSqlConnector.java
+@@ -32,11 +32,15 @@
+ 
+ import javax.annotation.Nonnull;
+ import javax.annotation.Nullable;
++import java.security.Permission;
+ import java.util.List;
+ import java.util.Map;
+ import java.util.Set;
+ 
+ import static com.hazelcast.jet.core.Edge.between;
++import static com.hazelcast.security.permission.ActionConstants.ACTION_READ;
++import static com.hazelcast.security.permission.ConnectorPermission.file;
++import static java.util.Collections.singletonList;
+ 
+ public class FileSqlConnector implements SqlConnector {
+ 
+@@ -85,6 +89,12 @@ static List<MappingField> resolveAndValidateFields(
+         return METADATA_RESOLVERS.resolveAndValidateFields(userFields, options);
+     }
+ 
++    @Nonnull
++    @Override
++    public List<Permission> permissionsForResolve(SqlExternalResource resource, NodeEngine nodeEngine) {
++        return singletonList(file(resource.options().get(OPTION_PATH), ACTION_READ));
++    }
++
+     @Nonnull
+     @Override
+     public Table createTable(
+diff --git a/hazelcast-sql/src/main/java/com/hazelcast/jet/sql/impl/schema/TableResolverImpl.java b/hazelcast-sql/src/main/java/com/hazelcast/jet/sql/impl/schema/TableResolverImpl.java
+index 55c4340846eb1..1b9d697d741f0 100644
+--- a/hazelcast-sql/src/main/java/com/hazelcast/jet/sql/impl/schema/TableResolverImpl.java
++++ b/hazelcast-sql/src/main/java/com/hazelcast/jet/sql/impl/schema/TableResolverImpl.java
+@@ -41,8 +41,10 @@
+ import com.hazelcast.sql.impl.schema.dataconnection.DataConnectionCatalogEntry;
+ import com.hazelcast.sql.impl.schema.type.Type;
+ import com.hazelcast.sql.impl.schema.view.View;
++import com.hazelcast.sql.impl.security.SqlSecurityContext;
+ 
+ import javax.annotation.Nonnull;
++import java.security.Permission;
+ import java.util.ArrayList;
+ import java.util.Collection;
+ import java.util.LinkedHashMap;
+@@ -128,8 +130,8 @@ public void entryRemoved(EntryEvent<String, Object> event) {
+ 
+     // region mapping
+ 
+-    public void createMapping(Mapping mapping, boolean replace, boolean ifNotExists) {
+-        Mapping resolved = resolveMapping(mapping);
++    public void createMapping(Mapping mapping, boolean replace, boolean ifNotExists, SqlSecurityContext securityContext) {
++        Mapping resolved = resolveMapping(mapping, securityContext);
+ 
+         String name = resolved.name();
+         if (ifNotExists) {
+@@ -142,7 +144,7 @@ public void createMapping(Mapping mapping, boolean replace, boolean ifNotExists)
+         }
+     }
+ 
+-    private Mapping resolveMapping(Mapping mapping) {
++    private Mapping resolveMapping(Mapping mapping, SqlSecurityContext securityContext) {
+         Map<String, String> options = mapping.options();
+         String type = mapping.connectorType();
+         String dataConnection = mapping.dataConnection();
+@@ -158,14 +160,23 @@ private Mapping resolveMapping(Mapping mapping) {
+                 ? connector.defaultObjectType()
+                 : mapping.objectType();
+         checkNotNull(objectType, "objectType cannot be null");
++
++        SqlExternalResource externalResource = new SqlExternalResource(
++                mapping.externalName(),
++                mapping.dataConnection(),
++                connector.typeName(),
++                objectType,
++                options
++        );
++
++        List<Permission> permissions = connector.permissionsForResolve(externalResource, nodeEngine);
++        for (Permission permission : permissions) {
++            securityContext.checkPermission(permission);
++        }
++
+         resolvedFields = connector.resolveAndValidateFields(
+                 nodeEngine,
+-                new SqlExternalResource(
+-                        mapping.externalName(),
+-                        mapping.dataConnection(),
+-                        connector.typeName(),
+-                        objectType,
+-                        options),
++                externalResource,
+                 mapping.fields()
+         );
+ 
+diff --git a/hazelcast-sql/src/test/java/com/hazelcast/jet/sql/impl/PlanExecutorTest.java b/hazelcast-sql/src/test/java/com/hazelcast/jet/sql/impl/PlanExecutorTest.java
+index ada88c2469fa2..19ea0d288b07b 100644
+--- a/hazelcast-sql/src/test/java/com/hazelcast/jet/sql/impl/PlanExecutorTest.java
++++ b/hazelcast-sql/src/test/java/com/hazelcast/jet/sql/impl/PlanExecutorTest.java
+@@ -112,11 +112,11 @@ public void test_createMappingExecution(boolean replace, boolean ifNotExists) {
+         CreateMappingPlan plan = new CreateMappingPlan(planKey(), mapping, replace, ifNotExists, planExecutor);
+ 
+         // when
+-        SqlResult result = planExecutor.execute(plan);
++        SqlResult result = planExecutor.execute(plan, null);
+ 
+         // then
+         assertThat(result.updateCount()).isEqualTo(0);
+-        verify(catalog).createMapping(mapping, replace, ifNotExists);
++        verify(catalog).createMapping(mapping, replace, ifNotExists, null);
+     }
+ 
+     @Test
+diff --git a/hazelcast-sql/src/test/java/com/hazelcast/jet/sql/impl/schema/TableResolverImplTest.java b/hazelcast-sql/src/test/java/com/hazelcast/jet/sql/impl/schema/TableResolverImplTest.java
+index 979e1b4c870a0..5a5ceff415705 100644
+--- a/hazelcast-sql/src/test/java/com/hazelcast/jet/sql/impl/schema/TableResolverImplTest.java
++++ b/hazelcast-sql/src/test/java/com/hazelcast/jet/sql/impl/schema/TableResolverImplTest.java
+@@ -118,7 +118,7 @@ public void when_createsInvalidMapping_then_throws() {
+ 
+         // when
+         // then
+-        assertThatThrownBy(() -> catalog.createMapping(mapping, true, true))
++        assertThatThrownBy(() -> catalog.createMapping(mapping, true, true, null))
+                 .hasMessageContaining("expected test exception");
+         verify(relationsStorage, never()).putIfAbsent(anyString(), (Mapping) any());
+         verify(relationsStorage, never()).put(anyString(), (Mapping) any());
+@@ -142,7 +142,7 @@ public void when_createsDuplicateMapping_then_throws() {
+ 
+         // when
+         // then
+-        assertThatThrownBy(() -> catalog.createMapping(mapping, false, false))
++        assertThatThrownBy(() -> catalog.createMapping(mapping, false, false, null))
+                 .isInstanceOf(QueryException.class)
+                 .hasMessageContaining("Mapping or view already exists: name");
+         verifyNoInteractions(listener);
+@@ -164,7 +164,7 @@ public void when_createsDuplicateMappingWithIfNotExists_then_succeeds() {
+         given(relationsStorage.putIfAbsent(eq(mapping.name()), isA(Mapping.class))).willReturn(false);
+ 
+         // when
+-        catalog.createMapping(mapping, false, true);
++        catalog.createMapping(mapping, false, true, null);
+ 
+         // then
+         verifyNoInteractions(listener);
+@@ -185,7 +185,7 @@ public void when_replacesMapping_then_succeeds() {
+                 .willReturn(singletonList(new MappingField("field_name", INT)));
+ 
+         // when
+-        catalog.createMapping(mapping, true, false);
++        catalog.createMapping(mapping, true, false, null);
+ 
+         // then
+         verify(relationsStorage).put(eq(mapping.name()), isA(Mapping.class));
+@@ -213,7 +213,7 @@ public void when_mappingWithNoObjectType_then_usesDefault() {
+         given(connector.defaultObjectType()).willReturn("MyDummyType");
+ 
+         // when
+-        catalog.createMapping(mapping, true, false);
++        catalog.createMapping(mapping, true, false, null);
+ 
+         // then
+         verify(relationsStorage).put(eq(mapping.name()), isA(Mapping.class));
+diff --git a/hazelcast/src/main/java/com/hazelcast/jet/impl/connector/ReadFilesP.java b/hazelcast/src/main/java/com/hazelcast/jet/impl/connector/ReadFilesP.java
+index f60a636aa6e1b..6fd770a45f547 100644
+--- a/hazelcast/src/main/java/com/hazelcast/jet/impl/connector/ReadFilesP.java
++++ b/hazelcast/src/main/java/com/hazelcast/jet/impl/connector/ReadFilesP.java
+@@ -28,6 +28,7 @@
+ import com.hazelcast.jet.pipeline.file.impl.FileTraverser;
+ import com.hazelcast.logging.ILogger;
+ import com.hazelcast.logging.Logger;
++import com.hazelcast.security.impl.function.SecuredFunctions;
+ import com.hazelcast.security.permission.ConnectorPermission;
+ 
+ import javax.annotation.Nonnull;
+@@ -74,7 +75,7 @@ public final class ReadFilesP<T> extends AbstractProcessor {
+ 
+     private LocalFileTraverser<T> traverser;
+ 
+-    private ReadFilesP(
++    public ReadFilesP(
+             @Nonnull String directory,
+             @Nonnull String glob,
+             boolean sharedFileSystem,
+@@ -174,8 +175,9 @@ private MetaSupplier(
+         @Nonnull
+         @Override
+         public Function<? super Address, ? extends ProcessorSupplier> get(@Nonnull List<Address> addresses) {
+-            return address -> ProcessorSupplier.of(() -> new ReadFilesP<>(directory, glob, sharedFileSystem,
+-                    ignoreFileNotFound, readFileFn));
++            return address -> ProcessorSupplier.of(SecuredFunctions.readFilesProcessorFn(
++                    directory, glob, sharedFileSystem, ignoreFileNotFound, readFileFn
++            ));
+         }
+ 
+         @Override
+diff --git a/hazelcast/src/main/java/com/hazelcast/security/impl/function/SecuredFunctions.java b/hazelcast/src/main/java/com/hazelcast/security/impl/function/SecuredFunctions.java
+index 2f5fc699b6ec1..27f4c900bf456 100644
+--- a/hazelcast/src/main/java/com/hazelcast/security/impl/function/SecuredFunctions.java
++++ b/hazelcast/src/main/java/com/hazelcast/security/impl/function/SecuredFunctions.java
+@@ -27,6 +27,7 @@
+ import com.hazelcast.jet.core.ProcessorSupplier;
+ import com.hazelcast.jet.core.ProcessorSupplier.Context;
+ import com.hazelcast.jet.function.ToResultSetFunction;
++import com.hazelcast.jet.impl.connector.ReadFilesP;
+ import com.hazelcast.jet.impl.connector.ReadIListP;
+ import com.hazelcast.jet.impl.connector.ReadJdbcP;
+ import com.hazelcast.jet.impl.connector.StreamFilesP;
+@@ -220,6 +221,26 @@ public List<Permission> permissions() {
+         };
+     }
+ 
++    public static <T> SupplierEx<Processor> readFilesProcessorFn(
++            String directory,
++            String glob,
++            boolean sharedFileSystem,
++            boolean ignoreFileNotFound,
++            FunctionEx<? super Path, ? extends Stream<T>> readFileFn) {
++
++        return new SupplierEx<>() {
++            @Override
++            public Processor getEx() {
++                return new ReadFilesP<>(directory, glob, sharedFileSystem, ignoreFileNotFound, readFileFn);
++            }
++
++            @Override
++            public List<Permission> permissions() {
++                return singletonList(ConnectorPermission.file(directory, ACTION_READ));
++            }
++        };
++    }
++
+     public static <T> FunctionEx<? super Path, ? extends Stream<T>> jsonReadFileFn(
+             String directory,
+             Class<T> type

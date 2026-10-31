@@ -1,0 +1,1429 @@
+From b855b2ae37e4bf23f73e7746ce166fbc5a0b8b5b Mon Sep 17 00:00:00 2001
+From: Emmanuel Hugonnet <ehsavoie@users.noreply.github.com>
+Date: Wed, 26 Aug 2026 16:27:33 +0200
+Subject: [PATCH] fix: prevent SSRF via push notification URL validation
+ (#1096)
+
+- Add PushNotificationUrlValidator with SSRF-safe default (scheme
+  allowlist, private-network blocking incl. IPv4-mapped IPv6)
+- Disable HTTP redirect following on push notification POST requests
+- Add a2a.push-notifications.enabled config to gate push config storage
+
+Signed-off-by: Emmanuel Hugonnet <ehugonne@redhat.com>
+---
+ .../AbstractA2ARequestHandlerTest_v0_3.java   |   4 +-
+ .../src/main/resources/application.properties |   8 +
+ docs/content/dev/configuration.md             |  28 ++
+ .../http/android/AndroidA2AHttpClient.java    |   8 +
+ .../client/http/vertx/VertxA2AHttpClient.java |  11 +-
+ .../JpaPushNotificationConfigStoreTest.java   |  30 +-
+ .../sdk/client/http/A2AHttpClient.java        |  21 ++
+ .../sdk/client/http/JdkA2AHttpClient.java     |  31 ++-
+ .../sdk/client/http/JdkA2AHttpClientTest.java |  46 +++
+ itk/src/main/resources/application.properties |   8 +
+ .../DefaultRequestHandler.java                |  29 +-
+ .../tasks/BasePushNotificationSender.java     |  48 +++-
+ .../DefaultPushNotificationUrlValidator.java  | 226 +++++++++++++++
+ .../tasks/PushNotificationUrlValidator.java   |  32 +++
+ .../META-INF/a2a-defaults.properties          |  18 ++
+ .../AbstractA2ARequestHandlerTest.java        |   4 +-
+ .../DefaultRequestHandlerTest.java            |  73 +++++
+ ...MemoryPushNotificationConfigStoreTest.java |  12 +-
+ .../tasks/PushNotificationSenderTest.java     |   8 +-
+ .../PushNotificationUrlValidatorTest.java     | 262 ++++++++++++++++++
+ tck/src/main/resources/application.properties |   8 +
+ 21 files changed, 871 insertions(+), 44 deletions(-)
+ create mode 100644 server-common/src/main/java/org/a2aproject/sdk/server/tasks/DefaultPushNotificationUrlValidator.java
+ create mode 100644 server-common/src/main/java/org/a2aproject/sdk/server/tasks/PushNotificationUrlValidator.java
+ create mode 100644 server-common/src/test/java/org/a2aproject/sdk/server/tasks/PushNotificationUrlValidatorTest.java
+
+diff --git a/compat-0.3/server-conversion/src/test/java/org/a2aproject/sdk/compat03/conversion/AbstractA2ARequestHandlerTest_v0_3.java b/compat-0.3/server-conversion/src/test/java/org/a2aproject/sdk/compat03/conversion/AbstractA2ARequestHandlerTest_v0_3.java
+index a1ff50f9d..01ea100fc 100644
+--- a/compat-0.3/server-conversion/src/test/java/org/a2aproject/sdk/compat03/conversion/AbstractA2ARequestHandlerTest_v0_3.java
++++ b/compat-0.3/server-conversion/src/test/java/org/a2aproject/sdk/compat03/conversion/AbstractA2ARequestHandlerTest_v0_3.java
+@@ -31,6 +31,7 @@
+ import org.a2aproject.sdk.server.tasks.InMemoryTaskStore;
+ import org.a2aproject.sdk.server.tasks.PushNotificationConfigStore;
+ import org.a2aproject.sdk.server.tasks.PushNotificationSender;
++import org.a2aproject.sdk.server.tasks.PushNotificationUrlValidator;
+ import org.a2aproject.sdk.server.tasks.TaskStore;
+ import org.a2aproject.sdk.spec.A2AError;
+ import org.a2aproject.sdk.spec.StreamingEventKind;
+@@ -129,7 +130,7 @@ public void cancel(RequestContext context, AgentEmitter agentEmitter) throws A2A
+         // Create push notification components BEFORE MainEventBusProcessor
+         httpClient = new TestHttpClient();
+         PushNotificationConfigStore pushConfigStore = new InMemoryPushNotificationConfigStore();
+-        PushNotificationSender pushSender = new BasePushNotificationSender(pushConfigStore, httpClient);
++        BasePushNotificationSender pushSender = new BasePushNotificationSender(pushConfigStore, httpClient, PushNotificationUrlValidator.ALLOW_ALL);
+ 
+         // Create MainEventBus and MainEventBusProcessor (production code path)
+         mainEventBus = new MainEventBus();
+@@ -144,6 +145,7 @@ public void cancel(RequestContext context, AgentEmitter agentEmitter) throws A2A
+                         .taskStore(taskStore)
+                         .queueManager(queueManager)
+                         .pushConfigStore(pushConfigStore)
++                        .pushNotificationsEnabled(true)
+                         .mainEventBusProcessor(mainEventBusProcessor)
+                         .executor(internalExecutor)
+                         .eventConsumerExecutor(internalExecutor)
+diff --git a/compat-0.3/tck/src/main/resources/application.properties b/compat-0.3/tck/src/main/resources/application.properties
+index c19946fb5..502a0d84f 100644
+--- a/compat-0.3/tck/src/main/resources/application.properties
++++ b/compat-0.3/tck/src/main/resources/application.properties
+@@ -21,3 +21,11 @@ quarkus.log.console.level=INFO
+ 
+ # Authorization is not configured in this application
+ a2a.authorization.required=false
++
++# Push notifications enabled for TCK conformance testing
++a2a.push-notification.enabled=true
++# Push notification URL validation relaxed for CI/testing:
++# Allow http (TCK webhook runs plain HTTP on localhost)
++a2a.push-notification.url.allowed-schemes=https,http
++# Allow private/loopback targets (TCK runner listens on localhost)
++a2a.push-notification.url.allow-private-network-targets=true
+diff --git a/docs/content/dev/configuration.md b/docs/content/dev/configuration.md
+index 7e560869e..3bb9680cc 100644
+--- a/docs/content/dev/configuration.md
++++ b/docs/content/dev/configuration.md
+@@ -85,6 +85,34 @@ a2a.push-notification-config.max-per-task=100
+ 
+ Limits the number of distinct push notification configurations a single task may register. Each config consumes memory and can trigger an outbound HTTP request on every task event. Re-registering an existing config ID (updating it) does not count against the limit. Both `InMemoryPushNotificationConfigStore` and `JpaDatabasePushNotificationConfigStore` enforce this limit, throwing `InvalidParamsError` when exceeded.
+ 
++### Push Notifications
++
++```properties
++# Enable or disable push notification support (default: true)
++a2a.push-notification.enabled=true
++
++# Allowed URL schemes for push notification targets, comma-separated (default: https)
++a2a.push-notification.url.allowed-schemes=https
++
++# Allow push notification URLs targeting private/internal network addresses (default: false)
++a2a.push-notification.url.allow-private-network-targets=false
++
++# TTL in seconds for DNS resolution caching during URL validation (default: 30, 0 to disable)
++a2a.push-notification.url.dns-cache-ttl-seconds=30
++```
++
++**`a2a.push-notification.enabled`** controls whether the server accepts push notification configurations. When `false`, push notification configs embedded in `sendMessage` requests are silently ignored, and explicit `CreateTaskPushNotificationConfig` calls return `UnsupportedOperationError`.
++
++**`a2a.push-notification.url.allowed-schemes`** restricts which URL schemes are accepted for push notification targets. Defaults to `https` only. To also allow plain HTTP (e.g. in development), set to `http,https`.
++
++**`a2a.push-notification.url.allow-private-network-targets`** controls whether push notifications can target private/internal network addresses. The default (`false`) blocks loopback addresses, link-local (169.254.x.x), site-local (10.x, 172.16.x, 192.168.x), RFC 6598 shared space (100.64.0.0/10), IPv6 unique-local (fc00::/7), IPv4-mapped IPv6 variants, and multicast addresses. This prevents Server-Side Request Forgery (SSRF) attacks where a client registers a push notification URL pointing to internal infrastructure. Set to `true` **only** in trusted development environments.
++
++**`a2a.push-notification.url.dns-cache-ttl-seconds`** controls how long (in seconds) resolved DNS results are cached during URL validation. Defaults to `30`. Caching avoids a blocking DNS lookup on every push notification delivery. Set to `0` to disable caching entirely (every validation triggers a fresh DNS resolution).
++
++The `DefaultPushNotificationUrlValidator` enforces these policies. Custom implementations can be provided via CDI by implementing `PushNotificationUrlValidator`.
++
++> **Known limitation — DNS rebinding:** hostname resolution happens at validation time, not at connection time. An attacker controlling a domain could register a URL that initially resolves to a public IP, then change the DNS record to an internal address before the next push event fires. The DNS cache reduces this window but does not eliminate it. Deployments with strict SSRF requirements should use network-level firewall rules to block outbound traffic to internal ranges.
++
+ ### Tuning Guidelines
+ 
+ - **Streaming Performance**: The executor handles streaming subscriptions. Too few threads can cause timeouts under concurrent load.
+diff --git a/extras/http-client-android/src/main/java/org/a2aproject/sdk/client/http/android/AndroidA2AHttpClient.java b/extras/http-client-android/src/main/java/org/a2aproject/sdk/client/http/android/AndroidA2AHttpClient.java
+index 0e1eb369b..3e4a45892 100644
+--- a/extras/http-client-android/src/main/java/org/a2aproject/sdk/client/http/android/AndroidA2AHttpClient.java
++++ b/extras/http-client-android/src/main/java/org/a2aproject/sdk/client/http/android/AndroidA2AHttpClient.java
+@@ -261,6 +261,7 @@ public CompletableFuture<Void> getAsyncSSE(
+   private static class AndroidPostBuilder extends AndroidBuilder<PostBuilder>
+       implements PostBuilder {
+     private String body = "";
++    private boolean followRedirects = true;
+ 
+     @Override
+     public PostBuilder body(String body) {
+@@ -268,9 +269,16 @@ public PostBuilder body(String body) {
+       return this;
+     }
+ 
++    @Override
++    public PostBuilder followRedirects(boolean follow) {
++      this.followRedirects = follow;
++      return self();
++    }
++
+     @Override
+     public A2AHttpResponse post() throws IOException {
+       HttpURLConnection connection = createConnection("POST", false);
++      connection.setInstanceFollowRedirects(followRedirects);
+       connection.setDoOutput(true);
+       try {
+         try (OutputStream os = connection.getOutputStream()) {
+diff --git a/extras/http-client-vertx/src/main/java/org/a2aproject/sdk/client/http/vertx/VertxA2AHttpClient.java b/extras/http-client-vertx/src/main/java/org/a2aproject/sdk/client/http/vertx/VertxA2AHttpClient.java
+index 924f91047..c38c9c117 100644
+--- a/extras/http-client-vertx/src/main/java/org/a2aproject/sdk/client/http/vertx/VertxA2AHttpClient.java
++++ b/extras/http-client-vertx/src/main/java/org/a2aproject/sdk/client/http/vertx/VertxA2AHttpClient.java
+@@ -524,6 +524,7 @@ public CompletableFuture<Void> getAsyncSSE(
+     private class VertxPostBuilder extends VertxBuilder<PostBuilder> implements A2AHttpClient.PostBuilder {
+ 
+         private String body = "";
++        private boolean followRedirects = true;
+ 
+         @Override
+         public PostBuilder body(String body) {
+@@ -531,6 +532,12 @@ public PostBuilder body(String body) {
+             return self();
+         }
+ 
++        @Override
++        public PostBuilder followRedirects(boolean follow) {
++            this.followRedirects = follow;
++            return self();
++        }
++
+         /**
+          * {@inheritDoc}
+          *
+@@ -546,7 +553,9 @@ public PostBuilder body(String body) {
+         @Override
+         public A2AHttpResponse post() throws IOException, InterruptedException {
+             Buffer bodyBuffer = Buffer.buffer(body, StandardCharsets.UTF_8.name());
+-            return executeSyncRequest(webClient.postAbs(url), headers, bodyBuffer);
++            HttpRequest<Buffer> request = webClient.postAbs(url);
++            request.followRedirects(followRedirects);
++            return executeSyncRequest(request, headers, bodyBuffer);
+         }
+ 
+         @Override
+diff --git a/extras/push-notification-config-store-database-jpa/src/test/java/org/a2aproject/sdk/extras/pushnotificationconfigstore/database/jpa/JpaPushNotificationConfigStoreTest.java b/extras/push-notification-config-store-database-jpa/src/test/java/org/a2aproject/sdk/extras/pushnotificationconfigstore/database/jpa/JpaPushNotificationConfigStoreTest.java
+index 057dc304a..089a418b7 100644
+--- a/extras/push-notification-config-store-database-jpa/src/test/java/org/a2aproject/sdk/extras/pushnotificationconfigstore/database/jpa/JpaPushNotificationConfigStoreTest.java
++++ b/extras/push-notification-config-store-database-jpa/src/test/java/org/a2aproject/sdk/extras/pushnotificationconfigstore/database/jpa/JpaPushNotificationConfigStoreTest.java
+@@ -20,6 +20,7 @@
+ import org.a2aproject.sdk.client.http.A2AHttpResponse;
+ import org.a2aproject.sdk.server.tasks.BasePushNotificationSender;
+ import org.a2aproject.sdk.server.tasks.PushNotificationConfigStore;
++import org.a2aproject.sdk.server.tasks.PushNotificationUrlValidator;
+ import org.a2aproject.sdk.spec.ListTaskPushNotificationConfigsParams;
+ import org.a2aproject.sdk.spec.ListTaskPushNotificationConfigsResult;
+ import org.a2aproject.sdk.spec.Task;
+@@ -54,7 +55,8 @@ public class JpaPushNotificationConfigStoreTest {
+     @BeforeEach
+     public void setUp() {
+         MockitoAnnotations.openMocks(this);
+-        notificationSender = new BasePushNotificationSender(configStore, mockHttpClient);
++        notificationSender = new BasePushNotificationSender(configStore, mockHttpClient,
++                PushNotificationUrlValidator.ALLOW_ALL);
+     }
+ 
+     @Test
+@@ -233,6 +235,16 @@ public void testDeleteInfoWithNullConfigId() {
+         assertTrue(configResult.configs().isEmpty(), "Should return empty list after deletion when using taskId as configId");
+     }
+ 
++    private void setupBasicMockHttpResponse() throws Exception {
++        when(mockHttpClient.createPost()).thenReturn(mockPostBuilder);
++        when(mockPostBuilder.followRedirects(false)).thenReturn(mockPostBuilder);
++        when(mockPostBuilder.url(any(String.class))).thenReturn(mockPostBuilder);
++        when(mockPostBuilder.addHeader(any(String.class), any(String.class))).thenReturn(mockPostBuilder);
++        when(mockPostBuilder.body(any(String.class))).thenReturn(mockPostBuilder);
++        when(mockPostBuilder.post()).thenReturn(mockHttpResponse);
++        when(mockHttpResponse.success()).thenReturn(true);
++    }
++
+     @Test
+     @Transactional
+     public void testSendNotificationSuccess() throws Exception {
+@@ -241,19 +253,14 @@ public void testSendNotificationSuccess() throws Exception {
+         TaskPushNotificationConfig config = createSamplePushConfig("http://notify.me/here", "cfg1", null);
+         configStore.setInfo(TaskPushNotificationConfig.builder(config).taskId(taskId).build());
+ 
+-        // Mock successful HTTP response
+-        when(mockHttpClient.createPost()).thenReturn(mockPostBuilder);
+-        when(mockPostBuilder.url(any(String.class))).thenReturn(mockPostBuilder);
+-        when(mockPostBuilder.addHeader(CONTENT_TYPE, APPLICATION_JSON)).thenReturn(mockPostBuilder);
+-        when(mockPostBuilder.body(any(String.class))).thenReturn(mockPostBuilder);
+-        when(mockPostBuilder.post()).thenReturn(mockHttpResponse);
+-        when(mockHttpResponse.success()).thenReturn(true);
++        setupBasicMockHttpResponse();
+ 
+         notificationSender.sendNotification(task, null);
+ 
+         // Verify HTTP client was called
+         ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
+         verify(mockHttpClient).createPost();
++        verify(mockPostBuilder).followRedirects(false);
+         verify(mockPostBuilder).url(config.url());
+         verify(mockPostBuilder).addHeader(CONTENT_TYPE, APPLICATION_JSON);
+         verify(mockPostBuilder).body(bodyCaptor.capture());
+@@ -274,12 +281,7 @@ public void testSendNotificationWithToken() throws Exception {
+         TaskPushNotificationConfig config = createSamplePushConfig("http://notify.me/here", "cfg1", "unique_token");
+         configStore.setInfo(TaskPushNotificationConfig.builder(config).taskId(taskId).build());
+ 
+-        // Mock successful HTTP response
+-        when(mockHttpClient.createPost()).thenReturn(mockPostBuilder);
+-        when(mockPostBuilder.url(any(String.class))).thenReturn(mockPostBuilder);
+-        when(mockPostBuilder.body(any(String.class))).thenReturn(mockPostBuilder);
+-        when(mockPostBuilder.post()).thenReturn(mockHttpResponse);
+-        when(mockHttpResponse.success()).thenReturn(true);
++        setupBasicMockHttpResponse();
+ 
+         notificationSender.sendNotification(task, null);
+ 
+diff --git a/http-client/src/main/java/org/a2aproject/sdk/client/http/A2AHttpClient.java b/http-client/src/main/java/org/a2aproject/sdk/client/http/A2AHttpClient.java
+index 71c425797..bf7ca6a28 100644
+--- a/http-client/src/main/java/org/a2aproject/sdk/client/http/A2AHttpClient.java
++++ b/http-client/src/main/java/org/a2aproject/sdk/client/http/A2AHttpClient.java
+@@ -154,6 +154,27 @@ interface PostBuilder extends Builder<PostBuilder> {
+          */
+         PostBuilder body(String body);
+ 
++        /**
++         * Controls whether the HTTP client follows redirects for this request.
++         * When set to {@code false}, redirect responses (3xx) are returned as-is
++         * instead of being followed automatically.
++         *
++         * <p>Security-sensitive code (e.g. push notification delivery) should disable
++         * redirects to prevent SSRF bypass via open redirectors.
++         *
++         * <p><strong>Note for implementors:</strong> The default implementation is a no-op
++         * that silently ignores the {@code follow} argument. Third-party {@link A2AHttpClient}
++         * implementations MUST override this method to honour the setting; otherwise
++         * {@code followRedirects(false)} calls have no effect and redirects will still
++         * be followed, bypassing SSRF protection.
++         *
++         * @param follow {@code true} to follow redirects (default), {@code false} to disable
++         * @return this builder for chaining
++         */
++        default PostBuilder followRedirects(boolean follow) {
++            return this;
++        }
++
+         /**
+          * Executes a synchronous POST request.
+          *
+diff --git a/http-client/src/main/java/org/a2aproject/sdk/client/http/JdkA2AHttpClient.java b/http-client/src/main/java/org/a2aproject/sdk/client/http/JdkA2AHttpClient.java
+index e26ebe02b..58a6ecce1 100644
+--- a/http-client/src/main/java/org/a2aproject/sdk/client/http/JdkA2AHttpClient.java
++++ b/http-client/src/main/java/org/a2aproject/sdk/client/http/JdkA2AHttpClient.java
+@@ -53,6 +53,7 @@
+ public class JdkA2AHttpClient implements A2AHttpClient {
+ 
+     private final HttpClient httpClient;
++    private volatile @Nullable HttpClient noRedirectClient;
+ 
+     /**
+      * Creates a new JDK-based HTTP client.
+@@ -330,8 +331,26 @@ public A2AHttpResponse delete() throws IOException, InterruptedException {
+ 
+     }
+ 
++    private HttpClient getNoRedirectClient() {
++        HttpClient local = noRedirectClient;
++        if (local == null) {
++            synchronized (this) {
++                local = noRedirectClient;
++                if (local == null) {
++                    local = HttpClient.newBuilder()
++                            .version(HttpClient.Version.HTTP_2)
++                            .followRedirects(HttpClient.Redirect.NEVER)
++                            .build();
++                    noRedirectClient = local;
++                }
++            }
++        }
++        return local;
++    }
++
+     private class JdkPostBuilder extends JdkBuilder<PostBuilder> implements A2AHttpClient.PostBuilder {
+         String body = "";
++        boolean followRedirects = true;
+ 
+         @Override
+         public PostBuilder body(String body) {
+@@ -339,6 +358,12 @@ public PostBuilder body(String body) {
+             return self();
+         }
+ 
++        @Override
++        public PostBuilder followRedirects(boolean follow) {
++            this.followRedirects = follow;
++            return self();
++        }
++
+         private HttpRequest.Builder createRequestBuilder(boolean SSE) throws IOException {
+             HttpRequest.Builder builder = super.createRequestBuilder()
+                     .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8));
+@@ -348,12 +373,16 @@ private HttpRequest.Builder createRequestBuilder(boolean SSE) throws IOException
+             return builder;
+         }
+ 
++        private HttpClient resolveClient() {
++            return followRedirects ? httpClient : getNoRedirectClient();
++        }
++
+         @Override
+         public A2AHttpResponse post() throws IOException, InterruptedException {
+             HttpRequest request = createRequestBuilder(false)
+                     .build();
+             HttpResponse<String> response =
+-                    httpClient.send(request, BodyHandlers.ofString(StandardCharsets.UTF_8));
++                    resolveClient().send(request, BodyHandlers.ofString(StandardCharsets.UTF_8));
+ 
+             if (response.statusCode() == HTTP_UNAUTHORIZED) {
+                 throw new IOException(A2AErrorMessages.AUTHENTICATION_FAILED,
+diff --git a/http-client/src/test/java/org/a2aproject/sdk/client/http/JdkA2AHttpClientTest.java b/http-client/src/test/java/org/a2aproject/sdk/client/http/JdkA2AHttpClientTest.java
+index 63bd29a8a..471f6b643 100644
+--- a/http-client/src/test/java/org/a2aproject/sdk/client/http/JdkA2AHttpClientTest.java
++++ b/http-client/src/test/java/org/a2aproject/sdk/client/http/JdkA2AHttpClientTest.java
+@@ -97,6 +97,52 @@ public void testConstructorRejectsNullHttpClient() {
+         assertThrows(IllegalArgumentException.class, () -> new JdkA2AHttpClient(null), "foo");
+     }
+ 
++    @Test
++    public void testPostFollowRedirectsFalseDoesNotFollowRedirect() throws Exception {
++        server = ClientAndServer.startClientAndServer(0);
++        int port = server.getLocalPort();
++        server.when(request().withMethod("POST").withPath("/redirect"))
++                .respond(response()
++                        .withStatusCode(302)
++                        .withHeader("Location", "http://localhost:" + port + "/target"));
++        server.when(request().withMethod("POST").withPath("/target"))
++                .respond(response().withStatusCode(200).withBody("redirected"));
++
++        JdkA2AHttpClient client = new JdkA2AHttpClient();
++
++        A2AHttpResponse response = client.createPost()
++                .url("http://localhost:" + port + "/redirect")
++                .body("{}")
++                .followRedirects(false)
++                .post();
++
++        assertEquals(302, response.status(),
++                "With followRedirects(false), the 302 should be returned as-is");
++    }
++
++    @Test
++    public void testPostDefaultFollowsRedirect() throws Exception {
++        server = ClientAndServer.startClientAndServer(0);
++        int port = server.getLocalPort();
++        server.when(request().withMethod("POST").withPath("/redirect"))
++                .respond(response()
++                        .withStatusCode(307)
++                        .withHeader("Location", "http://localhost:" + port + "/target"));
++        server.when(request().withPath("/target"))
++                .respond(response().withStatusCode(200).withBody("redirected"));
++
++        JdkA2AHttpClient client = new JdkA2AHttpClient();
++
++        A2AHttpResponse response = client.createPost()
++                .url("http://localhost:" + port + "/redirect")
++                .body("{}")
++                .post();
++
++        assertEquals(200, response.status(),
++                "By default, redirects should be followed");
++        assertEquals("redirected", response.body());
++    }
++
+     @Test
+     public void testCancellationExceptionViaSubscriberOnErrorIsNotPropagated() throws Exception {
+         AtomicReference<Throwable> capturedError = new AtomicReference<>();
+diff --git a/itk/src/main/resources/application.properties b/itk/src/main/resources/application.properties
+index d1bdacad5..fc62a47f1 100644
+--- a/itk/src/main/resources/application.properties
++++ b/itk/src/main/resources/application.properties
+@@ -9,3 +9,11 @@ quarkus.log.file.format=%d{yyyy-MM-dd HH:mm:ss,SSS} %-5p [%c{3.}] (%t) %s%e%n
+ 
+ # Authorization is not configured in this application
+ a2a.authorization.required=false
++
++# Push notifications enabled for ITK interoperability testing
++a2a.push-notification.enabled=true
++# Push notification URL validation relaxed for CI/testing:
++# Allow http (ITK agents run plain HTTP on localhost)
++a2a.push-notification.url.allowed-schemes=https,http
++# Allow private/loopback targets (ITK agents listen on 127.0.0.1)
++a2a.push-notification.url.allow-private-network-targets=true
+diff --git a/server-common/src/main/java/org/a2aproject/sdk/server/requesthandlers/DefaultRequestHandler.java b/server-common/src/main/java/org/a2aproject/sdk/server/requesthandlers/DefaultRequestHandler.java
+index d8fa19f57..d234e7764 100644
+--- a/server-common/src/main/java/org/a2aproject/sdk/server/requesthandlers/DefaultRequestHandler.java
++++ b/server-common/src/main/java/org/a2aproject/sdk/server/requesthandlers/DefaultRequestHandler.java
+@@ -202,6 +202,7 @@ public class DefaultRequestHandler implements RequestHandler {
+     private static final String A2A_BLOCKING_RECONCILIATION_TIMEOUT_SECONDS = "a2a.blocking.reconciliation.timeout.seconds";
+     private static final String A2A_REQUEST_CONTEXT_POPULATE_REFERRED_TASKS = "a2a.request-context.populate-referred-tasks";
+     private static final String A2A_AUTHORIZATION_REQUIRED = "a2a.authorization.required";
++    private static final String A2A_PUSH_NOTIFICATIONS_ENABLED = "a2a.push-notification.enabled";
+ 
+     @Inject
+     A2AConfigProvider configProvider;
+@@ -224,6 +225,7 @@ public class DefaultRequestHandler implements RequestHandler {
+ 
+     private boolean authorizationRequired = true;
+ 
++    private boolean pushNotificationsEnabled;
+ 
+     /**
+      * Timeout in seconds to wait for agent execution to complete in blocking calls.
+@@ -337,6 +339,9 @@ void initConfig() {
+                 configProvider.getValue(A2A_BLOCKING_RECONCILIATION_TIMEOUT_SECONDS));
+         authorizationProvider = CdiUtils.getIfResolvable(authorizationProviderInstance);
+         agentExecutorRouter = CdiUtils.getIfResolvable(agentExecutorRouterInstance);
++        pushNotificationsEnabled = Boolean.parseBoolean(
++                configProvider.getValue(A2A_PUSH_NOTIFICATIONS_ENABLED));
++
+         boolean populateReferredTasks = Boolean.parseBoolean(
+                 configProvider.getValue(A2A_REQUEST_CONTEXT_POPULATE_REFERRED_TASKS));
+         this.authorizationRequired = Boolean.parseBoolean(
+@@ -362,6 +367,7 @@ public static class Builder {
+         private @Nullable AgentExecutorRouter agentExecutorRouter;
+         private boolean authorizationRequired = true;
+         private boolean populateReferredTasks;
++        private boolean pushNotificationsEnabled = true;
+ 
+         public Builder agentExecutor(AgentExecutor agentExecutor) {
+             this.agentExecutor = agentExecutor;
+@@ -424,6 +430,18 @@ public Builder populateReferredTasks(boolean populateReferredTasks) {
+             return this;
+         }
+ 
++        /**
++         * Sets whether push notifications are enabled via the agent card capabilities.
++         * When false, push notification configs embedded in sendMessage requests are ignored.
++         *
++         * @param pushNotificationsEnabled true if the agent supports push notifications
++         * @return this builder for chaining
++         */
++        public Builder pushNotificationsEnabled(boolean pushNotificationsEnabled) {
++            this.pushNotificationsEnabled = pushNotificationsEnabled;
++            return this;
++        }
++
+         @SuppressWarnings("NullAway") // pushConfigStore is intentionally @Nullable
+         public DefaultRequestHandler build() {
+             Assert.checkNotNullParam("agentExecutor", agentExecutor);
+@@ -441,6 +459,7 @@ public DefaultRequestHandler build() {
+             handler.authorizationProvider = authorizationProvider;
+             handler.agentExecutorRouter = agentExecutorRouter;
+             handler.authorizationRequired = authorizationRequired;
++            handler.pushNotificationsEnabled = pushNotificationsEnabled;
+             handler.requestContextBuilder =
+                     () -> new SimpleRequestContextBuilder(taskStore, populateReferredTasks, authorizationProvider);
+             return handler;
+@@ -1073,7 +1092,7 @@ public void onComplete() {
+     @Override
+     public TaskPushNotificationConfig onCreateTaskPushNotificationConfig(
+             TaskPushNotificationConfig params, ServerCallContext context) throws A2AError {
+-        if (pushConfigStore == null) {
++        if (pushConfigStore == null || !pushNotificationsEnabled) {
+             throw new UnsupportedOperationError();
+         }
+         if (params.taskId() == null) {
+@@ -1199,7 +1218,10 @@ public void onDeleteTaskPushNotificationConfig(
+     }
+ 
+     private boolean shouldAddPushInfo(MessageSendParams params) {
+-        return pushConfigStore != null && params.configuration() != null && params.configuration().taskPushNotificationConfig() != null;
++        return pushNotificationsEnabled
++                && pushConfigStore != null
++                && params.configuration() != null
++                && params.configuration().taskPushNotificationConfig() != null;
+     }
+ 
+     /**
+@@ -1329,6 +1351,7 @@ private CompletableFuture<Void> cleanupProducer(@Nullable CompletableFuture<Void
+         });
+     }
+ 
++    @SuppressWarnings("NullAway") // shouldAddPushInfo guarantees pushConfigStore != null
+     private MessageSendSetup initMessageSend(MessageSendParams params, ServerCallContext context) throws A2AError {
+         Task task = authorizeTaskAccess(params, context);
+         MessageSendParams requestParams = task == null ? params : normalizeRequestParamsForTask(params, task);
+@@ -1354,7 +1377,7 @@ private MessageSendSetup initMessageSend(MessageSendParams params, ServerCallCon
+             LOGGER.debug("Found task updating with message {}", params.message());
+             task = taskManager.updateWithMessage(params.message(), task);
+ 
+-            if (pushConfigStore != null && params.configuration() != null && params.configuration().taskPushNotificationConfig() != null) {
++            if (shouldAddPushInfo(params)) {
+                 LOGGER.debug("Adding push info");
+                 String version = context != null ? context.getRequestedProtocolVersion() : null;
+                 pushConfigStore.setInfo(TaskPushNotificationConfig.builder(params.configuration().taskPushNotificationConfig())
+diff --git a/server-common/src/main/java/org/a2aproject/sdk/server/tasks/BasePushNotificationSender.java b/server-common/src/main/java/org/a2aproject/sdk/server/tasks/BasePushNotificationSender.java
+index 143f68842..9dff9da60 100644
+--- a/server-common/src/main/java/org/a2aproject/sdk/server/tasks/BasePushNotificationSender.java
++++ b/server-common/src/main/java/org/a2aproject/sdk/server/tasks/BasePushNotificationSender.java
+@@ -44,6 +44,7 @@ public class BasePushNotificationSender implements PushNotificationSender {
+     private A2AHttpClient httpClient;
+     private PushNotificationConfigStore configStore;
+     private Map<String, PushNotificationPayloadFormatter> formattersByVersion;
++    private PushNotificationUrlValidator urlValidator;
+ 
+ 
+     /**
+@@ -53,43 +54,57 @@ public class BasePushNotificationSender implements PushNotificationSender {
+      */
+     @SuppressWarnings("NullAway")
+     protected BasePushNotificationSender() {
+-        // For CDI proxy creation
++        // For CDI proxy creation — all fields are overwritten by the @Inject constructor.
++        // urlValidator is intentionally non-null so that SSRF protection is active even
++        // if an instance is accidentally used before injection completes.
+         this.httpClient = null;
+         this.configStore = null;
+         this.formattersByVersion = Map.of();
++        this.urlValidator = new DefaultPushNotificationUrlValidator();
+     }
+ 
+-    public BasePushNotificationSender(PushNotificationConfigStore configStore) {
++    public BasePushNotificationSender(PushNotificationConfigStore configStore,
++                                       PushNotificationUrlValidator urlValidator) {
+         this.httpClient = A2AHttpClientFactory.create();
+         this.configStore = configStore;
+         this.formattersByVersion = Map.of();
++        this.urlValidator = urlValidator;
+     }
+ 
+     @Inject
+     public BasePushNotificationSender(PushNotificationConfigStore configStore,
+-                                       Instance<PushNotificationPayloadFormatter> formatters) {
++                                       Instance<PushNotificationPayloadFormatter> formatters,
++                                       PushNotificationUrlValidator urlValidator) {
+         this.httpClient = A2AHttpClientFactory.create();
+         this.configStore = configStore;
+-        this.formattersByVersion = new HashMap<>();
+-        for (PushNotificationPayloadFormatter f : formatters) {
+-            this.formattersByVersion.put(f.targetVersion(), f);
+-        }
++        this.formattersByVersion = toFormatterMap(formatters);
++        this.urlValidator = urlValidator;
+     }
+ 
+-    public BasePushNotificationSender(PushNotificationConfigStore configStore, A2AHttpClient httpClient) {
++    public BasePushNotificationSender(PushNotificationConfigStore configStore, A2AHttpClient httpClient,
++                                       PushNotificationUrlValidator urlValidator) {
+         this.configStore = configStore;
+         this.httpClient = httpClient;
+         this.formattersByVersion = Map.of();
++        this.urlValidator = urlValidator;
+     }
+ 
+     public BasePushNotificationSender(PushNotificationConfigStore configStore, A2AHttpClient httpClient,
+-                                       List<PushNotificationPayloadFormatter> formatters) {
++                                       List<PushNotificationPayloadFormatter> formatters,
++                                       PushNotificationUrlValidator urlValidator) {
+         this.configStore = configStore;
+         this.httpClient = httpClient;
+-        this.formattersByVersion = new HashMap<>();
++        this.formattersByVersion = toFormatterMap(formatters);
++        this.urlValidator = urlValidator;
++    }
++
++    private static Map<String, PushNotificationPayloadFormatter> toFormatterMap(
++            Iterable<PushNotificationPayloadFormatter> formatters) {
++        Map<String, PushNotificationPayloadFormatter> map = new HashMap<>();
+         for (PushNotificationPayloadFormatter f : formatters) {
+-            formattersByVersion.put(f.targetVersion(), f);
++            map.put(f.targetVersion(), f);
+         }
++        return map;
+     }
+ 
+     @Override
+@@ -164,6 +179,14 @@ private boolean dispatchNotification(StreamingEventKind event,
+                                           TaskPushNotificationConfig pushInfo,
+                                           Map<String, String> versionsByConfigId) {
+         String url = pushInfo.url();
++
++        try {
++            urlValidator.validate(url);
++        } catch (IllegalArgumentException e) {
++            LOGGER.warn("Rejecting push notification to {}: {}", url, e.getMessage());
++            return false;
++        }
++
+         String token = pushInfo.token();
+ 
+         String version = versionsByConfigId.get(pushInfo.id());
+@@ -193,7 +216,8 @@ private boolean dispatchNotification(StreamingEventKind event,
+             }
+         }
+ 
+-        A2AHttpClient.PostBuilder postBuilder = httpClient.createPost();
++        A2AHttpClient.PostBuilder postBuilder = httpClient.createPost()
++                .followRedirects(false);
+         if (token != null && !token.isBlank()) {
+             try {
+                 rejectCrlf(token, X_A2A_NOTIFICATION_TOKEN);
+diff --git a/server-common/src/main/java/org/a2aproject/sdk/server/tasks/DefaultPushNotificationUrlValidator.java b/server-common/src/main/java/org/a2aproject/sdk/server/tasks/DefaultPushNotificationUrlValidator.java
+new file mode 100644
+index 000000000..e4fbc86d0
+--- /dev/null
++++ b/server-common/src/main/java/org/a2aproject/sdk/server/tasks/DefaultPushNotificationUrlValidator.java
+@@ -0,0 +1,226 @@
++package org.a2aproject.sdk.server.tasks;
++
++import jakarta.enterprise.context.ApplicationScoped;
++import jakarta.inject.Inject;
++
++import java.net.InetAddress;
++import java.net.URI;
++import java.net.URISyntaxException;
++import java.net.UnknownHostException;
++import java.util.Arrays;
++import java.util.HashSet;
++import java.util.Locale;
++import java.util.Map;
++import java.util.Set;
++import java.util.concurrent.ConcurrentHashMap;
++
++import org.a2aproject.sdk.server.config.A2AConfigProvider;
++import org.jspecify.annotations.Nullable;
++
++/**
++ * Default SSRF-safe implementation of {@link PushNotificationUrlValidator}.
++ * <p>
++ * Enforces the following policies (configurable via {@link A2AConfigProvider}):
++ * <ul>
++ *   <li><b>Scheme restriction</b> — only {@code https} by default
++ *       ({@value #ALLOWED_SCHEMES_KEY}, comma-separated)</li>
++ *   <li><b>Private-network blocking</b> — loopback, link-local, site-local,
++ *       cloud metadata (169.254.x.x), RFC 6598 shared space (100.64.0.0/10),
++ *       IPv6 unique-local (fc00::/7), and IPv4-mapped IPv6 variants are all
++ *       rejected unless {@value #ALLOW_PRIVATE_KEY} is {@code true}</li>
++ *   <li><b>DNS resolution caching</b> — resolved addresses are cached for
++ *       a configurable duration ({@value #DNS_CACHE_TTL_KEY}, default 30 s)
++ *       to avoid blocking DNS lookups on every validation call. Set to
++ *       {@code 0} to disable caching.</li>
++ * </ul>
++ *
++ * <p><b>Known limitation — DNS rebinding:</b> hostname resolution happens at
++ * validation time (when the push notification is about to be sent), not at
++ * connection time. An attacker controlling a domain could register a URL that
++ * resolves to a public IP (passes validation), then change the DNS record to
++ * point to an internal address before the HTTP client opens the connection.
++ * The DNS cache mitigates the window somewhat by reusing the validated
++ * resolution, but does not eliminate the TOCTOU gap entirely. Deployments
++ * with strict SSRF requirements should use a network-level firewall to block
++ * outbound traffic to internal ranges.
++ */
++@ApplicationScoped
++public class DefaultPushNotificationUrlValidator implements PushNotificationUrlValidator {
++
++    static final String ALLOWED_SCHEMES_KEY = "a2a.push-notification.url.allowed-schemes";
++    static final String ALLOW_PRIVATE_KEY = "a2a.push-notification.url.allow-private-network-targets";
++    static final String DNS_CACHE_TTL_KEY = "a2a.push-notification.url.dns-cache-ttl-seconds";
++
++    private static final Set<String> DEFAULT_ALLOWED_SCHEMES = Set.of("https");
++    private static final long DEFAULT_DNS_CACHE_TTL_SECONDS = 30;
++
++    // RFC 6598 shared address space: 100.64.0.0/10
++    private static final int RFC6598_FIRST_OCTET = 100;
++    private static final int RFC6598_SECOND_OCTET_MASK = 0xC0;
++    private static final int RFC6598_SECOND_OCTET_VALUE = 0x40;
++
++    // IPv6 unique-local address prefix: fc00::/7
++    private static final int IPV6_ULA_MASK = 0xFE;
++    private static final int IPV6_ULA_PREFIX = 0xFC;
++
++    @Inject
++    @Nullable A2AConfigProvider configProvider;
++
++    private final Map<String, DnsCacheEntry> dnsCache = new ConcurrentHashMap<>();
++
++    public DefaultPushNotificationUrlValidator() {
++    }
++
++    private record DnsCacheEntry(InetAddress[] addresses, long expiresAtNanos) {
++        boolean isExpired() {
++            return System.nanoTime() - expiresAtNanos >= 0;
++        }
++    }
++
++    @Override
++    public void validate(String url) {
++        URI uri;
++        try {
++            uri = new URI(url);
++        } catch (URISyntaxException e) {
++            throw new IllegalArgumentException("Invalid push notification URL: " + e.getMessage());
++        }
++
++        String scheme = uri.getScheme();
++        Set<String> allowed = getAllowedSchemes();
++        if (scheme == null || !allowed.contains(scheme.toLowerCase(Locale.ROOT))) {
++            throw new IllegalArgumentException(
++                    "Push notification URL scheme '" + scheme + "' is not allowed; allowed: " + allowed);
++        }
++
++        String host = uri.getHost();
++        if (host == null || host.isEmpty()) {
++            throw new IllegalArgumentException("Push notification URL must have a host");
++        }
++
++        if (!isPrivateNetworkAllowed()) {
++            InetAddress[] addresses = resolveHost(host);
++
++            for (InetAddress addr : addresses) {
++                if (isBlockedAddress(addr)) {
++                    throw new IllegalArgumentException(
++                            "Push notification URL host resolves to a blocked network address: "
++                                    + addr.getHostAddress());
++                }
++            }
++        }
++    }
++
++    private Set<String> getAllowedSchemes() {
++        if (configProvider == null) {
++            return DEFAULT_ALLOWED_SCHEMES;
++        }
++        return configProvider.getOptionalValue(ALLOWED_SCHEMES_KEY)
++                .map(value -> {
++                    Set<String> schemes = new HashSet<>();
++                    for (String s : value.split(",")) {
++                        String trimmed = s.trim().toLowerCase(Locale.ROOT);
++                        if (!trimmed.isEmpty()) {
++                            schemes.add(trimmed);
++                        }
++                    }
++                    return schemes.isEmpty() ? DEFAULT_ALLOWED_SCHEMES : Set.copyOf(schemes);
++                })
++                .orElse(DEFAULT_ALLOWED_SCHEMES);
++    }
++
++    private InetAddress[] resolveHost(String host) {
++        long ttlSeconds = getDnsCacheTtlSeconds();
++        if (ttlSeconds > 0) {
++            DnsCacheEntry cached = dnsCache.get(host);
++            if (cached != null && !cached.isExpired()) {
++                return cached.addresses();
++            }
++        }
++
++        InetAddress[] addresses;
++        try {
++            addresses = InetAddress.getAllByName(host);
++        } catch (UnknownHostException e) {
++            dnsCache.remove(host);
++            throw new IllegalArgumentException("Cannot resolve push notification URL host: " + host);
++        }
++
++        if (ttlSeconds > 0) {
++            long expiresAt = System.nanoTime() + ttlSeconds * 1_000_000_000L;
++            dnsCache.put(host, new DnsCacheEntry(Arrays.copyOf(addresses, addresses.length), expiresAt));
++        }
++        return addresses;
++    }
++
++    private long getDnsCacheTtlSeconds() {
++        if (configProvider == null) {
++            return DEFAULT_DNS_CACHE_TTL_SECONDS;
++        }
++        return configProvider.getOptionalValue(DNS_CACHE_TTL_KEY)
++                .map(value -> {
++                    try {
++                        long ttl = Long.parseLong(value.trim());
++                        return ttl < 0 ? DEFAULT_DNS_CACHE_TTL_SECONDS : ttl;
++                    } catch (NumberFormatException e) {
++                        return DEFAULT_DNS_CACHE_TTL_SECONDS;
++                    }
++                })
++                .orElse(DEFAULT_DNS_CACHE_TTL_SECONDS);
++    }
++
++    private boolean isPrivateNetworkAllowed() {
++        if (configProvider == null) {
++            return false;
++        }
++        return configProvider.getOptionalValue(ALLOW_PRIVATE_KEY)
++                .map(Boolean::parseBoolean)
++                .orElse(false);
++    }
++
++    static boolean isBlockedAddress(InetAddress addr) {
++        if (addr.isLoopbackAddress()
++                || addr.isLinkLocalAddress()
++                || addr.isSiteLocalAddress()
++                || addr.isAnyLocalAddress()
++                || addr.isMulticastAddress()) {
++            return true;
++        }
++
++        byte[] bytes = addr.getAddress();
++
++        if (bytes.length == 4) {
++            int first = bytes[0] & 0xFF;
++            int second = bytes[1] & 0xFF;
++            if (first == RFC6598_FIRST_OCTET && (second & RFC6598_SECOND_OCTET_MASK) == RFC6598_SECOND_OCTET_VALUE) {
++                return true;
++            }
++        }
++
++        if (bytes.length == 16) {
++            if ((bytes[0] & IPV6_ULA_MASK) == IPV6_ULA_PREFIX) {
++                return true;
++            }
++            // IPv4-mapped IPv6 (::ffff:x.x.x.x) — re-check the embedded IPv4 portion
++            if (isIPv4Mapped(bytes)) {
++                byte[] ipv4 = {bytes[12], bytes[13], bytes[14], bytes[15]};
++                try {
++                    return isBlockedAddress(InetAddress.getByAddress(ipv4));
++                } catch (UnknownHostException e) {
++                    return true;
++                }
++            }
++        }
++
++        return false;
++    }
++
++    private static boolean isIPv4Mapped(byte[] bytes) {
++        for (int i = 0; i < 10; i++) {
++            if (bytes[i] != 0) {
++                return false;
++            }
++        }
++        return (bytes[10] & 0xFF) == 0xFF && (bytes[11] & 0xFF) == 0xFF;
++    }
++}
+diff --git a/server-common/src/main/java/org/a2aproject/sdk/server/tasks/PushNotificationUrlValidator.java b/server-common/src/main/java/org/a2aproject/sdk/server/tasks/PushNotificationUrlValidator.java
+new file mode 100644
+index 000000000..3d56a028a
+--- /dev/null
++++ b/server-common/src/main/java/org/a2aproject/sdk/server/tasks/PushNotificationUrlValidator.java
+@@ -0,0 +1,32 @@
++package org.a2aproject.sdk.server.tasks;
++
++/**
++ * Validates push notification destination URLs before outbound HTTP requests are made.
++ * <p>
++ * Prevents Server-Side Request Forgery (SSRF) by enforcing security policies on
++ * the client-controlled push notification URLs. The default implementation
++ * ({@link DefaultPushNotificationUrlValidator}) blocks requests to private networks,
++ * cloud metadata endpoints, and non-HTTPS URLs.
++ * <p>
++ * Custom implementations can be provided via CDI to adjust the policy for specific
++ * deployment environments.
++ *
++ * @see DefaultPushNotificationUrlValidator
++ * @see BasePushNotificationSender
++ */
++public interface PushNotificationUrlValidator {
++
++    /**
++     * A validator that accepts every URL without checking.
++     * Intended for tests and development environments where SSRF protection is not needed.
++     */
++    PushNotificationUrlValidator ALLOW_ALL = url -> {};
++
++    /**
++     * Validates that the given URL is safe to use as a push notification target.
++     *
++     * @param url the push notification URL to validate
++     * @throws IllegalArgumentException if the URL violates the security policy
++     */
++    void validate(String url);
++}
+diff --git a/server-common/src/main/resources/META-INF/a2a-defaults.properties b/server-common/src/main/resources/META-INF/a2a-defaults.properties
+index 51bf76eeb..5c2f7cdeb 100644
+--- a/server-common/src/main/resources/META-INF/a2a-defaults.properties
++++ b/server-common/src/main/resources/META-INF/a2a-defaults.properties
+@@ -39,8 +39,26 @@ a2a.request-context.populate-referred-tasks=true
+ # consumes memory and can trigger outbound HTTP requests).
+ a2a.push-notification-config.max-per-task=100
+ 
++
+ # DefaultRequestHandler - Authorization enforcement
+ # When true (default), all operations are denied if no TaskAuthorizationProvider
+ # is configured (fail-closed). Set to false to allow unauthenticated access
+ # (fail-open), e.g. for single-user deployments or testing.
+ a2a.authorization.required=true
++
++# Push notifications - global enablement
++# When true, push notification configs in sendMessage requests are accepted
++# and stored. When false, they are silently ignored and direct
++# CreateTaskPushNotificationConfig calls return UnsupportedOperationError.
++a2a.push-notification.enabled=true
++
++# PushNotificationUrlValidator - SSRF protection for push notification URLs
++# Comma-separated list of allowed URL schemes (case-insensitive).
++a2a.push-notification.url.allowed-schemes=https
++# When true, allows push notification URLs targeting private/internal network
++# addresses (loopback, link-local, site-local, cloud metadata). Defaults to
++# false to prevent SSRF. Set to true ONLY in trusted development environments.
++a2a.push-notification.url.allow-private-network-targets=false
++# TTL in seconds for DNS resolution caching during URL validation.
++# Avoids a blocking DNS lookup on every push notification. Set to 0 to disable.
++a2a.push-notification.url.dns-cache-ttl-seconds=30
+diff --git a/server-common/src/test/java/org/a2aproject/sdk/server/requesthandlers/AbstractA2ARequestHandlerTest.java b/server-common/src/test/java/org/a2aproject/sdk/server/requesthandlers/AbstractA2ARequestHandlerTest.java
+index a185c5229..313e2d742 100644
+--- a/server-common/src/test/java/org/a2aproject/sdk/server/requesthandlers/AbstractA2ARequestHandlerTest.java
++++ b/server-common/src/test/java/org/a2aproject/sdk/server/requesthandlers/AbstractA2ARequestHandlerTest.java
+@@ -35,6 +35,7 @@
+ import org.a2aproject.sdk.server.tasks.InMemoryTaskStore;
+ import org.a2aproject.sdk.server.tasks.PushNotificationConfigStore;
+ import org.a2aproject.sdk.server.tasks.PushNotificationSender;
++import org.a2aproject.sdk.server.tasks.PushNotificationUrlValidator;
+ import org.a2aproject.sdk.server.tasks.TaskStore;
+ import org.a2aproject.sdk.spec.A2AError;
+ import org.a2aproject.sdk.spec.AgentCapabilities;
+@@ -108,7 +109,7 @@ public void cancel(RequestContext context, AgentEmitter agentEmitter) throws A2A
+         // Create push notification components BEFORE MainEventBusProcessor
+         httpClient = new TestHttpClient();
+         PushNotificationConfigStore pushConfigStore = new InMemoryPushNotificationConfigStore();
+-        PushNotificationSender pushSender = new BasePushNotificationSender(pushConfigStore, httpClient);
++        BasePushNotificationSender pushSender = new BasePushNotificationSender(pushConfigStore, httpClient, PushNotificationUrlValidator.ALLOW_ALL);
+ 
+         // Create MainEventBus and MainEventBusProcessor (production code path)
+         mainEventBus = new MainEventBus();
+@@ -121,6 +122,7 @@ public void cancel(RequestContext context, AgentEmitter agentEmitter) throws A2A
+                 .taskStore(taskStore)
+                 .queueManager(queueManager)
+                 .pushConfigStore(pushConfigStore)
++                .pushNotificationsEnabled(true)
+                 .mainEventBusProcessor(mainEventBusProcessor)
+                 .executor(internalExecutor)
+                 .eventConsumerExecutor(internalExecutor)
+diff --git a/server-common/src/test/java/org/a2aproject/sdk/server/requesthandlers/DefaultRequestHandlerTest.java b/server-common/src/test/java/org/a2aproject/sdk/server/requesthandlers/DefaultRequestHandlerTest.java
+index 3dd9ea050..da0603961 100644
+--- a/server-common/src/test/java/org/a2aproject/sdk/server/requesthandlers/DefaultRequestHandlerTest.java
++++ b/server-common/src/test/java/org/a2aproject/sdk/server/requesthandlers/DefaultRequestHandlerTest.java
+@@ -47,6 +47,7 @@
+ import org.a2aproject.sdk.spec.EventKind;
+ import org.a2aproject.sdk.spec.InvalidParamsError;
+ import org.a2aproject.sdk.spec.ListTasksParams;
++import org.a2aproject.sdk.spec.ListTaskPushNotificationConfigsParams;
+ import org.a2aproject.sdk.spec.Message;
+ import org.a2aproject.sdk.spec.MessageSendConfiguration;
+ import org.a2aproject.sdk.spec.MessageSendParams;
+@@ -142,6 +143,7 @@ public void cancel(RequestContext context, AgentEmitter agentEmitter) throws A2A
+                 .taskStore(taskStore)
+                 .queueManager(queueManager)
+                 .pushConfigStore(pushConfigStore)
++                .pushNotificationsEnabled(true)
+                 .mainEventBusProcessor(mainEventBusProcessor)
+                 .executor(internalExecutor)
+                 .eventConsumerExecutor(internalExecutor)
+@@ -1528,4 +1530,75 @@ private DefaultRequestHandler buildHandlerWithRouter(AgentExecutorRouter router)
+                 .authorizationRequired(false)
+                 .build();
+     }
++
++    @Test
++    void testPushConfigNotStoredWhenPushNotificationsDisabled() throws Exception {
++        DefaultRequestHandler handlerNoPush = DefaultRequestHandler.builder()
++                .agentExecutor(executor)
++                .taskStore(taskStore)
++                .queueManager(queueManager)
++                .pushConfigStore(pushConfigStore)
++                .pushNotificationsEnabled(false)
++                .authorizationRequired(false)
++                .mainEventBusProcessor(mainEventBusProcessor)
++                .executor(internalExecutor)
++                .eventConsumerExecutor(internalExecutor)
++                .build();
++
++        agentExecutorExecute = (context, emitter) -> emitter.complete();
++
++        TaskPushNotificationConfig pushConfig = TaskPushNotificationConfig.builder()
++                .id("push-disabled-test")
++                .url("http://example.com/webhook")
++                .build();
++        MessageSendConfiguration config = MessageSendConfiguration.builder()
++                .returnImmediately(true)
++                .acceptedOutputModes(List.of())
++                .taskPushNotificationConfig(pushConfig)
++                .build();
++        MessageSendParams params = MessageSendParams.builder()
++                .message(MESSAGE)
++                .configuration(config)
++                .build();
++
++        EventKind result = handlerNoPush.onMessageSend(params, NULL_CONTEXT);
++        assertInstanceOf(Task.class, result);
++        Task task = (Task) result;
++
++        assertTrue(pushConfigStore.getInfo(new ListTaskPushNotificationConfigsParams(task.id())).configs().isEmpty(),
++                "Push config should not be stored when pushNotificationsEnabled is false");
++    }
++
++    @Test
++    void testCreatePushNotificationConfigRejectedWhenPushNotificationsDisabled() throws Exception {
++        DefaultRequestHandler handlerNoPush = DefaultRequestHandler.builder()
++                .agentExecutor(executor)
++                .taskStore(taskStore)
++                .queueManager(queueManager)
++                .pushConfigStore(pushConfigStore)
++                .pushNotificationsEnabled(false)
++                .authorizationRequired(false)
++                .mainEventBusProcessor(mainEventBusProcessor)
++                .executor(internalExecutor)
++                .eventConsumerExecutor(internalExecutor)
++                .build();
++
++        agentExecutorExecute = (context, emitter) -> emitter.complete();
++
++        EventKind result = handlerNoPush.onMessageSend(
++                MessageSendParams.builder().message(MESSAGE).configuration(DEFAULT_CONFIG).build(),
++                NULL_CONTEXT);
++        assertInstanceOf(Task.class, result);
++        Task task = (Task) result;
++
++        TaskPushNotificationConfig pushConfig = TaskPushNotificationConfig.builder()
++                .id("cfg-disabled")
++                .taskId(task.id())
++                .url("http://example.com/webhook")
++                .build();
++
++        assertThrows(UnsupportedOperationError.class,
++                () -> handlerNoPush.onCreateTaskPushNotificationConfig(pushConfig, NULL_CONTEXT),
++                "CreateTaskPushNotificationConfig should throw UnsupportedOperationError when push is disabled");
++    }
+ }
+diff --git a/server-common/src/test/java/org/a2aproject/sdk/server/tasks/InMemoryPushNotificationConfigStoreTest.java b/server-common/src/test/java/org/a2aproject/sdk/server/tasks/InMemoryPushNotificationConfigStoreTest.java
+index 273e37a80..9a1a0f706 100644
+--- a/server-common/src/test/java/org/a2aproject/sdk/server/tasks/InMemoryPushNotificationConfigStoreTest.java
++++ b/server-common/src/test/java/org/a2aproject/sdk/server/tasks/InMemoryPushNotificationConfigStoreTest.java
+@@ -52,11 +52,13 @@ class InMemoryPushNotificationConfigStoreTest {
+     public void setUp() {
+         MockitoAnnotations.openMocks(this);
+         configStore = new InMemoryPushNotificationConfigStore();
+-        notificationSender = new BasePushNotificationSender(configStore, mockHttpClient);
++        notificationSender = new BasePushNotificationSender(configStore, mockHttpClient,
++                PushNotificationUrlValidator.ALLOW_ALL);
+     }
+ 
+     private void setupBasicMockHttpResponse() throws Exception {
+         when(mockHttpClient.createPost()).thenReturn(mockPostBuilder);
++        when(mockPostBuilder.followRedirects(false)).thenReturn(mockPostBuilder);
+         when(mockPostBuilder.url(any(String.class))).thenReturn(mockPostBuilder);
+         when(mockPostBuilder.addHeader(CONTENT_TYPE, APPLICATION_JSON)).thenReturn(mockPostBuilder);
+         when(mockPostBuilder.body(any(String.class))).thenReturn(mockPostBuilder);
+@@ -277,13 +279,7 @@ public void testSendNotificationWithToken() throws Exception {
+         TaskPushNotificationConfig config = createSamplePushConfig(taskId,"http://notify.me/here", "cfg1", "unique_token");
+         configStore.setInfo(config);
+ 
+-        // Mock successful HTTP response
+-        when(mockHttpClient.createPost()).thenReturn(mockPostBuilder);
+-        when(mockPostBuilder.url(any(String.class))).thenReturn(mockPostBuilder);
+-        when(mockPostBuilder.body(any(String.class))).thenReturn(mockPostBuilder);
+-        when(mockPostBuilder.addHeader(any(String.class), any(String.class))).thenReturn(mockPostBuilder);
+-        when(mockPostBuilder.post()).thenReturn(mockHttpResponse);
+-        when(mockHttpResponse.success()).thenReturn(true);
++        setupBasicMockHttpResponse();
+ 
+         notificationSender.sendNotification(task, null);
+ 
+diff --git a/server-common/src/test/java/org/a2aproject/sdk/server/tasks/PushNotificationSenderTest.java b/server-common/src/test/java/org/a2aproject/sdk/server/tasks/PushNotificationSenderTest.java
+index 2bf4a531f..c581927ad 100644
+--- a/server-common/src/test/java/org/a2aproject/sdk/server/tasks/PushNotificationSenderTest.java
++++ b/server-common/src/test/java/org/a2aproject/sdk/server/tasks/PushNotificationSenderTest.java
+@@ -156,7 +156,8 @@ public PostBuilder addHeaders(Map<String, String> headers) {
+     public void setUp() {
+         testHttpClient = new TestHttpClient();
+         configStore = new InMemoryPushNotificationConfigStore();
+-        sender = new BasePushNotificationSender(configStore, testHttpClient);
++        sender = new BasePushNotificationSender(configStore, testHttpClient,
++                PushNotificationUrlValidator.ALLOW_ALL);
+     }
+ 
+     private void testSendNotificationWithInvalidToken(String token, String testName) throws InterruptedException {
+@@ -482,7 +483,7 @@ public void testSendNotificationUsesFormatterForVersionedConfig() throws Interru
+         };
+ 
+         BasePushNotificationSender formatterSender = new BasePushNotificationSender(
+-                configStore, testHttpClient, List.of(formatter));
++                configStore, testHttpClient, List.of(formatter), PushNotificationUrlValidator.ALLOW_ALL);
+         testHttpClient.latch = new CountDownLatch(1);
+ 
+         formatterSender.sendNotification(taskData, taskData);
+@@ -515,7 +516,7 @@ public void testSendNotificationSkipsWhenFormatterReturnsNull() throws Interrupt
+         };
+ 
+         BasePushNotificationSender formatterSender = new BasePushNotificationSender(
+-                configStore, testHttpClient, List.of(formatter));
++                configStore, testHttpClient, List.of(formatter), PushNotificationUrlValidator.ALLOW_ALL);
+ 
+         formatterSender.sendNotification(taskData, taskData);
+ 
+@@ -588,4 +589,5 @@ public void testSendNotificationRejectsCrlfInAuthFields(String description, Stri
+         assertTrue(testHttpClient.headers.isEmpty(), "No headers should have been sent");
+         assertTrue(testHttpClient.rawBodies.isEmpty(), "No body should have been sent");
+     }
++
+ }
+diff --git a/server-common/src/test/java/org/a2aproject/sdk/server/tasks/PushNotificationUrlValidatorTest.java b/server-common/src/test/java/org/a2aproject/sdk/server/tasks/PushNotificationUrlValidatorTest.java
+new file mode 100644
+index 000000000..30d28c70c
+--- /dev/null
++++ b/server-common/src/test/java/org/a2aproject/sdk/server/tasks/PushNotificationUrlValidatorTest.java
+@@ -0,0 +1,262 @@
++package org.a2aproject.sdk.server.tasks;
++
++import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
++import static org.junit.jupiter.api.Assertions.assertFalse;
++import static org.junit.jupiter.api.Assertions.assertThrows;
++import static org.junit.jupiter.api.Assertions.assertTrue;
++
++import com.sun.net.httpserver.HttpServer;
++
++import java.net.InetAddress;
++import java.net.InetSocketAddress;
++import java.net.UnknownHostException;
++import java.util.Optional;
++import java.util.concurrent.CountDownLatch;
++import java.util.concurrent.TimeUnit;
++import java.util.stream.Stream;
++
++import org.jspecify.annotations.Nullable;
++
++import org.a2aproject.sdk.server.config.A2AConfigProvider;
++import org.a2aproject.sdk.spec.Task;
++import org.a2aproject.sdk.spec.TaskPushNotificationConfig;
++import org.a2aproject.sdk.spec.TaskState;
++import org.a2aproject.sdk.spec.TaskStatus;
++import org.junit.jupiter.api.Test;
++import org.junit.jupiter.params.ParameterizedTest;
++import org.junit.jupiter.params.provider.Arguments;
++import org.junit.jupiter.params.provider.MethodSource;
++import org.junit.jupiter.params.provider.ValueSource;
++
++public class PushNotificationUrlValidatorTest {
++
++    private DefaultPushNotificationUrlValidator createValidator() {
++        return new DefaultPushNotificationUrlValidator();
++    }
++
++    private DefaultPushNotificationUrlValidator createValidatorWithConfig(String allowedSchemes,
++                                                                          String allowPrivate) {
++        return createValidatorWithConfig(allowedSchemes, allowPrivate, null);
++    }
++
++    private DefaultPushNotificationUrlValidator createValidatorWithConfig(String allowedSchemes,
++                                                                          String allowPrivate,
++                                                                          @Nullable String dnsCacheTtl) {
++        DefaultPushNotificationUrlValidator validator = new DefaultPushNotificationUrlValidator();
++        validator.configProvider = new A2AConfigProvider() {
++            @Override
++            public String getValue(String name) {
++                return getOptionalValue(name).orElseThrow(() ->
++                        new IllegalArgumentException("No value for " + name));
++            }
++
++            @Override
++            public Optional<String> getOptionalValue(String name) {
++                if (DefaultPushNotificationUrlValidator.ALLOWED_SCHEMES_KEY.equals(name)) {
++                    return Optional.ofNullable(allowedSchemes);
++                }
++                if (DefaultPushNotificationUrlValidator.ALLOW_PRIVATE_KEY.equals(name)) {
++                    return Optional.ofNullable(allowPrivate);
++                }
++                if (DefaultPushNotificationUrlValidator.DNS_CACHE_TTL_KEY.equals(name)) {
++                    return Optional.ofNullable(dnsCacheTtl);
++                }
++                return Optional.empty();
++            }
++        };
++        return validator;
++    }
++
++    @Test
++    public void httpsPublicUrlIsAllowed() {
++        DefaultPushNotificationUrlValidator validator = createValidator();
++        assertDoesNotThrow(() -> validator.validate("https://example.com/webhook"));
++    }
++
++    @Test
++    public void httpSchemeIsRejectedByDefault() {
++        DefaultPushNotificationUrlValidator validator = createValidator();
++        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
++                () -> validator.validate("http://example.com/webhook"));
++        assertTrue(ex.getMessage().contains("scheme"));
++    }
++
++    @Test
++    public void httpSchemeAllowedWhenConfigured() {
++        DefaultPushNotificationUrlValidator validator = createValidatorWithConfig("http,https", "false");
++        assertDoesNotThrow(() -> validator.validate("http://example.com/webhook"));
++    }
++
++    @ParameterizedTest(name = "blocked scheme: {0}")
++    @ValueSource(strings = {"ftp://example.com/file", "file:///etc/passwd", "gopher://evil.com/"})
++    public void nonHttpSchemesAreRejected(String url) {
++        DefaultPushNotificationUrlValidator validator = createValidatorWithConfig("http,https", "false");
++        assertThrows(IllegalArgumentException.class, () -> validator.validate(url));
++    }
++
++    @Test
++    public void malformedUrlIsRejected() {
++        DefaultPushNotificationUrlValidator validator = createValidator();
++        assertThrows(IllegalArgumentException.class,
++                () -> validator.validate("not a valid url }{"));
++    }
++
++    @Test
++    public void urlWithoutHostIsRejected() {
++        DefaultPushNotificationUrlValidator validator = createValidator();
++        assertThrows(IllegalArgumentException.class,
++                () -> validator.validate("https:///path-only"));
++    }
++
++    static Stream<Arguments> ssrfVectors() {
++        return Stream.of(
++                Arguments.of("loopback IPv4", "https://127.0.0.1/secret"),
++                Arguments.of("loopback IPv4 alt", "https://127.0.0.2/secret"),
++                Arguments.of("localhost", "https://localhost/secret"),
++                Arguments.of("link-local / metadata", "https://169.254.169.254/latest/meta-data/"),
++                Arguments.of("private 10.x", "https://10.0.0.1/internal"),
++                Arguments.of("private 172.16.x", "https://172.16.0.1/internal"),
++                Arguments.of("private 192.168.x", "https://192.168.1.1/internal"),
++                Arguments.of("IPv6 loopback", "https://[::1]/secret"),
++                Arguments.of("any-local 0.0.0.0", "https://0.0.0.0/secret"));
++    }
++
++    @ParameterizedTest(name = "SSRF blocked: {0}")
++    @MethodSource("ssrfVectors")
++    public void privateNetworkAddressesAreBlocked(String description, String url) {
++        DefaultPushNotificationUrlValidator validator = createValidatorWithConfig("https", "false");
++        assertThrows(IllegalArgumentException.class, () -> validator.validate(url),
++                description + " should be blocked");
++    }
++
++    @Test
++    public void privateNetworkAllowedWhenConfigured() {
++        DefaultPushNotificationUrlValidator validator = createValidatorWithConfig("https", "true");
++        assertDoesNotThrow(() -> validator.validate("https://127.0.0.1/webhook"));
++    }
++
++    @Test
++    public void isBlockedAddress_loopback() throws UnknownHostException {
++        assertTrue(DefaultPushNotificationUrlValidator.isBlockedAddress(
++                InetAddress.getByName("127.0.0.1")));
++    }
++
++    @Test
++    public void isBlockedAddress_linkLocal() throws UnknownHostException {
++        assertTrue(DefaultPushNotificationUrlValidator.isBlockedAddress(
++                InetAddress.getByName("169.254.169.254")));
++    }
++
++    @Test
++    public void isBlockedAddress_siteLocal() throws UnknownHostException {
++        assertTrue(DefaultPushNotificationUrlValidator.isBlockedAddress(
++                InetAddress.getByName("10.0.0.1")));
++        assertTrue(DefaultPushNotificationUrlValidator.isBlockedAddress(
++                InetAddress.getByName("172.16.0.1")));
++        assertTrue(DefaultPushNotificationUrlValidator.isBlockedAddress(
++                InetAddress.getByName("192.168.0.1")));
++    }
++
++    @Test
++    public void isBlockedAddress_rfc6598SharedSpace() throws UnknownHostException {
++        assertTrue(DefaultPushNotificationUrlValidator.isBlockedAddress(
++                InetAddress.getByName("100.64.0.1")));
++        assertTrue(DefaultPushNotificationUrlValidator.isBlockedAddress(
++                InetAddress.getByName("100.127.255.254")));
++    }
++
++    @Test
++    public void isBlockedAddress_ipv6UniqueLocal() throws UnknownHostException {
++        assertTrue(DefaultPushNotificationUrlValidator.isBlockedAddress(
++                InetAddress.getByAddress(new byte[]{
++                        (byte) 0xFD, 0, 0, 0, 0, 0, 0, 0,
++                        0, 0, 0, 0, 0, 0, 0, 1})));
++    }
++
++    @Test
++    public void isBlockedAddress_ipv4MappedIpv6Loopback() throws UnknownHostException {
++        // ::ffff:127.0.0.1
++        InetAddress addr = InetAddress.getByAddress(new byte[]{
++                0, 0, 0, 0, 0, 0, 0, 0,
++                0, 0, (byte) 0xFF, (byte) 0xFF,
++                127, 0, 0, 1});
++        assertTrue(DefaultPushNotificationUrlValidator.isBlockedAddress(addr));
++    }
++
++    @Test
++    public void isBlockedAddress_multicast() throws UnknownHostException {
++        assertTrue(DefaultPushNotificationUrlValidator.isBlockedAddress(
++                InetAddress.getByName("224.0.0.1")));
++    }
++
++    @Test
++    public void dnsCacheServesSubsequentCalls() {
++        DefaultPushNotificationUrlValidator validator = createValidatorWithConfig("https", "false", "60");
++        assertDoesNotThrow(() -> validator.validate("https://example.com/webhook"));
++        assertDoesNotThrow(() -> validator.validate("https://example.com/webhook"));
++    }
++
++    @Test
++    public void dnsCacheDisabledWhenTtlIsZero() {
++        DefaultPushNotificationUrlValidator validator = createValidatorWithConfig("https", "false", "0");
++        assertDoesNotThrow(() -> validator.validate("https://example.com/webhook"));
++    }
++
++    @Test
++    public void dnsCacheUsesDefaultTtlWithoutConfig() {
++        DefaultPushNotificationUrlValidator validator = createValidator();
++        assertDoesNotThrow(() -> validator.validate("https://example.com/webhook"));
++        assertDoesNotThrow(() -> validator.validate("https://example.com/webhook"));
++    }
++
++    @Test
++    public void dnsCacheInvalidTtlFallsBackToDefault() {
++        DefaultPushNotificationUrlValidator validator = createValidatorWithConfig("https", "false", "not-a-number");
++        assertDoesNotThrow(() -> validator.validate("https://example.com/webhook"));
++    }
++
++    @Test
++    public void dnsCacheNegativeTtlFallsBackToDefault() {
++        DefaultPushNotificationUrlValidator validator = createValidatorWithConfig("https", "false", "-5");
++        assertDoesNotThrow(() -> validator.validate("https://example.com/webhook"));
++    }
++
++    @Test
++    public void senderRejectsPrivateUrlAndNeverConnects() throws Exception {
++        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
++        CountDownLatch hit = new CountDownLatch(1);
++        server.createContext("/", exchange -> {
++            exchange.sendResponseHeaders(200, 0);
++            exchange.close();
++            hit.countDown();
++        });
++        server.start();
++        int port = server.getAddress().getPort();
++
++        try {
++            InMemoryPushNotificationConfigStore configStore = new InMemoryPushNotificationConfigStore();
++            DefaultPushNotificationUrlValidator validator = createValidatorWithConfig("http,https", "false");
++            BasePushNotificationSender sender = new BasePushNotificationSender(configStore, validator);
++
++            String taskId = "ssrf-test";
++            configStore.setInfo(TaskPushNotificationConfig.builder()
++                    .id("cfg-ssrf")
++                    .taskId(taskId)
++                    .url("http://127.0.0.1:" + port + "/latest/meta-data/iam/security-credentials/")
++                    .build());
++
++            Task task = Task.builder()
++                    .id(taskId)
++                    .contextId("ctx")
++                    .status(new TaskStatus(TaskState.TASK_STATE_COMPLETED))
++                    .build();
++
++            sender.sendNotification(task, null);
++
++            assertFalse(hit.await(1, TimeUnit.SECONDS),
++                    "SSRF: server-side request reached the internal listener — the URL was not blocked");
++        } finally {
++            server.stop(0);
++        }
++    }
++}
+diff --git a/tck/src/main/resources/application.properties b/tck/src/main/resources/application.properties
+index fd19bdfde..3857b5cbb 100644
+--- a/tck/src/main/resources/application.properties
++++ b/tck/src/main/resources/application.properties
+@@ -22,3 +22,11 @@ quarkus.log.file.level=DEBUG
+ quarkus.log.console.level=INFO
+ # Authorization is not configured in this application
+ a2a.authorization.required=false
++
++# Push notifications enabled for TCK conformance testing
++a2a.push-notification.enabled=true
++# Push notification URL validation relaxed for CI/testing:
++# Allow http (TCK webhook runs plain HTTP on localhost)
++a2a.push-notification.url.allowed-schemes=https,http
++# Allow private/loopback targets (TCK runner listens on localhost)
++a2a.push-notification.url.allow-private-network-targets=true

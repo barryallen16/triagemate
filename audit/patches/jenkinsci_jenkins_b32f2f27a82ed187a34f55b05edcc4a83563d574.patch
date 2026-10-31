@@ -1,0 +1,117 @@
+From b32f2f27a82ed187a34f55b05edcc4a83563d574 Mon Sep 17 00:00:00 2001
+From: Kevin-CB <kguerroudj@cloudbees.com>
+Date: Fri, 29 May 2026 07:39:13 +0000
+Subject: [PATCH] [SECURITY-3711][SECURITY-3755]
+
+---
+ core/src/main/java/hudson/Util.java           |  5 +++--
+ core/src/test/java/hudson/UtilTest.java       | 15 ++++++++++++-
+ .../jenkins/security/Security3501Test.java    | 21 +++++++++++++------
+ 3 files changed, 32 insertions(+), 9 deletions(-)
+
+diff --git a/core/src/main/java/hudson/Util.java b/core/src/main/java/hudson/Util.java
+index 4783535bd89e..b54d37888771 100644
+--- a/core/src/main/java/hudson/Util.java
++++ b/core/src/main/java/hudson/Util.java
+@@ -1647,11 +1647,12 @@ public static boolean isAbsoluteUri(@NonNull String uri) {
+     }
+ 
+     /**
+-     * Return true iff the parameter does not denote an absolute URI and not a scheme-relative URI.
++     * Return true if and only if the parameter does not denote an absolute URI and not a scheme-relative URI.
+      * @since 2.3 / 1.651.2
+      */
+     public static boolean isSafeToRedirectTo(@NonNull String uri) {
+-        return !isAbsoluteUri(uri) && !uri.startsWith("\\") && !uri.replace('\\', '/').startsWith("//");
++        String normalized = uri.replace("\t", "").replace("\n", "").replace("\r", "");
++        return !isAbsoluteUri(normalized) && !normalized.startsWith("\\") && !normalized.replace('\\', '/').contains("//");
+     }
+ 
+     /**
+diff --git a/core/src/test/java/hudson/UtilTest.java b/core/src/test/java/hudson/UtilTest.java
+index 8ace0afaaca5..122566f2f51c 100644
+--- a/core/src/test/java/hudson/UtilTest.java
++++ b/core/src/test/java/hudson/UtilTest.java
+@@ -415,7 +415,7 @@ void testIsAbsoluteUri() {
+     }
+ 
+     @Test
+-    @Issue({"SECURITY-276", "SECURITY-3501"})
++    @Issue({"SECURITY-276", "SECURITY-3501", "SECURITY-3711"})
+     void testIsSafeToRedirectTo() {
+         assertFalse(Util.isSafeToRedirectTo("http://foobar/"));
+         assertFalse(Util.isSafeToRedirectTo("mailto:kk@kohsuke.org"));
+@@ -426,6 +426,19 @@ void testIsSafeToRedirectTo() {
+         assertFalse(Util.isSafeToRedirectTo("/\\google.com"));
+         assertFalse(Util.isSafeToRedirectTo("\\google.com"));
+ 
++        assertFalse(Util.isSafeToRedirectTo(".//google.com"));
++        assertFalse(Util.isSafeToRedirectTo(".///google.com"));
++        assertFalse(Util.isSafeToRedirectTo("aaa/..//google.com"));
++        assertFalse(Util.isSafeToRedirectTo("./aaa/..//google.com"));
++        assertFalse(Util.isSafeToRedirectTo("./\\/google.com"));
++
++        assertFalse(Util.isSafeToRedirectTo("/\t/google.com"));
++        assertFalse(Util.isSafeToRedirectTo("/\n/google.com"));
++        assertFalse(Util.isSafeToRedirectTo("/\r/google.com"));
++        assertFalse(Util.isSafeToRedirectTo("\t//google.com"));
++        assertFalse(Util.isSafeToRedirectTo("/\t/\t/google.com"));
++        assertFalse(Util.isSafeToRedirectTo("/\t\n\r/google.com"));
++
+         assertTrue(Util.isSafeToRedirectTo("foo/bar/abc:def"));
+         assertTrue(Util.isSafeToRedirectTo("foo?abc:def"));
+         assertTrue(Util.isSafeToRedirectTo("foo#abc:def"));
+diff --git a/test/src/test/java/jenkins/security/Security3501Test.java b/test/src/test/java/jenkins/security/Security3501Test.java
+index 080cb40ecc4c..a4ae3e6bd2b4 100644
+--- a/test/src/test/java/jenkins/security/Security3501Test.java
++++ b/test/src/test/java/jenkins/security/Security3501Test.java
+@@ -13,6 +13,7 @@
+ import org.junit.jupiter.params.Parameter;
+ import org.junit.jupiter.params.ParameterizedClass;
+ import org.junit.jupiter.params.provider.ValueSource;
++import org.jvnet.hudson.test.Issue;
+ import org.jvnet.hudson.test.JenkinsRule;
+ import org.jvnet.hudson.test.junit.jupiter.RealJenkinsExtension;
+ 
+@@ -31,6 +32,7 @@ void setUp() {
+         jj.withPrefix(contextPath);
+     }
+ 
++    @Issue({"SECURITY-3501", "SECURITY-3711"})
+     @Test
+     void testRedirects() throws Throwable {
+         jj.then(new TestRedirectsStep(contextPath));
+@@ -38,20 +40,27 @@ void testRedirects() throws Throwable {
+ 
+     private record TestRedirectsStep(String context) implements RealJenkinsExtension.Step {
+         public void run(JenkinsRule j) throws Exception {
+-            List<String> prohibitedPaths = List.of("%5C%5Cexample.org", "%5C/example.org", "/%5Cexample.org", "//example.org", "https://example.org", "\\example.org");
++            List<String> prohibitedPaths = List.of(
++                    // SECURITY-3501
++                    "%5C%5Cexample.org", "%5C/example.org", "/%5Cexample.org", "//example.org",
++                    "https://example.org", "\\example.org",
++                    ".//example.org", ".///example.org", ".////example.org",
++                    "aaa/..//example.org", "./aaa/..//example.org", "./%5C/example.org",
++                    "/%09/example.org", "/%0A/example.org", "/%0D/example.org",
++                    "%09//example.org", "/%09/%09/example.org");
+             for (String path : prohibitedPaths) {
+                 try (JenkinsRule.WebClient wc = j.createWebClient().withRedirectEnabled(false)) {
+-                    final FailingHttpStatusCodeException fhsce = assertThrows(FailingHttpStatusCodeException.class, () -> wc.goTo("redirects/content?path=" + path));
+-                    assertThat(fhsce.getStatusCode(), is(404));
++                    final FailingHttpStatusCodeException fhsce = assertThrows(FailingHttpStatusCodeException.class, () -> wc.goTo("redirects/content?path=" + path), "path=" + path);
++                    assertThat("path=" + path, fhsce.getStatusCode(), is(404));
+                 }
+             }
+ 
+             List<String> allowedPaths = List.of("foo", "foo/bar");
+             for (String path : allowedPaths) {
+                 try (JenkinsRule.WebClient wc = j.createWebClient().withRedirectEnabled(false)) {
+-                    final FailingHttpStatusCodeException fhsce = assertThrows(FailingHttpStatusCodeException.class, () -> wc.goTo("redirects/content?path=" + path));
+-                    assertThat(fhsce.getStatusCode(), is(302));
+-                    assertThat(fhsce.getResponse().getResponseHeaderValue("Location"), is(context + "/redirects/" + path));
++                    final FailingHttpStatusCodeException fhsce = assertThrows(FailingHttpStatusCodeException.class, () -> wc.goTo("redirects/content?path=" + path), "path=" + path);
++                    assertThat("path=" + path, fhsce.getStatusCode(), is(302));
++                    assertThat("path=" + path, fhsce.getResponse().getResponseHeaderValue("Location"), is(context + "/redirects/" + path));
+                 }
+             }
+         }

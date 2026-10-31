@@ -1,0 +1,2854 @@
+From 05f795bb7cf18856004f40e5042709e550ed0d6e Mon Sep 17 00:00:00 2001
+From: Guillaume Smet <guillaume.smet@gmail.com>
+Date: Wed, 25 Nov 2020 20:12:56 +0100
+Subject: [PATCH] HV-1816 Limit the EL features exposed by default
+
+---
+ documentation/src/main/asciidoc/ch04.asciidoc |  13 +
+ documentation/src/main/asciidoc/ch12.asciidoc |  67 ++-
+ .../chapter12/el/ElFeaturesTest.java          |  33 ++
+ .../BaseHibernateValidatorConfiguration.java  |  53 +++
+ .../HibernateConstraintViolationBuilder.java  |  20 +-
+ .../engine/AbstractConfigurationImpl.java     |  32 ++
+ .../engine/MessageInterpolatorContext.java    |  21 +-
+ .../PredefinedScopeValidatorFactoryImpl.java  |   6 +-
+ .../ValidatorFactoryConfigurationHelper.java  |  45 ++
+ .../internal/engine/ValidatorFactoryImpl.java |   6 +-
+ .../engine/ValidatorFactoryScopedContext.java |  48 ++-
+ .../ConstraintValidatorContextImpl.java       |  53 ++-
+ .../ConstraintViolationCreationContext.java   |  21 +-
+ ...rameterConstraintValidatorContextImpl.java |  12 +-
+ .../messageinterpolation/ElTermResolver.java  |  51 ++-
+ ...Context.java => BeanMethodsELContext.java} |   4 +-
+ .../el/BeanPropertiesELResolver.java          |  25 ++
+ .../el/BeanPropertiesElContext.java           |  53 +++
+ .../el/DisabledFeatureELException.java        |  16 +
+ .../el/NoOpElResolver.java                    |  55 +++
+ .../el/VariablesELContext.java                |  57 +++
+ .../AbstractValidationContext.java            |  14 +-
+ .../ParameterExecutableValidationContext.java |   8 +-
+ .../ValidatorScopedContext.java               |  21 +
+ .../validator/internal/util/logging/Log.java  |  26 ++
+ .../AbstractMessageInterpolator.java          |   4 +-
+ .../ExpressionLanguageFeatureLevel.java       |  90 ++++
+ .../HibernateMessageInterpolatorContext.java  |   6 +-
+ .../ParameterMessageInterpolator.java         |   2 +-
+ .../ResourceBundleMessageInterpolator.java    |   2 +-
+ .../ConstraintValidatorContextImplTest.java   |   4 +-
+ ...intExpressionLanguageFeatureLevelTest.java | 257 ++++++++++++
+ ...ionExpressionLanguageFeatureLevelTest.java | 388 ++++++++++++++++++
+ ...ssionLanguageMessageInterpolationTest.java | 111 ++++-
+ .../MessageInterpolatorContextTest.java       |  14 +-
+ ...ResourceBundleMessageInterpolatorTest.java |   4 +-
+ .../validator/testutils/ValidatorUtil.java    |   4 +-
+ engine/src/test/resources/log4j2.properties   |   6 +-
+ .../validation-constraints-bean-methods.xml   |  16 +
+ .../el/validation-constraints-default.xml     |  16 +
+ ...idation-custom-violations-bean-methods.xml |  16 +
+ .../validation-custom-violations-default.xml  |  16 +
+ 42 files changed, 1618 insertions(+), 98 deletions(-)
+ create mode 100644 documentation/src/test/java/org/hibernate/validator/referenceguide/chapter12/el/ElFeaturesTest.java
+ rename engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/el/{SimpleELContext.java => BeanMethodsELContext.java} (92%)
+ create mode 100644 engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/el/BeanPropertiesELResolver.java
+ create mode 100644 engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/el/BeanPropertiesElContext.java
+ create mode 100644 engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/el/DisabledFeatureELException.java
+ create mode 100644 engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/el/NoOpElResolver.java
+ create mode 100644 engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/el/VariablesELContext.java
+ create mode 100644 engine/src/main/java/org/hibernate/validator/messageinterpolation/ExpressionLanguageFeatureLevel.java
+ create mode 100644 engine/src/test/java/org/hibernate/validator/test/el/ConstraintExpressionLanguageFeatureLevelTest.java
+ create mode 100644 engine/src/test/java/org/hibernate/validator/test/el/CustomViolationExpressionLanguageFeatureLevelTest.java
+ create mode 100644 engine/src/test/resources/org/hibernate/validator/test/el/validation-constraints-bean-methods.xml
+ create mode 100644 engine/src/test/resources/org/hibernate/validator/test/el/validation-constraints-default.xml
+ create mode 100644 engine/src/test/resources/org/hibernate/validator/test/el/validation-custom-violations-bean-methods.xml
+ create mode 100644 engine/src/test/resources/org/hibernate/validator/test/el/validation-custom-violations-default.xml
+
+diff --git a/documentation/src/main/asciidoc/ch04.asciidoc b/documentation/src/main/asciidoc/ch04.asciidoc
+index 25dae1196f..d44fc41e40 100644
+--- a/documentation/src/main/asciidoc/ch04.asciidoc
++++ b/documentation/src/main/asciidoc/ch04.asciidoc
+@@ -91,6 +91,19 @@ context:
+ `format(String format, Object... args)` which behaves like
+ `java.util.Formatter.format(String format, Object... args)`.
+ 
++Expression Language is very flexible and Hibernate Validator offers several feature levels
++that you can use to enable Expression Language features through the `ExpressionLanguageFeatureLevel` enum:
++
++* `NONE`: Expression Language interpolation is fully disabled.
++* `VARIABLES`: Allow interpolation of the variables injected via `addExpressionVariable()`, resources bundles and usage of the `formatter` object.
++* `BEAN_PROPERTIES`: Allow everything `VARIABLES` allows plus the interpolation of bean properties.
++* `BEAN_METHODS`: Also allow execution of bean methods. Can be considered safe for hardcoded constraint messages but not for <<section-hibernateconstraintvalidatorcontext, custom violations>>
++  where extra care is required.
++
++The default feature level for constraint messages is `BEAN_PROPERTIES`.
++
++You can define the Expression Language feature level when <<el-features, bootstrapping the `ValidatorFactory`>>.
++
+ The following section provides several examples for using EL expressions in error messages.
+ 
+ ==== Examples
+diff --git a/documentation/src/main/asciidoc/ch12.asciidoc b/documentation/src/main/asciidoc/ch12.asciidoc
+index cbf290b76b..98a98c7e9d 100644
+--- a/documentation/src/main/asciidoc/ch12.asciidoc
++++ b/documentation/src/main/asciidoc/ch12.asciidoc
+@@ -419,6 +419,55 @@ include::{sourcedir}/org/hibernate/validator/referenceguide/chapter12/dynamicpay
+ ----
+ ====
+ 
++[[el-features]]
++=== Enabling Expression Language features
++
++Hibernate Validator restricts the Expression Language features exposed by default.
++
++For this purpose, we define several feature levels in `ExpressionLanguageFeatureLevel`:
++
++* `NONE`: Expression Language interpolation is fully disabled.
++* `VARIABLES`: Allow interpolation of the variables injected via `addExpressionVariable()`, resources bundles and usage of the `formatter` object.
++* `BEAN_PROPERTIES`: Allow everything `VARIABLES` allows plus the interpolation of bean properties.
++* `BEAN_METHODS`: Also allow execution of bean methods. This can lead to serious security issues, including arbitrary code execution if not carefully handled.
++
++Depending on the context, the features we expose are different:
++
++* For constraints, the default level is `BEAN_PROPERTIES`.
++  For all the built-in constraint messages to be correctly interpolated, you need at least the `VARIABLES` level.
++* For custom violations, created via the `ConstraintValidatorContext`, Expression Language is disabled by default.
++  You can enable it for specific custom violations and, when enabled, it will default to `VARIABLES`.
++
++Hibernate Validator provides ways to override these defaults when boostrapping the `ValidatorFactory`.
++
++To change the Expression Language feature level for constraints, use the following:
++
++[source, JAVA, indent=0]
++----
++include::{sourcedir}/org/hibernate/validator/referenceguide/chapter12/el/ElFeaturesTest.java[tags=constraints]
++----
++
++To change the Expression Language feature level for custom violations, use the following:
++
++[source, JAVA, indent=0]
++----
++include::{sourcedir}/org/hibernate/validator/referenceguide/chapter12/el/ElFeaturesTest.java[tags=customViolations]
++----
++
++[CAUTION]
++====
++Doing this will automatically enable Expression Language for all the custom violations in your application.
++
++It should only be used for compatibility and to ease the migration from older Hibernate Validator versions.
++====
++
++These levels can also be defined using the following properties:
++
++* `hibernate.validator.constraint_expression_language_feature_level`
++* `hibernate.validator.custom_violation_expression_language_feature_level`
++
++Accepted values for these properties are: `none`, `variables`, `bean-properties` and `bean-methods`.
++
+ [[non-el-message-interpolator]]
+ === `ParameterMessageInterpolator`
+ 
+@@ -552,7 +601,7 @@ You can, however, update the parameters between invocations of
+ * set an arbitrary dynamic payload - see <<section-dynamic-payload>>
+ 
+ By default, Expression Language interpolation is **disabled** for custom violations,
+-this to avoid arbitrary code execution or sensitive data leak if user input is not properly escaped.
++this to avoid arbitrary code execution or sensitive data leak if message templates are built from improperly escaped user input.
+ 
+ It is possible to enable Expression Language for a given custom violation by using `enableExpressionLanguage()` as shown in the example below:
+ 
+@@ -563,9 +612,21 @@ include::{sourcedir}/org/hibernate/validator/referenceguide/chapter06/elinjectio
+ 
+ In this case, the message template will be interpolated by the Expression Language engine.
+ 
++By default, only variables interpolation is enabled when enabling Expression Language.
++
++You can enable more features by using `HibernateConstraintViolationBuilder#enableExpressionLanguage(ExpressionLanguageFeatureLevel level)`.
++
++We define several levels of features for Expression Language interpolation:
++
++* `NONE`: Expression Language interpolation is fully disabled - this is the default for custom violations.
++* `VARIABLES`: Allow interpolation of the variables injected via `addExpressionVariable()`, resources bundles and usage of the `formatter` object.
++* `BEAN_PROPERTIES`: Allow everything `VARIABLES` allows plus the interpolation of bean properties.
++* `BEAN_METHODS`: Also allow execution of bean methods. This can lead to serious security issues, including arbitrary code execution if not carefully handled.
++
+ [CAUTION]
+ ====
+-Using `addExpressionVariable()` is the only safe way to inject a variable into an expression.
++Using `addExpressionVariable()` is the only safe way to inject a variable into an expression
++and it's especially important if you use the `BEAN_PROPERTIES` or `BEAN_METHODS` feature levels.
+ 
+ If you inject user input by simply concatenating the user input in the message,
+ you will allow potential arbitrary code execution and sensitive data leak:
+@@ -596,7 +657,7 @@ bundle. If you have any other use cases, let us know.
+ ====
+ [source, JAVA, indent=0]
+ ----
+-include::{engine-sourcedir}/org/hibernate/validator/messageinterpolation/HibernateMessageInterpolatorContext.java[lines=18..26]
++include::{engine-sourcedir}/org/hibernate/validator/messageinterpolation/HibernateMessageInterpolatorContext.java[lines=22..58]
+ ----
+ ====
+ 
+diff --git a/documentation/src/test/java/org/hibernate/validator/referenceguide/chapter12/el/ElFeaturesTest.java b/documentation/src/test/java/org/hibernate/validator/referenceguide/chapter12/el/ElFeaturesTest.java
+new file mode 100644
+index 0000000000..38d5ebf173
+--- /dev/null
++++ b/documentation/src/test/java/org/hibernate/validator/referenceguide/chapter12/el/ElFeaturesTest.java
+@@ -0,0 +1,33 @@
++package org.hibernate.validator.referenceguide.chapter12.el;
++
++import jakarta.validation.Validation;
++import jakarta.validation.ValidatorFactory;
++
++import org.hibernate.validator.HibernateValidator;
++import org.hibernate.validator.messageinterpolation.ExpressionLanguageFeatureLevel;
++import org.junit.Test;
++
++public class ElFeaturesTest {
++
++	@SuppressWarnings("unused")
++	@Test
++	public void testConstraints() throws Exception {
++		//tag::constraints[]
++		ValidatorFactory validatorFactory = Validation.byProvider( HibernateValidator.class )
++				.configure()
++				.constraintExpressionLanguageFeatureLevel( ExpressionLanguageFeatureLevel.VARIABLES )
++				.buildValidatorFactory();
++		//end::constraints[]
++	}
++
++	@SuppressWarnings("unused")
++	@Test
++	public void testCustomViolations() throws Exception {
++		//tag::customViolations[]
++		ValidatorFactory validatorFactory = Validation.byProvider( HibernateValidator.class )
++				.configure()
++				.customViolationExpressionLanguageFeatureLevel( ExpressionLanguageFeatureLevel.VARIABLES )
++				.buildValidatorFactory();
++		//end::customViolations[]
++	}
++}
+diff --git a/engine/src/main/java/org/hibernate/validator/BaseHibernateValidatorConfiguration.java b/engine/src/main/java/org/hibernate/validator/BaseHibernateValidatorConfiguration.java
+index 7a7f77cf01..34c0bbc6e4 100644
+--- a/engine/src/main/java/org/hibernate/validator/BaseHibernateValidatorConfiguration.java
++++ b/engine/src/main/java/org/hibernate/validator/BaseHibernateValidatorConfiguration.java
+@@ -13,6 +13,7 @@
+ import java.util.Set;
+ 
+ import jakarta.validation.Configuration;
++import jakarta.validation.ConstraintValidatorContext;
+ import jakarta.validation.ConstraintViolation;
+ import jakarta.validation.TraversableResolver;
+ import jakarta.validation.constraints.Future;
+@@ -24,6 +25,7 @@
+ import org.hibernate.validator.cfg.ConstraintMapping;
+ import org.hibernate.validator.constraints.ParameterScriptAssert;
+ import org.hibernate.validator.constraints.ScriptAssert;
++import org.hibernate.validator.messageinterpolation.ExpressionLanguageFeatureLevel;
+ import org.hibernate.validator.spi.messageinterpolation.LocaleResolver;
+ import org.hibernate.validator.metadata.BeanMetaDataClassNormalizer;
+ import org.hibernate.validator.spi.nodenameprovider.PropertyNodeNameProvider;
+@@ -144,6 +146,28 @@ public interface BaseHibernateValidatorConfiguration<S extends BaseHibernateVali
+ 	@Incubating
+ 	String LOCALE_RESOLVER_CLASSNAME = "hibernate.validator.locale_resolver";
+ 
++	/**
++	 * Property for configuring the Expression Language feature level for constraints, allowing to define which
++	 * Expression Language features are available for message interpolation.
++	 * <p>
++	 * This property only affects the EL feature level of "static" constraint violation messages. In particular, it
++	 * doesn't affect the default EL feature level for custom violations. Refer to
++	 * {@link #CUSTOM_VIOLATION_EXPRESSION_LANGUAGE_FEATURE_LEVEL} to configure that.
++	 *
++	 * @since 6.2
++	 */
++	@Incubating
++	String CONSTRAINT_EXPRESSION_LANGUAGE_FEATURE_LEVEL = "hibernate.validator.constraint_expression_language_feature_level";
++
++	/**
++	 * Property for configuring the Expression Language feature level for custom violations, allowing to define which
++	 * Expression Language features are available for message interpolation.
++	 *
++	 * @since 6.2
++	 */
++	@Incubating
++	String CUSTOM_VIOLATION_EXPRESSION_LANGUAGE_FEATURE_LEVEL = "hibernate.validator.custom_violation_expression_language_feature_level";
++
+ 	/**
+ 	 * <p>
+ 	 * Returns the {@link ResourceBundleLocator} used by the
+@@ -427,4 +451,33 @@ default S locales(Locale... locales) {
+ 
+ 	@Incubating
+ 	S beanMetaDataClassNormalizer(BeanMetaDataClassNormalizer beanMetaDataClassNormalizer);
++
++	/**
++	 * Allows setting the Expression Language feature level for message interpolation of constraint messages.
++	 * <p>
++	 * This is the feature level used for messages hardcoded inside the constraint declaration.
++	 * <p>
++	 * If you are creating custom constraint violations, Expression Language support needs to be explicitly enabled and
++	 * use the safest feature level by default if enabled.
++	 *
++	 * @param expressionLanguageFeatureLevel the {@link ExpressionLanguageFeatureLevel} to be used
++	 * @return {@code this} following the chaining method pattern
++	 *
++	 * @since 6.2
++	 */
++	@Incubating
++	S constraintExpressionLanguageFeatureLevel(ExpressionLanguageFeatureLevel expressionLanguageFeatureLevel);
++
++	/**
++	 * Allows setting the Expression Language feature level for message interpolation of custom violation messages.
++	 * <p>
++	 * This is the feature level used for messages of custom violations created by the {@link ConstraintValidatorContext}.
++	 *
++	 * @param expressionLanguageFeatureLevel the {@link ExpressionLanguageFeatureLevel} to be used
++	 * @return {@code this} following the chaining method pattern
++	 *
++	 * @since 6.2
++	 */
++	@Incubating
++	S customViolationExpressionLanguageFeatureLevel(ExpressionLanguageFeatureLevel expressionLanguageFeatureLevel);
+ }
+diff --git a/engine/src/main/java/org/hibernate/validator/constraintvalidation/HibernateConstraintViolationBuilder.java b/engine/src/main/java/org/hibernate/validator/constraintvalidation/HibernateConstraintViolationBuilder.java
+index b34e2b13b3..cb8e3d5e74 100644
+--- a/engine/src/main/java/org/hibernate/validator/constraintvalidation/HibernateConstraintViolationBuilder.java
++++ b/engine/src/main/java/org/hibernate/validator/constraintvalidation/HibernateConstraintViolationBuilder.java
+@@ -10,18 +10,34 @@
+ import jakarta.validation.ConstraintValidatorContext.ConstraintViolationBuilder;
+ 
+ import org.hibernate.validator.Incubating;
++import org.hibernate.validator.messageinterpolation.ExpressionLanguageFeatureLevel;
+ 
+ public interface HibernateConstraintViolationBuilder extends ConstraintViolationBuilder {
+ 
++	/**
++	 * Enable Expression Language with the default Expression Language feature level for the constraint violation
++	 * created by this builder if the chosen {@code MessageInterpolator} supports it.
++	 * <p>
++	 * If you enable this, you need to make sure your message template does not contain any unescaped user input (such as
++	 * the validated value): use {@code addExpressionVariable()} to inject properly escaped variables into the template.
++	 *
++	 * @since 6.2
++	 */
++	@Incubating
++	default HibernateConstraintViolationBuilder enableExpressionLanguage() {
++		return enableExpressionLanguage( ExpressionLanguageFeatureLevel.DEFAULT );
++	};
++
+ 	/**
+ 	 * Enable Expression Language for the constraint violation created by this builder if the chosen
+ 	 * {@code MessageInterpolator} supports it.
+ 	 * <p>
+-	 * If enabling this, you need to make sure your message template does not contain any unescaped user input (such as
++	 * If you enable this, you need to make sure your message template does not contain any unescaped user input (such as
+ 	 * the validated value): use {@code addExpressionVariable()} to inject properly escaped variables into the template.
+ 	 *
++	 * @param level The Expression Language features level supported.
+ 	 * @since 6.2
+ 	 */
+ 	@Incubating
+-	HibernateConstraintViolationBuilder enableExpressionLanguage();
++	HibernateConstraintViolationBuilder enableExpressionLanguage(ExpressionLanguageFeatureLevel level);
+ }
+diff --git a/engine/src/main/java/org/hibernate/validator/internal/engine/AbstractConfigurationImpl.java b/engine/src/main/java/org/hibernate/validator/internal/engine/AbstractConfigurationImpl.java
+index cdb352f557..ad4c5b2986 100644
+--- a/engine/src/main/java/org/hibernate/validator/internal/engine/AbstractConfigurationImpl.java
++++ b/engine/src/main/java/org/hibernate/validator/internal/engine/AbstractConfigurationImpl.java
+@@ -57,6 +57,7 @@
+ import org.hibernate.validator.internal.util.stereotypes.Lazy;
+ import org.hibernate.validator.internal.xml.config.ValidationBootstrapParameters;
+ import org.hibernate.validator.internal.xml.config.ValidationXmlParser;
++import org.hibernate.validator.messageinterpolation.ExpressionLanguageFeatureLevel;
+ import org.hibernate.validator.messageinterpolation.ResourceBundleMessageInterpolator;
+ import org.hibernate.validator.metadata.BeanMetaDataClassNormalizer;
+ import org.hibernate.validator.resourceloading.PlatformResourceBundleLocator;
+@@ -129,6 +130,8 @@ public abstract class AbstractConfigurationImpl<T extends BaseHibernateValidator
+ 	private Locale defaultLocale = Locale.getDefault();
+ 	private LocaleResolver localeResolver;
+ 	private BeanMetaDataClassNormalizer beanMetaDataClassNormalizer;
++	private ExpressionLanguageFeatureLevel constraintExpressionLanguageFeatureLevel;
++	private ExpressionLanguageFeatureLevel customViolationExpressionLanguageFeatureLevel;
+ 
+ 	protected AbstractConfigurationImpl(BootstrapState state) {
+ 		this();
+@@ -627,6 +630,35 @@ public BeanMetaDataClassNormalizer getBeanMetaDataClassNormalizer() {
+ 		return beanMetaDataClassNormalizer;
+ 	}
+ 
++	@Override
++	public T constraintExpressionLanguageFeatureLevel(ExpressionLanguageFeatureLevel expressionLanguageFeatureLevel) {
++		if ( LOG.isDebugEnabled() ) {
++			if ( expressionLanguageFeatureLevel != null ) {
++				LOG.debug( "Setting ExpressionLanguageFeatureLevel for constraints to " + expressionLanguageFeatureLevel.name() );
++			}
++		}
++		this.constraintExpressionLanguageFeatureLevel = expressionLanguageFeatureLevel;
++		return thisAsT();
++	}
++
++	public ExpressionLanguageFeatureLevel getConstraintExpressionLanguageFeatureLevel() {
++		return constraintExpressionLanguageFeatureLevel;
++	}
++
++	@Override
++	public T customViolationExpressionLanguageFeatureLevel(ExpressionLanguageFeatureLevel expressionLanguageFeatureLevel) {
++		if ( LOG.isDebugEnabled() ) {
++			if ( expressionLanguageFeatureLevel != null ) {
++				LOG.debug( "Setting ExpressionLanguageFeatureLevel for custom violations to " + expressionLanguageFeatureLevel.name() );
++			}
++		}
++		this.customViolationExpressionLanguageFeatureLevel = expressionLanguageFeatureLevel;
++		return thisAsT();
++	}
++
++	public ExpressionLanguageFeatureLevel getCustomViolationExpressionLanguageFeatureLevel() {
++		return customViolationExpressionLanguageFeatureLevel;
++	}
+ 
+ 	public final Set<DefaultConstraintMapping> getProgrammaticMappings() {
+ 		return programmaticMappings;
+diff --git a/engine/src/main/java/org/hibernate/validator/internal/engine/MessageInterpolatorContext.java b/engine/src/main/java/org/hibernate/validator/internal/engine/MessageInterpolatorContext.java
+index ee636ece7b..1e4e47e6fe 100644
+--- a/engine/src/main/java/org/hibernate/validator/internal/engine/MessageInterpolatorContext.java
++++ b/engine/src/main/java/org/hibernate/validator/internal/engine/MessageInterpolatorContext.java
+@@ -17,6 +17,7 @@
+ import org.hibernate.validator.internal.util.logging.Log;
+ import org.hibernate.validator.internal.util.logging.LoggerFactory;
+ import org.hibernate.validator.internal.util.stereotypes.Immutable;
++import org.hibernate.validator.messageinterpolation.ExpressionLanguageFeatureLevel;
+ import org.hibernate.validator.messageinterpolation.HibernateMessageInterpolatorContext;
+ 
+ /**
+@@ -39,7 +40,8 @@ public class MessageInterpolatorContext implements HibernateMessageInterpolatorC
+ 	private final Map<String, Object> messageParameters;
+ 	@Immutable
+ 	private final Map<String, Object> expressionVariables;
+-	private final boolean expressionLanguageEnabled;
++	private final ExpressionLanguageFeatureLevel expressionLanguageFeatureLevel;
++	private final boolean customViolation;
+ 
+ 	public MessageInterpolatorContext(ConstraintDescriptor<?> constraintDescriptor,
+ 					Object validatedValue,
+@@ -47,14 +49,16 @@ public MessageInterpolatorContext(ConstraintDescriptor<?> constraintDescriptor,
+ 					Path propertyPath,
+ 					Map<String, Object> messageParameters,
+ 					Map<String, Object> expressionVariables,
+-					boolean expressionLanguageEnabled) {
++					ExpressionLanguageFeatureLevel expressionLanguageFeatureLevel,
++					boolean customViolation) {
+ 		this.constraintDescriptor = constraintDescriptor;
+ 		this.validatedValue = validatedValue;
+ 		this.rootBeanType = rootBeanType;
+ 		this.propertyPath = propertyPath;
+ 		this.messageParameters = toImmutableMap( messageParameters );
+ 		this.expressionVariables = toImmutableMap( expressionVariables );
+-		this.expressionLanguageEnabled = expressionLanguageEnabled;
++		this.expressionLanguageFeatureLevel = expressionLanguageFeatureLevel;
++		this.customViolation = customViolation;
+ 	}
+ 
+ 	@Override
+@@ -78,8 +82,12 @@ public Map<String, Object> getMessageParameters() {
+ 	}
+ 
+ 	@Override
+-	public boolean isExpressionLanguageEnabled() {
+-		return expressionLanguageEnabled;
++	public ExpressionLanguageFeatureLevel getExpressionLanguageFeatureLevel() {
++		return expressionLanguageFeatureLevel;
++	}
++
++	public boolean isCustomViolation() {
++		return customViolation;
+ 	}
+ 
+ 	@Override
+@@ -143,7 +151,8 @@ public String toString() {
+ 		sb.append( ", propertyPath=" ).append( propertyPath );
+ 		sb.append( ", messageParameters=" ).append( messageParameters );
+ 		sb.append( ", expressionVariables=" ).append( expressionVariables );
+-		sb.append( ", expressionLanguageEnabled=" ).append( expressionLanguageEnabled );
++		sb.append( ", expressionLanguageFeatureLevel=" ).append( expressionLanguageFeatureLevel );
++		sb.append( ", customViolation=" ).append( customViolation );
+ 		sb.append( '}' );
+ 		return sb.toString();
+ 	}
+diff --git a/engine/src/main/java/org/hibernate/validator/internal/engine/PredefinedScopeValidatorFactoryImpl.java b/engine/src/main/java/org/hibernate/validator/internal/engine/PredefinedScopeValidatorFactoryImpl.java
+index 1ee27d9279..edb5fca44c 100644
+--- a/engine/src/main/java/org/hibernate/validator/internal/engine/PredefinedScopeValidatorFactoryImpl.java
++++ b/engine/src/main/java/org/hibernate/validator/internal/engine/PredefinedScopeValidatorFactoryImpl.java
+@@ -9,6 +9,8 @@
+ import static org.hibernate.validator.internal.engine.ValidatorFactoryConfigurationHelper.determineAllowMultipleCascadedValidationOnReturnValues;
+ import static org.hibernate.validator.internal.engine.ValidatorFactoryConfigurationHelper.determineAllowOverridingMethodAlterParameterConstraint;
+ import static org.hibernate.validator.internal.engine.ValidatorFactoryConfigurationHelper.determineAllowParallelMethodsDefineParameterConstraints;
++import static org.hibernate.validator.internal.engine.ValidatorFactoryConfigurationHelper.determineConstraintExpressionLanguageFeatureLevel;
++import static org.hibernate.validator.internal.engine.ValidatorFactoryConfigurationHelper.determineCustomViolationExpressionLanguageFeatureLevel;
+ import static org.hibernate.validator.internal.engine.ValidatorFactoryConfigurationHelper.determineBeanMetaDataClassNormalizer;
+ import static org.hibernate.validator.internal.engine.ValidatorFactoryConfigurationHelper.determineConstraintMappings;
+ import static org.hibernate.validator.internal.engine.ValidatorFactoryConfigurationHelper.determineConstraintValidatorPayload;
+@@ -119,7 +121,9 @@ public PredefinedScopeValidatorFactoryImpl(ConfigurationState configurationState
+ 				determineScriptEvaluatorFactory( configurationState, properties, externalClassLoader ),
+ 				determineFailFast( hibernateSpecificConfig, properties ),
+ 				determineTraversableResolverResultCacheEnabled( hibernateSpecificConfig, properties ),
+-				determineConstraintValidatorPayload( hibernateSpecificConfig )
++				determineConstraintValidatorPayload( hibernateSpecificConfig ),
++				determineConstraintExpressionLanguageFeatureLevel( hibernateSpecificConfig, properties ),
++				determineCustomViolationExpressionLanguageFeatureLevel( hibernateSpecificConfig, properties )
+ 		);
+ 
+ 		this.constraintValidatorManager = new PredefinedScopeConstraintValidatorManagerImpl(
+diff --git a/engine/src/main/java/org/hibernate/validator/internal/engine/ValidatorFactoryConfigurationHelper.java b/engine/src/main/java/org/hibernate/validator/internal/engine/ValidatorFactoryConfigurationHelper.java
+index 3e5b6aca1a..0fe4e9f86f 100644
+--- a/engine/src/main/java/org/hibernate/validator/internal/engine/ValidatorFactoryConfigurationHelper.java
++++ b/engine/src/main/java/org/hibernate/validator/internal/engine/ValidatorFactoryConfigurationHelper.java
+@@ -38,6 +38,7 @@
+ import org.hibernate.validator.internal.util.privilegedactions.GetClassLoader;
+ import org.hibernate.validator.internal.util.privilegedactions.LoadClass;
+ import org.hibernate.validator.internal.util.privilegedactions.NewInstance;
++import org.hibernate.validator.messageinterpolation.ExpressionLanguageFeatureLevel;
+ import org.hibernate.validator.metadata.BeanMetaDataClassNormalizer;
+ import org.hibernate.validator.spi.cfg.ConstraintMappingContributor;
+ import org.hibernate.validator.spi.messageinterpolation.LocaleResolver;
+@@ -259,6 +260,50 @@ static Object determineConstraintValidatorPayload(ConfigurationState configurati
+ 		return null;
+ 	}
+ 
++	static ExpressionLanguageFeatureLevel determineConstraintExpressionLanguageFeatureLevel(AbstractConfigurationImpl<?> hibernateSpecificConfig,
++			Map<String, String> properties) {
++		if ( hibernateSpecificConfig.getConstraintExpressionLanguageFeatureLevel() != null ) {
++			LOG.logConstraintExpressionLanguageFeatureLevel( hibernateSpecificConfig.getConstraintExpressionLanguageFeatureLevel() );
++			return ExpressionLanguageFeatureLevel.interpretDefaultForConstraints( hibernateSpecificConfig.getConstraintExpressionLanguageFeatureLevel() );
++		}
++
++		String expressionLanguageFeatureLevelName = properties.get( HibernateValidatorConfiguration.CONSTRAINT_EXPRESSION_LANGUAGE_FEATURE_LEVEL );
++		if ( expressionLanguageFeatureLevelName != null ) {
++			try {
++				ExpressionLanguageFeatureLevel expressionLanguageFeatureLevel = ExpressionLanguageFeatureLevel.of( expressionLanguageFeatureLevelName );
++				LOG.logConstraintExpressionLanguageFeatureLevel( expressionLanguageFeatureLevel );
++				return ExpressionLanguageFeatureLevel.interpretDefaultForConstraints( expressionLanguageFeatureLevel );
++			}
++			catch (IllegalArgumentException e) {
++				throw LOG.invalidExpressionLanguageFeatureLevelValue( expressionLanguageFeatureLevelName, e );
++			}
++		}
++
++		return ExpressionLanguageFeatureLevel.interpretDefaultForConstraints( ExpressionLanguageFeatureLevel.DEFAULT );
++	}
++
++	static ExpressionLanguageFeatureLevel determineCustomViolationExpressionLanguageFeatureLevel(AbstractConfigurationImpl<?> hibernateSpecificConfig,
++			Map<String, String> properties) {
++		if ( hibernateSpecificConfig.getCustomViolationExpressionLanguageFeatureLevel() != null ) {
++			LOG.logCustomViolationExpressionLanguageFeatureLevel( hibernateSpecificConfig.getCustomViolationExpressionLanguageFeatureLevel() );
++			return ExpressionLanguageFeatureLevel.interpretDefaultForCustomViolations( hibernateSpecificConfig.getCustomViolationExpressionLanguageFeatureLevel() );
++		}
++
++		String expressionLanguageFeatureLevelName = properties.get( HibernateValidatorConfiguration.CUSTOM_VIOLATION_EXPRESSION_LANGUAGE_FEATURE_LEVEL );
++		if ( expressionLanguageFeatureLevelName != null ) {
++			try {
++				ExpressionLanguageFeatureLevel expressionLanguageFeatureLevel = ExpressionLanguageFeatureLevel.of( expressionLanguageFeatureLevelName );
++				LOG.logCustomViolationExpressionLanguageFeatureLevel( expressionLanguageFeatureLevel );
++				return ExpressionLanguageFeatureLevel.interpretDefaultForCustomViolations( expressionLanguageFeatureLevel );
++			}
++			catch (IllegalArgumentException e) {
++				throw LOG.invalidExpressionLanguageFeatureLevelValue( expressionLanguageFeatureLevelName, e );
++			}
++		}
++
++		return ExpressionLanguageFeatureLevel.NONE;
++	}
++
+ 	static GetterPropertySelectionStrategy determineGetterPropertySelectionStrategy(AbstractConfigurationImpl<?> hibernateSpecificConfig, Map<String, String> properties,
+ 			ClassLoader externalClassLoader) {
+ 		if ( hibernateSpecificConfig.getGetterPropertySelectionStrategy() != null ) {
+diff --git a/engine/src/main/java/org/hibernate/validator/internal/engine/ValidatorFactoryImpl.java b/engine/src/main/java/org/hibernate/validator/internal/engine/ValidatorFactoryImpl.java
+index 5c6d89f2c3..1319864daf 100644
+--- a/engine/src/main/java/org/hibernate/validator/internal/engine/ValidatorFactoryImpl.java
++++ b/engine/src/main/java/org/hibernate/validator/internal/engine/ValidatorFactoryImpl.java
+@@ -12,6 +12,8 @@
+ import static org.hibernate.validator.internal.engine.ValidatorFactoryConfigurationHelper.determineBeanMetaDataClassNormalizer;
+ import static org.hibernate.validator.internal.engine.ValidatorFactoryConfigurationHelper.determineConstraintMappings;
+ import static org.hibernate.validator.internal.engine.ValidatorFactoryConfigurationHelper.determineConstraintValidatorPayload;
++import static org.hibernate.validator.internal.engine.ValidatorFactoryConfigurationHelper.determineConstraintExpressionLanguageFeatureLevel;
++import static org.hibernate.validator.internal.engine.ValidatorFactoryConfigurationHelper.determineCustomViolationExpressionLanguageFeatureLevel;
+ import static org.hibernate.validator.internal.engine.ValidatorFactoryConfigurationHelper.determineExternalClassLoader;
+ import static org.hibernate.validator.internal.engine.ValidatorFactoryConfigurationHelper.determineFailFast;
+ import static org.hibernate.validator.internal.engine.ValidatorFactoryConfigurationHelper.determineScriptEvaluatorFactory;
+@@ -156,7 +158,9 @@ public ValidatorFactoryImpl(ConfigurationState configurationState) {
+ 				determineScriptEvaluatorFactory( configurationState, properties, externalClassLoader ),
+ 				determineFailFast( hibernateSpecificConfig, properties ),
+ 				determineTraversableResolverResultCacheEnabled( hibernateSpecificConfig, properties ),
+-				determineConstraintValidatorPayload( hibernateSpecificConfig )
++				determineConstraintValidatorPayload( hibernateSpecificConfig ),
++				determineConstraintExpressionLanguageFeatureLevel( hibernateSpecificConfig, properties ),
++				determineCustomViolationExpressionLanguageFeatureLevel( hibernateSpecificConfig, properties )
+ 		);
+ 
+ 		ConstraintValidatorManager constraintValidatorManager = new ConstraintValidatorManagerImpl(
+diff --git a/engine/src/main/java/org/hibernate/validator/internal/engine/ValidatorFactoryScopedContext.java b/engine/src/main/java/org/hibernate/validator/internal/engine/ValidatorFactoryScopedContext.java
+index 69440deb40..c2bb94149b 100644
+--- a/engine/src/main/java/org/hibernate/validator/internal/engine/ValidatorFactoryScopedContext.java
++++ b/engine/src/main/java/org/hibernate/validator/internal/engine/ValidatorFactoryScopedContext.java
+@@ -17,6 +17,7 @@
+ import org.hibernate.validator.internal.engine.constraintvalidation.HibernateConstraintValidatorInitializationContextImpl;
+ import org.hibernate.validator.internal.util.Contracts;
+ import org.hibernate.validator.internal.util.ExecutableParameterNameProvider;
++import org.hibernate.validator.messageinterpolation.ExpressionLanguageFeatureLevel;
+ import org.hibernate.validator.spi.scripting.ScriptEvaluatorFactory;
+ 
+ public class ValidatorFactoryScopedContext {
+@@ -67,6 +68,16 @@ public class ValidatorFactoryScopedContext {
+ 	 */
+ 	private final Object constraintValidatorPayload;
+ 
++	/**
++	 * The Expression Language feature level for constraints.
++	 */
++	private final ExpressionLanguageFeatureLevel constraintExpressionLanguageFeatureLevel;
++
++	/**
++	 * The Expression Language feature level for custom violations.
++	 */
++	private final ExpressionLanguageFeatureLevel customViolationExpressionLanguageFeatureLevel;
++
+ 	/**
+ 	 * The constraint validator initialization context.
+ 	 */
+@@ -80,9 +91,12 @@ public class ValidatorFactoryScopedContext {
+ 			ScriptEvaluatorFactory scriptEvaluatorFactory,
+ 			boolean failFast,
+ 			boolean traversableResolverResultCacheEnabled,
+-			Object constraintValidatorPayload) {
++			Object constraintValidatorPayload,
++			ExpressionLanguageFeatureLevel constraintExpressionLanguageFeatureLevel,
++			ExpressionLanguageFeatureLevel customViolationExpressionLanguageFeatureLevel) {
+ 		this( messageInterpolator, traversableResolver, parameterNameProvider, clockProvider, temporalValidationTolerance, scriptEvaluatorFactory, failFast,
+-				traversableResolverResultCacheEnabled, constraintValidatorPayload,
++				traversableResolverResultCacheEnabled, constraintValidatorPayload, constraintExpressionLanguageFeatureLevel,
++				customViolationExpressionLanguageFeatureLevel,
+ 				new HibernateConstraintValidatorInitializationContextImpl( scriptEvaluatorFactory, clockProvider,
+ 						temporalValidationTolerance ) );
+ 	}
+@@ -96,6 +110,8 @@ private ValidatorFactoryScopedContext(MessageInterpolator messageInterpolator,
+ 			boolean failFast,
+ 			boolean traversableResolverResultCacheEnabled,
+ 			Object constraintValidatorPayload,
++			ExpressionLanguageFeatureLevel constraintExpressionLanguageFeatureLevel,
++			ExpressionLanguageFeatureLevel customViolationExpressionLanguageFeatureLevel,
+ 			HibernateConstraintValidatorInitializationContextImpl constraintValidatorInitializationContext) {
+ 		this.messageInterpolator = messageInterpolator;
+ 		this.traversableResolver = traversableResolver;
+@@ -106,6 +122,8 @@ private ValidatorFactoryScopedContext(MessageInterpolator messageInterpolator,
+ 		this.failFast = failFast;
+ 		this.traversableResolverResultCacheEnabled = traversableResolverResultCacheEnabled;
+ 		this.constraintValidatorPayload = constraintValidatorPayload;
++		this.constraintExpressionLanguageFeatureLevel = constraintExpressionLanguageFeatureLevel;
++		this.customViolationExpressionLanguageFeatureLevel = customViolationExpressionLanguageFeatureLevel;
+ 		this.constraintValidatorInitializationContext = constraintValidatorInitializationContext;
+ 	}
+ 
+@@ -149,6 +167,14 @@ public HibernateConstraintValidatorInitializationContext getConstraintValidatorI
+ 		return this.constraintValidatorInitializationContext;
+ 	}
+ 
++	public ExpressionLanguageFeatureLevel getConstraintExpressionLanguageFeatureLevel() {
++		return this.constraintExpressionLanguageFeatureLevel;
++	}
++
++	public ExpressionLanguageFeatureLevel getCustomViolationExpressionLanguageFeatureLevel() {
++		return this.customViolationExpressionLanguageFeatureLevel;
++	}
++
+ 	static class Builder {
+ 		private final ValidatorFactoryScopedContext defaultContext;
+ 
+@@ -161,6 +187,8 @@ static class Builder {
+ 		private boolean failFast;
+ 		private boolean traversableResolverResultCacheEnabled;
+ 		private Object constraintValidatorPayload;
++		private ExpressionLanguageFeatureLevel constraintExpressionLanguageFeatureLevel;
++		private ExpressionLanguageFeatureLevel customViolationExpressionLanguageFeatureLevel;
+ 		private HibernateConstraintValidatorInitializationContextImpl constraintValidatorInitializationContext;
+ 
+ 		Builder(ValidatorFactoryScopedContext defaultContext) {
+@@ -176,6 +204,8 @@ static class Builder {
+ 			this.failFast = defaultContext.failFast;
+ 			this.traversableResolverResultCacheEnabled = defaultContext.traversableResolverResultCacheEnabled;
+ 			this.constraintValidatorPayload = defaultContext.constraintValidatorPayload;
++			this.constraintExpressionLanguageFeatureLevel = defaultContext.constraintExpressionLanguageFeatureLevel;
++			this.customViolationExpressionLanguageFeatureLevel = defaultContext.customViolationExpressionLanguageFeatureLevel;
+ 			this.constraintValidatorInitializationContext = defaultContext.constraintValidatorInitializationContext;
+ 		}
+ 
+@@ -250,6 +280,18 @@ public ValidatorFactoryScopedContext.Builder setConstraintValidatorPayload(Objec
+ 			return this;
+ 		}
+ 
++		public ValidatorFactoryScopedContext.Builder setConstraintExpressionLanguageFeatureLevel(
++				ExpressionLanguageFeatureLevel expressionLanguageFeatureLevel) {
++			this.constraintExpressionLanguageFeatureLevel = expressionLanguageFeatureLevel;
++			return this;
++		}
++
++		public ValidatorFactoryScopedContext.Builder setCustomViolationExpressionLanguageFeatureLevel(
++				ExpressionLanguageFeatureLevel expressionLanguageFeatureLevel) {
++			this.customViolationExpressionLanguageFeatureLevel = expressionLanguageFeatureLevel;
++			return this;
++		}
++
+ 		public ValidatorFactoryScopedContext build() {
+ 			return new ValidatorFactoryScopedContext(
+ 					messageInterpolator,
+@@ -261,6 +303,8 @@ public ValidatorFactoryScopedContext build() {
+ 					failFast,
+ 					traversableResolverResultCacheEnabled,
+ 					constraintValidatorPayload,
++					constraintExpressionLanguageFeatureLevel,
++					customViolationExpressionLanguageFeatureLevel,
+ 					HibernateConstraintValidatorInitializationContextImpl.of(
+ 							constraintValidatorInitializationContext,
+ 							scriptEvaluatorFactory,
+diff --git a/engine/src/main/java/org/hibernate/validator/internal/engine/constraintvalidation/ConstraintValidatorContextImpl.java b/engine/src/main/java/org/hibernate/validator/internal/engine/constraintvalidation/ConstraintValidatorContextImpl.java
+index f486324582..79dba243f9 100644
+--- a/engine/src/main/java/org/hibernate/validator/internal/engine/constraintvalidation/ConstraintValidatorContextImpl.java
++++ b/engine/src/main/java/org/hibernate/validator/internal/engine/constraintvalidation/ConstraintValidatorContextImpl.java
+@@ -35,6 +35,7 @@
+ import org.hibernate.validator.internal.util.Contracts;
+ import org.hibernate.validator.internal.util.logging.Log;
+ import org.hibernate.validator.internal.util.logging.LoggerFactory;
++import org.hibernate.validator.messageinterpolation.ExpressionLanguageFeatureLevel;
+ 
+ /**
+  * @author Hardy Ferentschik
+@@ -48,6 +49,8 @@ public class ConstraintValidatorContextImpl implements HibernateConstraintValida
+ 	private Map<String, Object> messageParameters;
+ 	private Map<String, Object> expressionVariables;
+ 	private final ClockProvider clockProvider;
++	private final ExpressionLanguageFeatureLevel defaultConstraintExpressionLanguageFeatureLevel;
++	private final ExpressionLanguageFeatureLevel defaultCustomViolationExpressionLanguageFeatureLevel;
+ 	private final PathImpl basePath;
+ 	private final ConstraintDescriptor<?> constraintDescriptor;
+ 	private List<ConstraintViolationCreationContext> constraintViolationCreationContexts;
+@@ -59,8 +62,12 @@ public ConstraintValidatorContextImpl(
+ 			ClockProvider clockProvider,
+ 			PathImpl propertyPath,
+ 			ConstraintDescriptor<?> constraintDescriptor,
+-			Object constraintValidatorPayload) {
++			Object constraintValidatorPayload,
++			ExpressionLanguageFeatureLevel defaultConstraintExpressionLanguageFeatureLevel,
++			ExpressionLanguageFeatureLevel defaultCustomViolationExpressionLanguageFeatureLevel) {
+ 		this.clockProvider = clockProvider;
++		this.defaultConstraintExpressionLanguageFeatureLevel = defaultConstraintExpressionLanguageFeatureLevel;
++		this.defaultCustomViolationExpressionLanguageFeatureLevel = defaultCustomViolationExpressionLanguageFeatureLevel;
+ 		this.basePath = propertyPath;
+ 		this.constraintDescriptor = constraintDescriptor;
+ 		this.constraintValidatorPayload = constraintValidatorPayload;
+@@ -170,7 +177,8 @@ protected final PathImpl getCopyOfBasePath() {
+ 	private ConstraintViolationCreationContext getDefaultConstraintViolationCreationContext() {
+ 		return new ConstraintViolationCreationContext(
+ 				getDefaultConstraintMessageTemplate(),
+-				true, // EL is enabled for the default constraint violation
++				defaultConstraintExpressionLanguageFeatureLevel,
++				false,
+ 				basePath,
+ 				messageParameters != null ? new HashMap<>( messageParameters ) : Collections.emptyMap(),
+ 				expressionVariables != null ? new HashMap<>( expressionVariables ) : Collections.emptyMap(),
+@@ -181,7 +189,7 @@ private ConstraintViolationCreationContext getDefaultConstraintViolationCreation
+ 	private abstract class NodeBuilderBase {
+ 
+ 		protected final String messageTemplate;
+-		protected boolean expressionLanguageEnabled;
++		protected ExpressionLanguageFeatureLevel expressionLanguageFeatureLevel = defaultCustomViolationExpressionLanguageFeatureLevel;
+ 		protected PathImpl propertyPath;
+ 
+ 		protected NodeBuilderBase(String template, PathImpl path) {
+@@ -193,14 +201,15 @@ public ConstraintValidatorContext addConstraintViolation() {
+ 			if ( constraintViolationCreationContexts == null ) {
+ 				constraintViolationCreationContexts = CollectionHelper.newArrayList( 3 );
+ 			}
+-			if ( !(expressionVariables == null || expressionVariables.isEmpty()) && !expressionLanguageEnabled ) {
++			if ( !( expressionVariables == null || expressionVariables.isEmpty() ) && expressionLanguageFeatureLevel == ExpressionLanguageFeatureLevel.NONE ) {
+ 				LOG.expressionVariablesDefinedWithExpressionLanguageNotEnabled(
+ 						constraintDescriptor.getAnnotation() != null ? constraintDescriptor.getAnnotation().annotationType() : Annotation.class );
+ 			}
+ 			constraintViolationCreationContexts.add(
+ 					new ConstraintViolationCreationContext(
+ 							messageTemplate,
+-							expressionLanguageEnabled,
++							expressionLanguageFeatureLevel,
++							true,
+ 							propertyPath,
+ 							messageParameters != null ? new HashMap<>( messageParameters ) : Collections.emptyMap(),
+ 							expressionVariables != null ? new HashMap<>( expressionVariables ) : Collections.emptyMap(),
+@@ -218,8 +227,8 @@ protected ConstraintViolationBuilderImpl(String template, PathImpl path) {
+ 		}
+ 
+ 		@Override
+-		public HibernateConstraintViolationBuilder enableExpressionLanguage() {
+-			expressionLanguageEnabled = true;
++		public HibernateConstraintViolationBuilder enableExpressionLanguage(ExpressionLanguageFeatureLevel expressionLanguageFeatureLevel) {
++			this.expressionLanguageFeatureLevel = ExpressionLanguageFeatureLevel.interpretDefaultForCustomViolations( expressionLanguageFeatureLevel );
+ 			return this;
+ 		}
+ 
+@@ -236,12 +245,12 @@ public NodeBuilderDefinedContext addNode(String name) {
+ 		public NodeBuilderCustomizableContext addPropertyNode(String name) {
+ 			dropLeafNodeIfRequired();
+ 
+-			return new DeferredNodeBuilder( messageTemplate, expressionLanguageEnabled, propertyPath, name, ElementKind.PROPERTY );
++			return new DeferredNodeBuilder( messageTemplate, expressionLanguageFeatureLevel, propertyPath, name, ElementKind.PROPERTY );
+ 		}
+ 
+ 		@Override
+ 		public LeafNodeBuilderCustomizableContext addBeanNode() {
+-			return new DeferredNodeBuilder( messageTemplate, expressionLanguageEnabled, propertyPath, null, ElementKind.BEAN );
++			return new DeferredNodeBuilder( messageTemplate, expressionLanguageFeatureLevel, propertyPath, null, ElementKind.BEAN );
+ 		}
+ 
+ 		@Override
+@@ -253,7 +262,7 @@ public NodeBuilderDefinedContext addParameterNode(int index) {
+ 		public ContainerElementNodeBuilderCustomizableContext addContainerElementNode(String name, Class<?> containerType, Integer typeArgumentIndex) {
+ 			dropLeafNodeIfRequired();
+ 
+-			return new DeferredNodeBuilder( messageTemplate, expressionLanguageEnabled, propertyPath, name, containerType, typeArgumentIndex );
++			return new DeferredNodeBuilder( messageTemplate, expressionLanguageFeatureLevel, propertyPath, name, containerType, typeArgumentIndex );
+ 		}
+ 
+ 		/**
+@@ -282,17 +291,17 @@ public ConstraintViolationBuilder.NodeBuilderCustomizableContext addNode(String
+ 
+ 		@Override
+ 		public NodeBuilderCustomizableContext addPropertyNode(String name) {
+-			return new DeferredNodeBuilder( messageTemplate, expressionLanguageEnabled, propertyPath, name, ElementKind.PROPERTY );
++			return new DeferredNodeBuilder( messageTemplate, expressionLanguageFeatureLevel, propertyPath, name, ElementKind.PROPERTY );
+ 		}
+ 
+ 		@Override
+ 		public LeafNodeBuilderCustomizableContext addBeanNode() {
+-			return new DeferredNodeBuilder( messageTemplate, expressionLanguageEnabled, propertyPath, null, ElementKind.BEAN );
++			return new DeferredNodeBuilder( messageTemplate, expressionLanguageFeatureLevel, propertyPath, null, ElementKind.BEAN );
+ 		}
+ 
+ 		@Override
+ 		public ContainerElementNodeBuilderCustomizableContext addContainerElementNode(String name, Class<?> containerType, Integer typeArgumentIndex) {
+-			return new DeferredNodeBuilder( messageTemplate, expressionLanguageEnabled, propertyPath, name, containerType, typeArgumentIndex );
++			return new DeferredNodeBuilder( messageTemplate, expressionLanguageFeatureLevel, propertyPath, name, containerType, typeArgumentIndex );
+ 		}
+ 	}
+ 
+@@ -308,9 +317,13 @@ private class DeferredNodeBuilder extends NodeBuilderBase
+ 
+ 		private final Integer leafNodeTypeArgumentIndex;
+ 
+-		private DeferredNodeBuilder(String template, boolean expressionLanguageEnabled, PathImpl path, String nodeName, ElementKind leafNodeKind) {
++		private DeferredNodeBuilder(String template,
++				ExpressionLanguageFeatureLevel expressionLanguageFeatureLevel,
++				PathImpl path,
++				String nodeName,
++				ElementKind leafNodeKind) {
+ 			super( template, path );
+-			this.expressionLanguageEnabled = expressionLanguageEnabled;
++			this.expressionLanguageFeatureLevel = expressionLanguageFeatureLevel;
+ 			this.leafNodeName = nodeName;
+ 			this.leafNodeKind = leafNodeKind;
+ 			this.leafNodeContainerType = null;
+@@ -318,13 +331,13 @@ private DeferredNodeBuilder(String template, boolean expressionLanguageEnabled,
+ 		}
+ 
+ 		private DeferredNodeBuilder(String template,
+-				boolean expressionLanguageEnabled,
++				ExpressionLanguageFeatureLevel expressionLanguageFeatureLevel,
+ 				PathImpl path,
+ 				String nodeName,
+ 				Class<?> leafNodeContainerType,
+ 				Integer leafNodeTypeArgumentIndex) {
+ 			super( template, path );
+-			this.expressionLanguageEnabled = expressionLanguageEnabled;
++			this.expressionLanguageFeatureLevel = expressionLanguageFeatureLevel;
+ 			this.leafNodeName = nodeName;
+ 			this.leafNodeKind = ElementKind.CONTAINER_ELEMENT;
+ 			this.leafNodeContainerType = leafNodeContainerType;
+@@ -366,19 +379,19 @@ public NodeBuilderCustomizableContext addNode(String name) {
+ 		@Override
+ 		public NodeBuilderCustomizableContext addPropertyNode(String name) {
+ 			addLeafNode();
+-			return new DeferredNodeBuilder( messageTemplate, expressionLanguageEnabled, propertyPath, name, ElementKind.PROPERTY );
++			return new DeferredNodeBuilder( messageTemplate, expressionLanguageFeatureLevel, propertyPath, name, ElementKind.PROPERTY );
+ 		}
+ 
+ 		@Override
+ 		public ContainerElementNodeBuilderCustomizableContext addContainerElementNode(String name, Class<?> containerType, Integer typeArgumentIndex) {
+ 			addLeafNode();
+-			return new DeferredNodeBuilder( messageTemplate, expressionLanguageEnabled, propertyPath, name, containerType, typeArgumentIndex );
++			return new DeferredNodeBuilder( messageTemplate, expressionLanguageFeatureLevel, propertyPath, name, containerType, typeArgumentIndex );
+ 		}
+ 
+ 		@Override
+ 		public LeafNodeBuilderCustomizableContext addBeanNode() {
+ 			addLeafNode();
+-			return new DeferredNodeBuilder( messageTemplate, expressionLanguageEnabled, propertyPath, null, ElementKind.BEAN );
++			return new DeferredNodeBuilder( messageTemplate, expressionLanguageFeatureLevel, propertyPath, null, ElementKind.BEAN );
+ 		}
+ 
+ 		@Override
+diff --git a/engine/src/main/java/org/hibernate/validator/internal/engine/constraintvalidation/ConstraintViolationCreationContext.java b/engine/src/main/java/org/hibernate/validator/internal/engine/constraintvalidation/ConstraintViolationCreationContext.java
+index be009a3569..9118be015d 100644
+--- a/engine/src/main/java/org/hibernate/validator/internal/engine/constraintvalidation/ConstraintViolationCreationContext.java
++++ b/engine/src/main/java/org/hibernate/validator/internal/engine/constraintvalidation/ConstraintViolationCreationContext.java
+@@ -12,6 +12,7 @@
+ 
+ import org.hibernate.validator.internal.engine.path.PathImpl;
+ import org.hibernate.validator.internal.util.stereotypes.Immutable;
++import org.hibernate.validator.messageinterpolation.ExpressionLanguageFeatureLevel;
+ 
+ /**
+  * Container class for the information needed to create a constraint violation.
+@@ -22,7 +23,8 @@
+ public class ConstraintViolationCreationContext {
+ 
+ 	private final String message;
+-	private final boolean expressionLanguageEnabled;
++	private final ExpressionLanguageFeatureLevel expressionLanguageFeatureLevel;
++	private final boolean customViolation;
+ 	private final PathImpl propertyPath;
+ 	@Immutable
+ 	private final Map<String, Object> messageParameters;
+@@ -31,13 +33,15 @@ public class ConstraintViolationCreationContext {
+ 	private final Object dynamicPayload;
+ 
+ 	public ConstraintViolationCreationContext(String message,
+-			boolean expressionLanguageEnabled,
++			ExpressionLanguageFeatureLevel expressionLanguageFeatureLevel,
++			boolean customViolation,
+ 			PathImpl property,
+ 			Map<String, Object> messageParameters,
+ 			Map<String, Object> expressionVariables,
+ 			Object dynamicPayload) {
+ 		this.message = message;
+-		this.expressionLanguageEnabled = expressionLanguageEnabled;
++		this.expressionLanguageFeatureLevel = expressionLanguageFeatureLevel;
++		this.customViolation = customViolation;
+ 		this.propertyPath = property;
+ 		this.messageParameters = toImmutableMap( messageParameters );
+ 		this.expressionVariables = toImmutableMap( expressionVariables );
+@@ -48,8 +52,12 @@ public final String getMessage() {
+ 		return message;
+ 	}
+ 
+-	public boolean isExpressionLanguageEnabled() {
+-		return expressionLanguageEnabled;
++	public ExpressionLanguageFeatureLevel getExpressionLanguageFeatureLevel() {
++		return expressionLanguageFeatureLevel;
++	}
++
++	public boolean isCustomViolation() {
++		return customViolation;
+ 	}
+ 
+ 	public final PathImpl getPath() {
+@@ -72,7 +80,8 @@ public Object getDynamicPayload() {
+ 	public String toString() {
+ 		final StringBuilder sb = new StringBuilder( "ConstraintViolationCreationContext{" );
+ 		sb.append( "message='" ).append( message ).append( '\'' );
+-		sb.append( ", expressionLanguageEnabled=" ).append( expressionLanguageEnabled );
++		sb.append( ", expressionLanguageFeatureLevel=" ).append( expressionLanguageFeatureLevel );
++		sb.append( ", customViolation=" ).append( customViolation );
+ 		sb.append( ", propertyPath=" ).append( propertyPath );
+ 		sb.append( ", messageParameters=" ).append( messageParameters );
+ 		sb.append( ", expressionVariables=" ).append( expressionVariables );
+diff --git a/engine/src/main/java/org/hibernate/validator/internal/engine/constraintvalidation/CrossParameterConstraintValidatorContextImpl.java b/engine/src/main/java/org/hibernate/validator/internal/engine/constraintvalidation/CrossParameterConstraintValidatorContextImpl.java
+index f3c49d8634..a5ce5ba083 100644
+--- a/engine/src/main/java/org/hibernate/validator/internal/engine/constraintvalidation/CrossParameterConstraintValidatorContextImpl.java
++++ b/engine/src/main/java/org/hibernate/validator/internal/engine/constraintvalidation/CrossParameterConstraintValidatorContextImpl.java
+@@ -16,6 +16,7 @@
+ import org.hibernate.validator.constraintvalidation.HibernateCrossParameterConstraintValidatorContext;
+ import org.hibernate.validator.internal.engine.path.PathImpl;
+ import org.hibernate.validator.internal.util.Contracts;
++import org.hibernate.validator.messageinterpolation.ExpressionLanguageFeatureLevel;
+ 
+ /**
+  * @author Marko Bekhta
+@@ -24,8 +25,15 @@ public class CrossParameterConstraintValidatorContextImpl extends ConstraintVali
+ 
+ 	private final List<String> methodParameterNames;
+ 
+-	public CrossParameterConstraintValidatorContextImpl(List<String> methodParameterNames, ClockProvider clockProvider, PathImpl propertyPath, ConstraintDescriptor<?> constraintDescriptor, Object constraintValidatorPayload) {
+-		super( clockProvider, propertyPath, constraintDescriptor, constraintValidatorPayload );
++	public CrossParameterConstraintValidatorContextImpl(List<String> methodParameterNames,
++			ClockProvider clockProvider,
++			PathImpl propertyPath,
++			ConstraintDescriptor<?> constraintDescriptor,
++			Object constraintValidatorPayload,
++			ExpressionLanguageFeatureLevel constraintExpressionLanguageFeatureLevel,
++			ExpressionLanguageFeatureLevel customViolationExpressionLanguageFeatureLevel) {
++		super( clockProvider, propertyPath, constraintDescriptor, constraintValidatorPayload, constraintExpressionLanguageFeatureLevel,
++				customViolationExpressionLanguageFeatureLevel );
+ 		Contracts.assertTrue( propertyPath.getLeafNode().getKind() == ElementKind.CROSS_PARAMETER, "Context can only be used for corss parameter validation" );
+ 		this.methodParameterNames = methodParameterNames;
+ 	}
+diff --git a/engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/ElTermResolver.java b/engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/ElTermResolver.java
+index 0bf54e62b4..dc6f7b4f24 100644
+--- a/engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/ElTermResolver.java
++++ b/engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/ElTermResolver.java
+@@ -10,23 +10,29 @@
+ import java.util.Locale;
+ import java.util.Map;
+ 
++import org.hibernate.validator.internal.engine.messageinterpolation.el.BeanMethodsELContext;
++import org.hibernate.validator.internal.engine.messageinterpolation.el.BeanPropertiesElContext;
++import org.hibernate.validator.internal.engine.messageinterpolation.el.DisabledFeatureELException;
++import org.hibernate.validator.internal.engine.messageinterpolation.el.RootResolver;
++import org.hibernate.validator.internal.engine.messageinterpolation.el.VariablesELContext;
++import org.hibernate.validator.internal.util.logging.Log;
++import org.hibernate.validator.internal.util.logging.LoggerFactory;
++import org.hibernate.validator.messageinterpolation.HibernateMessageInterpolatorContext;
++
++import jakarta.el.ELContext;
+ import jakarta.el.ELException;
+ import jakarta.el.ExpressionFactory;
++import jakarta.el.MethodNotFoundException;
+ import jakarta.el.PropertyNotFoundException;
+ import jakarta.el.ValueExpression;
+ import jakarta.validation.MessageInterpolator;
+ 
+-import org.hibernate.validator.internal.engine.messageinterpolation.el.RootResolver;
+-import org.hibernate.validator.internal.engine.messageinterpolation.el.SimpleELContext;
+-import org.hibernate.validator.internal.util.logging.Log;
+-import org.hibernate.validator.internal.util.logging.LoggerFactory;
+-import org.hibernate.validator.messageinterpolation.HibernateMessageInterpolatorContext;
+-
+ /**
+  * Resolver for the el expressions.
+  *
+  * @author Hardy Ferentschik
+  * @author Adam Stawicki
++ * @author Guillaume Smet
+  */
+ public class ElTermResolver implements TermResolver {
+ 
+@@ -61,14 +67,22 @@ public ElTermResolver(Locale locale, ExpressionFactory expressionFactory) {
+ 	@Override
+ 	public String interpolate(MessageInterpolator.Context context, String expression) {
+ 		String resolvedExpression = expression;
+-		SimpleELContext elContext = new SimpleELContext( expressionFactory );
++
++		ELContext elContext = getElContext( context );
++
+ 		try {
+ 			ValueExpression valueExpression = bindContextValues( expression, context, elContext );
+ 			resolvedExpression = (String) valueExpression.getValue( elContext );
+ 		}
++		catch (DisabledFeatureELException dfee) {
++			LOG.disabledFeatureInExpressionLanguage( expression, dfee );
++		}
+ 		catch (PropertyNotFoundException pnfe) {
+ 			LOG.unknownPropertyInExpressionLanguage( expression, pnfe );
+ 		}
++		catch (MethodNotFoundException mnfe) {
++			LOG.unknownMethodInExpressionLanguage( expression, mnfe );
++		}
+ 		catch (ELException e) {
+ 			LOG.errorInExpressionLanguage( expression, e );
+ 		}
+@@ -79,7 +93,26 @@ public String interpolate(MessageInterpolator.Context context, String expression
+ 		return resolvedExpression;
+ 	}
+ 
+-	private ValueExpression bindContextValues(String messageTemplate, MessageInterpolator.Context messageInterpolatorContext, SimpleELContext elContext) {
++	private ELContext getElContext(MessageInterpolator.Context context) {
++		if ( !( context instanceof HibernateMessageInterpolatorContext ) ) {
++			return new VariablesELContext( expressionFactory );
++		}
++
++		switch ( ( (HibernateMessageInterpolatorContext) context ).getExpressionLanguageFeatureLevel() ) {
++			case NONE:
++				throw LOG.expressionsNotResolvedWhenExpressionLanguageFeaturesDisabled();
++			case VARIABLES:
++				return new VariablesELContext( expressionFactory );
++			case BEAN_PROPERTIES:
++				return new BeanPropertiesElContext( expressionFactory );
++			case BEAN_METHODS:
++				return new BeanMethodsELContext( expressionFactory );
++			default:
++				throw LOG.expressionsLanguageFeatureLevelNotSupported();
++		}
++	}
++
++	private ValueExpression bindContextValues(String messageTemplate, MessageInterpolator.Context messageInterpolatorContext, ELContext elContext) {
+ 		// bind the validated value
+ 		ValueExpression valueExpression = expressionFactory.createValueExpression(
+ 				messageInterpolatorContext.getValidatedValue(),
+@@ -104,7 +137,7 @@ private ValueExpression bindContextValues(String messageTemplate, MessageInterpo
+ 		return expressionFactory.createValueExpression( elContext, messageTemplate, String.class );
+ 	}
+ 
+-	private void addVariablesToElContext(SimpleELContext elContext, Map<String, Object> variables) {
++	private void addVariablesToElContext(ELContext elContext, Map<String, Object> variables) {
+ 		for ( Map.Entry<String, Object> entry : variables.entrySet() ) {
+ 			ValueExpression valueExpression = expressionFactory.createValueExpression( entry.getValue(), Object.class );
+ 			elContext.getVariableMapper().setVariable( entry.getKey(), valueExpression );
+diff --git a/engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/el/SimpleELContext.java b/engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/el/BeanMethodsELContext.java
+similarity index 92%
+rename from engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/el/SimpleELContext.java
+rename to engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/el/BeanMethodsELContext.java
+index 5ea47a2e8d..d52afa4230 100644
+--- a/engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/el/SimpleELContext.java
++++ b/engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/el/BeanMethodsELContext.java
+@@ -20,7 +20,7 @@
+  * @author Hardy Ferentschik
+  * @author Guillaume Smet
+  */
+-public class SimpleELContext extends StandardELContext {
++public class BeanMethodsELContext extends StandardELContext {
+ 	private static final ELResolver DEFAULT_RESOLVER = new CompositeELResolver() {
+ 		{
+ 			add( new RootResolver() );
+@@ -32,7 +32,7 @@ public class SimpleELContext extends StandardELContext {
+ 		}
+ 	};
+ 
+-	public SimpleELContext(ExpressionFactory expressionFactory) {
++	public BeanMethodsELContext(ExpressionFactory expressionFactory) {
+ 		super( expressionFactory );
+ 
+ 		// In jakarta.el.ELContext, the ExpressionFactory is extracted from the context map. If it is not found, it
+diff --git a/engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/el/BeanPropertiesELResolver.java b/engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/el/BeanPropertiesELResolver.java
+new file mode 100644
+index 0000000000..5cdf6ea6cb
+--- /dev/null
++++ b/engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/el/BeanPropertiesELResolver.java
+@@ -0,0 +1,25 @@
++/*
++ * Hibernate Validator, declare and validate application constraints
++ *
++ * License: Apache License, Version 2.0
++ * See the license.txt file in the root directory or <http://www.apache.org/licenses/LICENSE-2.0>.
++ */
++package org.hibernate.validator.internal.engine.messageinterpolation.el;
++
++import jakarta.el.BeanELResolver;
++import jakarta.el.ELContext;
++
++/**
++ * @author Guillaume Smet
++ */
++public class BeanPropertiesELResolver extends BeanELResolver {
++
++	BeanPropertiesELResolver() {
++		super( false );
++	}
++
++	@Override
++	public Object invoke(ELContext context, Object base, Object methodName, Class<?>[] paramTypes, Object[] params) {
++		throw new DisabledFeatureELException( "Method execution is not supported when only enabling Expression Language bean property resolution." );
++	}
++}
+diff --git a/engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/el/BeanPropertiesElContext.java b/engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/el/BeanPropertiesElContext.java
+new file mode 100644
+index 0000000000..483de25e97
+--- /dev/null
++++ b/engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/el/BeanPropertiesElContext.java
+@@ -0,0 +1,53 @@
++/*
++ * Hibernate Validator, declare and validate application constraints
++ *
++ * License: Apache License, Version 2.0
++ * See the license.txt file in the root directory or <http://www.apache.org/licenses/LICENSE-2.0>.
++ */
++package org.hibernate.validator.internal.engine.messageinterpolation.el;
++
++import jakarta.el.ArrayELResolver;
++import jakarta.el.CompositeELResolver;
++import jakarta.el.ELResolver;
++import jakarta.el.ExpressionFactory;
++import jakarta.el.ListELResolver;
++import jakarta.el.MapELResolver;
++import jakarta.el.ResourceBundleELResolver;
++import jakarta.el.StandardELContext;
++
++/**
++ * @author Guillaume Smet
++ */
++public class BeanPropertiesElContext extends StandardELContext {
++	private static final ELResolver DEFAULT_RESOLVER = new CompositeELResolver() {
++		{
++			add( new RootResolver() );
++			add( new ArrayELResolver( true ) );
++			add( new ListELResolver( true ) );
++			add( new MapELResolver( true ) );
++			add( new ResourceBundleELResolver() );
++			add( new BeanPropertiesELResolver() );
++		}
++	};
++
++	public BeanPropertiesElContext(ExpressionFactory expressionFactory) {
++		super( expressionFactory );
++
++		// In javax.el.ELContext, the ExpressionFactory is extracted from the context map. If it is not found, it
++		// defaults to ELUtil.getExpressionFactory() which, if we provided the ExpressionFactory to the
++		// ResourceBundleMessageInterpolator, might not be the same. Thus, we inject the ExpressionFactory in the
++		// context.
++		putContext( ExpressionFactory.class, expressionFactory );
++	}
++
++	@Override
++	public void addELResolver(ELResolver cELResolver) {
++		throw new UnsupportedOperationException( getClass().getSimpleName() + " does not support addELResolver." );
++	}
++
++	@Override
++	public ELResolver getELResolver() {
++		return DEFAULT_RESOLVER;
++	}
++
++}
+diff --git a/engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/el/DisabledFeatureELException.java b/engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/el/DisabledFeatureELException.java
+new file mode 100644
+index 0000000000..f76b4fb991
+--- /dev/null
++++ b/engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/el/DisabledFeatureELException.java
+@@ -0,0 +1,16 @@
++/*
++ * Hibernate Validator, declare and validate application constraints
++ *
++ * License: Apache License, Version 2.0
++ * See the license.txt file in the root directory or <http://www.apache.org/licenses/LICENSE-2.0>.
++ */
++package org.hibernate.validator.internal.engine.messageinterpolation.el;
++
++import jakarta.el.ELException;
++
++public class DisabledFeatureELException extends ELException {
++
++	DisabledFeatureELException(String message) {
++		super( message );
++	}
++}
+diff --git a/engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/el/NoOpElResolver.java b/engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/el/NoOpElResolver.java
+new file mode 100644
+index 0000000000..e3b7449712
+--- /dev/null
++++ b/engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/el/NoOpElResolver.java
+@@ -0,0 +1,55 @@
++/*
++ * Hibernate Validator, declare and validate application constraints
++ *
++ * License: Apache License, Version 2.0
++ * See the license.txt file in the root directory or <http://www.apache.org/licenses/LICENSE-2.0>.
++ */
++package org.hibernate.validator.internal.engine.messageinterpolation.el;
++
++import java.beans.FeatureDescriptor;
++import java.util.Collections;
++import java.util.Iterator;
++
++import jakarta.el.ELContext;
++import jakarta.el.ELResolver;
++
++/**
++ * @author Guillaume Smet
++ */
++public class NoOpElResolver extends ELResolver {
++
++	@Override
++	public Object invoke(ELContext context, Object base, Object method, Class<?>[] paramTypes, Object[] params) {
++		throw new DisabledFeatureELException( "Method execution is not supported when only enabling Expression Language variables resolution." );
++	}
++
++	@Override
++	public Object getValue(ELContext context, Object base, Object property) {
++		throw new DisabledFeatureELException( "Accessing properties is not supported when only enabling Expression Language variables resolution" );
++	}
++
++	@Override
++	public Class<?> getType(ELContext context, Object base, Object property) {
++		return null;
++	}
++
++	@Override
++	public void setValue(ELContext context, Object base, Object property, Object value) {
++		throw new DisabledFeatureELException( "Accessing properties is not supported when only enabling Expression Language variables resolution" );
++	}
++
++	@Override
++	public boolean isReadOnly(ELContext context, Object base, Object property) {
++		return true;
++	}
++
++	@Override
++	public Iterator<FeatureDescriptor> getFeatureDescriptors(ELContext context, Object base) {
++		return Collections.emptyIterator();
++	}
++
++	@Override
++	public Class<?> getCommonPropertyType(ELContext context, Object base) {
++		return null;
++	}
++}
+diff --git a/engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/el/VariablesELContext.java b/engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/el/VariablesELContext.java
+new file mode 100644
+index 0000000000..7498e2c671
+--- /dev/null
++++ b/engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/el/VariablesELContext.java
+@@ -0,0 +1,57 @@
++/*
++ * Hibernate Validator, declare and validate application constraints
++ *
++ * License: Apache License, Version 2.0
++ * See the license.txt file in the root directory or <http://www.apache.org/licenses/LICENSE-2.0>.
++ */
++package org.hibernate.validator.internal.engine.messageinterpolation.el;
++
++import jakarta.el.ArrayELResolver;
++import jakarta.el.CompositeELResolver;
++import jakarta.el.ELResolver;
++import jakarta.el.ExpressionFactory;
++import jakarta.el.ListELResolver;
++import jakarta.el.MapELResolver;
++import jakarta.el.ResourceBundleELResolver;
++import jakarta.el.StandardELContext;
++
++/**
++ * @author Guillaume Smet
++ */
++public class VariablesELContext extends StandardELContext {
++
++	private static final ELResolver DEFAULT_RESOLVER = new CompositeELResolver() {
++
++		{
++			add( new RootResolver() );
++			add( new ArrayELResolver( true ) );
++			add( new ListELResolver( true ) );
++			add( new MapELResolver( true ) );
++			add( new ResourceBundleELResolver() );
++			// this one is required so that expressions containing method calls are returned as is
++			// if not there, the expression is replaced by an empty string
++			add( new NoOpElResolver() );
++		}
++	};
++
++	public VariablesELContext(ExpressionFactory expressionFactory) {
++		super( expressionFactory );
++
++		// In javax.el.ELContext, the ExpressionFactory is extracted from the context map. If it is not found, it
++		// defaults to ELUtil.getExpressionFactory() which, if we provided the ExpressionFactory to the
++		// ResourceBundleMessageInterpolator, might not be the same. Thus, we inject the ExpressionFactory in the
++		// context.
++		putContext( ExpressionFactory.class, expressionFactory );
++	}
++
++	@Override
++	public void addELResolver(ELResolver cELResolver) {
++		throw new UnsupportedOperationException( getClass().getSimpleName() + " does not support addELResolver." );
++	}
++
++	@Override
++	public ELResolver getELResolver() {
++		return DEFAULT_RESOLVER;
++	}
++
++}
+diff --git a/engine/src/main/java/org/hibernate/validator/internal/engine/validationcontext/AbstractValidationContext.java b/engine/src/main/java/org/hibernate/validator/internal/engine/validationcontext/AbstractValidationContext.java
+index 16a001555a..747117bfc4 100644
+--- a/engine/src/main/java/org/hibernate/validator/internal/engine/validationcontext/AbstractValidationContext.java
++++ b/engine/src/main/java/org/hibernate/validator/internal/engine/validationcontext/AbstractValidationContext.java
+@@ -35,6 +35,7 @@
+ import org.hibernate.validator.internal.util.logging.Log;
+ import org.hibernate.validator.internal.util.logging.LoggerFactory;
+ import org.hibernate.validator.internal.util.stereotypes.Lazy;
++import org.hibernate.validator.messageinterpolation.ExpressionLanguageFeatureLevel;
+ 
+ /**
+  * Context object keeping track of all required data for a validation call.
+@@ -229,7 +230,8 @@ public void addConstraintFailure(
+ 		String messageTemplate = constraintViolationCreationContext.getMessage();
+ 		String interpolatedMessage = interpolate(
+ 				messageTemplate,
+-				constraintViolationCreationContext.isExpressionLanguageEnabled(),
++				constraintViolationCreationContext.getExpressionLanguageFeatureLevel(),
++				constraintViolationCreationContext.isCustomViolation(),
+ 				valueContext.getCurrentValidatedValue(),
+ 				descriptor,
+ 				constraintViolationCreationContext.getPath(),
+@@ -287,7 +289,9 @@ public ConstraintValidatorContextImpl createConstraintValidatorContextFor(Constr
+ 				validatorScopedContext.getClockProvider(),
+ 				path,
+ 				constraintDescriptor,
+-				validatorScopedContext.getConstraintValidatorPayload()
++				validatorScopedContext.getConstraintValidatorPayload(),
++				validatorScopedContext.getConstraintExpressionLanguageFeatureLevel(),
++				validatorScopedContext.getCustomViolationExpressionLanguageFeatureLevel()
+ 		);
+ 	}
+ 
+@@ -296,7 +300,8 @@ public ConstraintValidatorContextImpl createConstraintValidatorContextFor(Constr
+ 
+ 	private String interpolate(
+ 			String messageTemplate,
+-			boolean expressionLanguageEnabled,
++			ExpressionLanguageFeatureLevel expressionLanguageFeatureLevel,
++			boolean customViolation,
+ 			Object validatedValue,
+ 			ConstraintDescriptor<?> descriptor,
+ 			Path path,
+@@ -309,7 +314,8 @@ private String interpolate(
+ 				path,
+ 				messageParameters,
+ 				expressionVariables,
+-				expressionLanguageEnabled
++				expressionLanguageFeatureLevel,
++				customViolation
+ 		);
+ 
+ 		try {
+diff --git a/engine/src/main/java/org/hibernate/validator/internal/engine/validationcontext/ParameterExecutableValidationContext.java b/engine/src/main/java/org/hibernate/validator/internal/engine/validationcontext/ParameterExecutableValidationContext.java
+index eff56cfa53..6dd5370855 100644
+--- a/engine/src/main/java/org/hibernate/validator/internal/engine/validationcontext/ParameterExecutableValidationContext.java
++++ b/engine/src/main/java/org/hibernate/validator/internal/engine/validationcontext/ParameterExecutableValidationContext.java
+@@ -102,7 +102,9 @@ public ConstraintValidatorContextImpl createConstraintValidatorContextFor(Constr
+ 					validatorScopedContext.getClockProvider(),
+ 					path,
+ 					constraintDescriptor,
+-					validatorScopedContext.getConstraintValidatorPayload()
++					validatorScopedContext.getConstraintValidatorPayload(),
++					validatorScopedContext.getConstraintExpressionLanguageFeatureLevel(),
++					validatorScopedContext.getCustomViolationExpressionLanguageFeatureLevel()
+ 			);
+ 		}
+ 
+@@ -110,7 +112,9 @@ public ConstraintValidatorContextImpl createConstraintValidatorContextFor(Constr
+ 				validatorScopedContext.getClockProvider(),
+ 				path,
+ 				constraintDescriptor,
+-				validatorScopedContext.getConstraintValidatorPayload()
++				validatorScopedContext.getConstraintValidatorPayload(),
++				validatorScopedContext.getConstraintExpressionLanguageFeatureLevel(),
++				validatorScopedContext.getCustomViolationExpressionLanguageFeatureLevel()
+ 		);
+ 	}
+ 
+diff --git a/engine/src/main/java/org/hibernate/validator/internal/engine/validationcontext/ValidatorScopedContext.java b/engine/src/main/java/org/hibernate/validator/internal/engine/validationcontext/ValidatorScopedContext.java
+index 3e68a9f801..101d78db3d 100644
+--- a/engine/src/main/java/org/hibernate/validator/internal/engine/validationcontext/ValidatorScopedContext.java
++++ b/engine/src/main/java/org/hibernate/validator/internal/engine/validationcontext/ValidatorScopedContext.java
+@@ -14,6 +14,7 @@
+ 
+ import org.hibernate.validator.internal.engine.ValidatorFactoryScopedContext;
+ import org.hibernate.validator.internal.util.ExecutableParameterNameProvider;
++import org.hibernate.validator.messageinterpolation.ExpressionLanguageFeatureLevel;
+ import org.hibernate.validator.spi.scripting.ScriptEvaluatorFactory;
+ 
+ /**
+@@ -65,6 +66,16 @@ public class ValidatorScopedContext {
+ 	 */
+ 	private final Object constraintValidatorPayload;
+ 
++	/**
++	 * Hibernate Validator specific flag to define Expression Language feature levels for constraints.
++	 */
++	private final ExpressionLanguageFeatureLevel constraintExpressionLanguageFeatureLevel;
++
++	/**
++	 * Hibernate Validator specific flag to define Expression Language feature levels for custom violations.
++	 */
++	private final ExpressionLanguageFeatureLevel customViolationExpressionLanguageFeatureLevel;
++
+ 	public ValidatorScopedContext(ValidatorFactoryScopedContext validatorFactoryScopedContext) {
+ 		this.messageInterpolator = validatorFactoryScopedContext.getMessageInterpolator();
+ 		this.parameterNameProvider = validatorFactoryScopedContext.getParameterNameProvider();
+@@ -74,6 +85,8 @@ public ValidatorScopedContext(ValidatorFactoryScopedContext validatorFactoryScop
+ 		this.failFast = validatorFactoryScopedContext.isFailFast();
+ 		this.traversableResolverResultCacheEnabled = validatorFactoryScopedContext.isTraversableResolverResultCacheEnabled();
+ 		this.constraintValidatorPayload = validatorFactoryScopedContext.getConstraintValidatorPayload();
++		this.constraintExpressionLanguageFeatureLevel = validatorFactoryScopedContext.getConstraintExpressionLanguageFeatureLevel();
++		this.customViolationExpressionLanguageFeatureLevel = validatorFactoryScopedContext.getCustomViolationExpressionLanguageFeatureLevel();
+ 	}
+ 
+ 	public MessageInterpolator getMessageInterpolator() {
+@@ -107,4 +120,12 @@ public boolean isTraversableResolverResultCacheEnabled() {
+ 	public Object getConstraintValidatorPayload() {
+ 		return this.constraintValidatorPayload;
+ 	}
++
++	public ExpressionLanguageFeatureLevel getConstraintExpressionLanguageFeatureLevel() {
++		return this.constraintExpressionLanguageFeatureLevel;
++	}
++
++	public ExpressionLanguageFeatureLevel getCustomViolationExpressionLanguageFeatureLevel() {
++		return customViolationExpressionLanguageFeatureLevel;
++	}
+ }
+diff --git a/engine/src/main/java/org/hibernate/validator/internal/util/logging/Log.java b/engine/src/main/java/org/hibernate/validator/internal/util/logging/Log.java
+index c573751cee..58c7ddebe3 100644
+--- a/engine/src/main/java/org/hibernate/validator/internal/util/logging/Log.java
++++ b/engine/src/main/java/org/hibernate/validator/internal/util/logging/Log.java
+@@ -63,6 +63,7 @@
+ import org.hibernate.validator.internal.util.logging.formatter.ObjectArrayFormatter;
+ import org.hibernate.validator.internal.util.logging.formatter.TypeFormatter;
+ import org.hibernate.validator.internal.xml.mapping.ContainerElementTypePath;
++import org.hibernate.validator.messageinterpolation.ExpressionLanguageFeatureLevel;
+ import org.hibernate.validator.spi.messageinterpolation.LocaleResolver;
+ import org.hibernate.validator.spi.nodenameprovider.PropertyNodeNameProvider;
+ import org.hibernate.validator.spi.properties.GetterPropertySelectionStrategy;
+@@ -912,4 +913,29 @@ ConstraintDefinitionException getConstraintValidatorDefinitionConstraintMismatch
+ 	@LogMessage(level = WARN)
+ 	@Message(id = 257, value = "Expression variables have been defined for constraint %1$s while Expression Language is not enabled.")
+ 	void expressionVariablesDefinedWithExpressionLanguageNotEnabled(Class<? extends Annotation> constraintAnnotation);
++
++	@Message(id = 258, value = "Expressions should not be resolved when Expression Language features are disabled.")
++	IllegalStateException expressionsNotResolvedWhenExpressionLanguageFeaturesDisabled();
++
++	@Message(id = 259, value = "Provided Expression Language feature level is not supported.")
++	IllegalStateException expressionsLanguageFeatureLevelNotSupported();
++
++	@LogMessage(level = DEBUG)
++	@Message(id = 260, value = "Expression Language feature level for constraints set to %1$s.")
++	void logConstraintExpressionLanguageFeatureLevel(ExpressionLanguageFeatureLevel expressionLanguageFeatureLevel);
++
++	@LogMessage(level = DEBUG)
++	@Message(id = 261, value = "Expression Language feature level for custom violations set to %1$s.")
++	void logCustomViolationExpressionLanguageFeatureLevel(ExpressionLanguageFeatureLevel expressionLanguageFeatureLevel);
++
++	@Message(id = 262, value = "Unable to find an expression language feature level for value %s.")
++	ValidationException invalidExpressionLanguageFeatureLevelValue(String expressionLanguageFeatureLevelName, @Cause IllegalArgumentException e);
++
++	@LogMessage(level = WARN)
++	@Message(id = 263, value = "EL expression '%s' references an unknown method.")
++	void unknownMethodInExpressionLanguage(String expression, @Cause Exception e);
++
++	@LogMessage(level = ERROR)
++	@Message(id = 264, value = "Unable to interpolate EL expression '%s' as it uses a disabled feature.")
++	void disabledFeatureInExpressionLanguage(String expression, @Cause Exception e);
+ }
+diff --git a/engine/src/main/java/org/hibernate/validator/messageinterpolation/AbstractMessageInterpolator.java b/engine/src/main/java/org/hibernate/validator/messageinterpolation/AbstractMessageInterpolator.java
+index 4ce1300947..e6aa0197bd 100644
+--- a/engine/src/main/java/org/hibernate/validator/messageinterpolation/AbstractMessageInterpolator.java
++++ b/engine/src/main/java/org/hibernate/validator/messageinterpolation/AbstractMessageInterpolator.java
+@@ -416,7 +416,7 @@ private String interpolateMessage(String message, Context context, Locale locale
+ 			// HibernateMessageInterpolatorContext
+ 			// but it can be a spec Context in the Jakarta Bean Validation TCK.
+ 			if ( !( context instanceof HibernateMessageInterpolatorContext )
+-					|| ( (HibernateMessageInterpolatorContext) context ).isExpressionLanguageEnabled() ) {
++					|| ( (HibernateMessageInterpolatorContext) context ).getExpressionLanguageFeatureLevel() != ExpressionLanguageFeatureLevel.NONE ) {
+ 				resolvedMessage = interpolateExpression(
+ 						new TokenIterator( getParameterTokens( resolvedMessage, tokenizedELMessages, InterpolationTermType.EL ) ),
+ 						context,
+@@ -527,7 +527,7 @@ private String interpolateExpression(TokenIterator tokenIterator, Context contex
+ 		return tokenIterator.getInterpolatedMessage();
+ 	}
+ 
+-	public abstract String interpolate(Context context, Locale locale, String term);
++	protected abstract String interpolate(Context context, Locale locale, String term);
+ 
+ 	private String resolveParameter(String parameterName, ResourceBundle bundle, Locale locale, boolean recursive)
+ 			throws MessageDescriptorFormatException {
+diff --git a/engine/src/main/java/org/hibernate/validator/messageinterpolation/ExpressionLanguageFeatureLevel.java b/engine/src/main/java/org/hibernate/validator/messageinterpolation/ExpressionLanguageFeatureLevel.java
+new file mode 100644
+index 0000000000..bbb5ca9795
+--- /dev/null
++++ b/engine/src/main/java/org/hibernate/validator/messageinterpolation/ExpressionLanguageFeatureLevel.java
+@@ -0,0 +1,90 @@
++/*
++ * Hibernate Validator, declare and validate application constraints
++ *
++ * License: Apache License, Version 2.0
++ * See the license.txt file in the root directory or <http://www.apache.org/licenses/LICENSE-2.0>.
++ */
++package org.hibernate.validator.messageinterpolation;
++
++import org.hibernate.validator.Incubating;
++import org.hibernate.validator.constraintvalidation.HibernateConstraintValidatorContext;
++
++/**
++ * Indicates the level of features enabled for the Expression Language engine.
++ *
++ * @since 6.2
++ */
++@Incubating
++public enum ExpressionLanguageFeatureLevel {
++
++	/**
++	 * The default Expression Language feature level.
++	 * <p>
++	 * Depends on the context.
++	 * <p>
++	 * For standard constraint messages, it is {@link ExpressionLanguageFeatureLevel#BEAN_PROPERTIES}.
++	 * <p>
++	 * For custom violations, the default is {@link ExpressionLanguageFeatureLevel#NONE} and, if Expression Language is
++	 * enabled for a given custom violation via the API, the default becomes
++	 * {@link ExpressionLanguageFeatureLevel#VARIABLES} in the context of this given custom violation.
++	 */
++	DEFAULT("default"),
++
++	/**
++	 * Expression Language expressions are not interpolated.
++	 */
++	NONE("none"),
++
++	/**
++	 * Only allows access to the variables injected via
++	 * {@link HibernateConstraintValidatorContext#addExpressionVariable(String, Object)}, the Jakarta Bean
++	 * Validation-defined {@code formatter} and the {@code ResourceBundle}s.
++	 */
++	VARIABLES("variables"),
++
++	/**
++	 * Only allows to what is allowed with the {@code variables} level plus access to bean properties.
++	 * <p>
++	 * This is the minimal level to have a specification-compliant implementation.
++	 */
++	BEAN_PROPERTIES("bean-properties"),
++
++	/**
++	 * This level allows what is allowed with the {@code bean-properties} level plus bean methods execution and can lead
++	 * to serious security issues, including arbitrary code execution, if not very carefully handled.
++	 * <p>
++	 * If using this level, you need to be sure you are not injecting user input in an expression without properly
++	 * escaping it using {@link HibernateConstraintValidatorContext#addExpressionVariable(String, Object)}.
++	 */
++	BEAN_METHODS("bean-methods");
++
++	private final String externalRepresentation;
++
++	ExpressionLanguageFeatureLevel(String externalRepresentation) {
++		this.externalRepresentation = externalRepresentation;
++	}
++
++	public static ExpressionLanguageFeatureLevel of(String value) {
++		for ( ExpressionLanguageFeatureLevel level : values() ) {
++			if ( level.externalRepresentation.equals( value ) ) {
++				return level;
++			}
++		}
++
++		return ExpressionLanguageFeatureLevel.valueOf( value );
++	}
++
++	public static ExpressionLanguageFeatureLevel interpretDefaultForConstraints(ExpressionLanguageFeatureLevel value) {
++		if ( value == DEFAULT ) {
++			return BEAN_PROPERTIES;
++		}
++		return value;
++	}
++
++	public static ExpressionLanguageFeatureLevel interpretDefaultForCustomViolations(ExpressionLanguageFeatureLevel value) {
++		if ( value == DEFAULT ) {
++			return VARIABLES;
++		}
++		return value;
++	}
++}
+diff --git a/engine/src/main/java/org/hibernate/validator/messageinterpolation/HibernateMessageInterpolatorContext.java b/engine/src/main/java/org/hibernate/validator/messageinterpolation/HibernateMessageInterpolatorContext.java
+index ee9ca73f63..72fdb4937d 100644
+--- a/engine/src/main/java/org/hibernate/validator/messageinterpolation/HibernateMessageInterpolatorContext.java
++++ b/engine/src/main/java/org/hibernate/validator/messageinterpolation/HibernateMessageInterpolatorContext.java
+@@ -50,9 +50,9 @@ public interface HibernateMessageInterpolatorContext extends MessageInterpolator
+ 	Path getPropertyPath();
+ 
+ 	/**
+-	 * @return if Expression Language should be enabled if supported by the {@code MessageInterpolator}.
++	 * @return the level of features enabled for the Expression Language engine
+ 	 *
+-	 * @return 6.1.7
++	 * @since 6.2
+ 	 */
+-	boolean isExpressionLanguageEnabled();
++	ExpressionLanguageFeatureLevel getExpressionLanguageFeatureLevel();
+ }
+diff --git a/engine/src/main/java/org/hibernate/validator/messageinterpolation/ParameterMessageInterpolator.java b/engine/src/main/java/org/hibernate/validator/messageinterpolation/ParameterMessageInterpolator.java
+index 41c24e9cd5..0cd1c7f573 100644
+--- a/engine/src/main/java/org/hibernate/validator/messageinterpolation/ParameterMessageInterpolator.java
++++ b/engine/src/main/java/org/hibernate/validator/messageinterpolation/ParameterMessageInterpolator.java
+@@ -52,7 +52,7 @@ public ParameterMessageInterpolator(Set<Locale> locales, Locale defaultLocale, L
+ 	}
+ 
+ 	@Override
+-	public String interpolate(Context context, Locale locale, String term) {
++	protected String interpolate(Context context, Locale locale, String term) {
+ 		if ( InterpolationTerm.isElExpression( term ) ) {
+ 			LOG.warnElIsUnsupported( term );
+ 			return term;
+diff --git a/engine/src/main/java/org/hibernate/validator/messageinterpolation/ResourceBundleMessageInterpolator.java b/engine/src/main/java/org/hibernate/validator/messageinterpolation/ResourceBundleMessageInterpolator.java
+index 7607e82f8c..1ac75d731b 100644
+--- a/engine/src/main/java/org/hibernate/validator/messageinterpolation/ResourceBundleMessageInterpolator.java
++++ b/engine/src/main/java/org/hibernate/validator/messageinterpolation/ResourceBundleMessageInterpolator.java
+@@ -156,7 +156,7 @@ public ResourceBundleMessageInterpolator(ResourceBundleLocator userResourceBundl
+ 	}
+ 
+ 	@Override
+-	public String interpolate(Context context, Locale locale, String term) {
++	protected String interpolate(Context context, Locale locale, String term) {
+ 		InterpolationTerm expression = new InterpolationTerm( term, locale, expressionFactory );
+ 		return expression.interpolate( context );
+ 	}
+diff --git a/engine/src/test/java/org/hibernate/validator/test/constraints/ConstraintValidatorContextImplTest.java b/engine/src/test/java/org/hibernate/validator/test/constraints/ConstraintValidatorContextImplTest.java
+index 0d5042b516..12d2920f59 100644
+--- a/engine/src/test/java/org/hibernate/validator/test/constraints/ConstraintValidatorContextImplTest.java
++++ b/engine/src/test/java/org/hibernate/validator/test/constraints/ConstraintValidatorContextImplTest.java
+@@ -21,6 +21,7 @@
+ import org.hibernate.validator.internal.engine.constraintvalidation.ConstraintValidatorContextImpl;
+ import org.hibernate.validator.internal.engine.constraintvalidation.ConstraintViolationCreationContext;
+ import org.hibernate.validator.internal.engine.path.PathImpl;
++import org.hibernate.validator.messageinterpolation.ExpressionLanguageFeatureLevel;
+ import org.hibernate.validator.testutil.ConstraintViolationAssert.PathExpectation;
+ import org.testng.annotations.Test;
+ 
+@@ -226,7 +227,8 @@ private ConstraintValidatorContextImpl createEmptyConstraintValidatorContextImpl
+ 		PathImpl path = PathImpl.createRootPath();
+ 		path.addBeanNode();
+ 
+-		ConstraintValidatorContextImpl context = new ConstraintValidatorContextImpl( null, path, null, null );
++		ConstraintValidatorContextImpl context = new ConstraintValidatorContextImpl( null, path, null, null, ExpressionLanguageFeatureLevel.BEAN_PROPERTIES,
++				ExpressionLanguageFeatureLevel.NONE );
+ 		context.disableDefaultConstraintViolation();
+ 		return context;
+ 	}
+diff --git a/engine/src/test/java/org/hibernate/validator/test/el/ConstraintExpressionLanguageFeatureLevelTest.java b/engine/src/test/java/org/hibernate/validator/test/el/ConstraintExpressionLanguageFeatureLevelTest.java
+new file mode 100644
+index 0000000000..5d60fa5203
+--- /dev/null
++++ b/engine/src/test/java/org/hibernate/validator/test/el/ConstraintExpressionLanguageFeatureLevelTest.java
+@@ -0,0 +1,257 @@
++/*
++ * Hibernate Validator, declare and validate application constraints
++ *
++ * License: Apache License, Version 2.0
++ * See the license.txt file in the root directory or <http://www.apache.org/licenses/LICENSE-2.0>.
++ */
++package org.hibernate.validator.test.el;
++
++import static java.lang.annotation.ElementType.ANNOTATION_TYPE;
++import static java.lang.annotation.ElementType.FIELD;
++import static java.lang.annotation.ElementType.METHOD;
++import static java.lang.annotation.ElementType.PARAMETER;
++import static java.lang.annotation.RetentionPolicy.RUNTIME;
++import static org.hibernate.validator.testutil.ConstraintViolationAssert.assertThat;
++import static org.hibernate.validator.testutil.ConstraintViolationAssert.violationOf;
++
++import java.lang.annotation.Documented;
++import java.lang.annotation.Retention;
++import java.lang.annotation.Target;
++
++import jakarta.validation.Constraint;
++import jakarta.validation.ConstraintValidator;
++import jakarta.validation.ConstraintValidatorContext;
++import jakarta.validation.Payload;
++import jakarta.validation.Validation;
++import jakarta.validation.Validator;
++import jakarta.validation.ValidatorFactory;
++
++import org.hibernate.validator.HibernateValidator;
++import org.hibernate.validator.messageinterpolation.ExpressionLanguageFeatureLevel;
++import org.hibernate.validator.testutil.TestForIssue;
++import org.hibernate.validator.testutil.ValidationXmlTestHelper;
++import org.hibernate.validator.testutils.ValidatorUtil;
++import org.testng.annotations.BeforeClass;
++import org.testng.annotations.Test;
++
++/**
++ * @author Guillaume Smet
++ */
++@TestForIssue(jiraKey = "HV-1816")
++public class ConstraintExpressionLanguageFeatureLevelTest {
++
++	private static ValidationXmlTestHelper validationXmlTestHelper;
++
++	@BeforeClass
++	public static void setupValidationXmlTestHelper() {
++		validationXmlTestHelper = new ValidationXmlTestHelper( ConstraintExpressionLanguageFeatureLevelTest.class );
++	}
++
++	@Test
++	public void default_expression_language_feature_level() {
++		ValidatorFactory validatorFactory = Validation.byProvider( HibernateValidator.class )
++				.configure()
++				.buildValidatorFactory();
++
++		Validator validator = validatorFactory.getValidator();
++
++		assertThat( validator.validate( new VariablesBean( "value" ) ) )
++				.containsOnlyViolations( violationOf( VariablesConstraint.class ).withMessage( "Variable: value" ) );
++		assertThat( validator.validate( new BeanPropertiesBean( "value" ) ) )
++				.containsOnlyViolations( violationOf( BeanPropertiesConstraint.class ).withMessage( "Bean property: 118" ) );
++		assertThat( validator.validate( new BeanMethodsBean() ) )
++				.containsOnlyViolations( violationOf( BeanMethodsConstraint.class ).withMessage( "Method execution: ${'aaaa'.substring(0, 1)}" ) );
++	}
++
++	@Test
++	public void none_expression_language_feature_level() {
++		ValidatorFactory validatorFactory = Validation.byProvider( HibernateValidator.class )
++				.configure()
++				.constraintExpressionLanguageFeatureLevel( ExpressionLanguageFeatureLevel.NONE )
++				.buildValidatorFactory();
++
++		Validator validator = validatorFactory.getValidator();
++
++		assertThat( validator.validate( new VariablesBean( "value" ) ) )
++				.containsOnlyViolations( violationOf( VariablesConstraint.class ).withMessage( "Variable: ${validatedValue}" ) );
++		assertThat( validator.validate( new BeanPropertiesBean( "value" ) ) )
++				.containsOnlyViolations( violationOf( BeanPropertiesConstraint.class ).withMessage( "Bean property: ${validatedValue.bytes[0]}" ) );
++		assertThat( validator.validate( new BeanMethodsBean() ) )
++				.containsOnlyViolations( violationOf( BeanMethodsConstraint.class ).withMessage( "Method execution: ${'aaaa'.substring(0, 1)}" ) );
++	}
++
++	@Test
++	public void variables_expression_language_feature_level() {
++		ValidatorFactory validatorFactory = Validation.byProvider( HibernateValidator.class )
++				.configure()
++				.constraintExpressionLanguageFeatureLevel( ExpressionLanguageFeatureLevel.VARIABLES )
++				.buildValidatorFactory();
++
++		Validator validator = validatorFactory.getValidator();
++
++		assertThat( validator.validate( new VariablesBean( "value" ) ) )
++				.containsOnlyViolations( violationOf( VariablesConstraint.class ).withMessage( "Variable: value" ) );
++		assertThat( validator.validate( new BeanPropertiesBean( "value" ) ) )
++				.containsOnlyViolations( violationOf( BeanPropertiesConstraint.class ).withMessage( "Bean property: ${validatedValue.bytes[0]}" ) );
++		assertThat( validator.validate( new BeanMethodsBean() ) )
++				.containsOnlyViolations( violationOf( BeanMethodsConstraint.class ).withMessage( "Method execution: ${'aaaa'.substring(0, 1)}" ) );
++	}
++
++	@Test
++	public void bean_properties_expression_language_feature_level() {
++		ValidatorFactory validatorFactory = Validation.byProvider( HibernateValidator.class )
++				.configure()
++				.constraintExpressionLanguageFeatureLevel( ExpressionLanguageFeatureLevel.BEAN_PROPERTIES )
++				.buildValidatorFactory();
++
++		Validator validator = validatorFactory.getValidator();
++
++		assertThat( validator.validate( new VariablesBean( "value" ) ) )
++				.containsOnlyViolations( violationOf( VariablesConstraint.class ).withMessage( "Variable: value" ) );
++		assertThat( validator.validate( new BeanPropertiesBean( "value" ) ) )
++				.containsOnlyViolations( violationOf( BeanPropertiesConstraint.class ).withMessage( "Bean property: 118" ) );
++		assertThat( validator.validate( new BeanMethodsBean() ) )
++				.containsOnlyViolations( violationOf( BeanMethodsConstraint.class ).withMessage( "Method execution: ${'aaaa'.substring(0, 1)}" ) );
++	}
++
++	@Test
++	public void bean_methods_expression_language_feature_level() {
++		ValidatorFactory validatorFactory = Validation.byProvider( HibernateValidator.class )
++				.configure()
++				.constraintExpressionLanguageFeatureLevel( ExpressionLanguageFeatureLevel.BEAN_METHODS )
++				.buildValidatorFactory();
++
++		Validator validator = validatorFactory.getValidator();
++
++		assertThat( validator.validate( new VariablesBean( "value" ) ) )
++				.containsOnlyViolations( violationOf( VariablesConstraint.class ).withMessage( "Variable: value" ) );
++		assertThat( validator.validate( new BeanPropertiesBean( "value" ) ) )
++				.containsOnlyViolations( violationOf( BeanPropertiesConstraint.class ).withMessage( "Bean property: 118" ) );
++		assertThat( validator.validate( new BeanMethodsBean() ) )
++				.containsOnlyViolations( violationOf( BeanMethodsConstraint.class ).withMessage( "Method execution: a" ) );
++	}
++
++	@Test
++	public void property_default_value() {
++		validationXmlTestHelper.runWithCustomValidationXml(
++				"validation-constraints-default.xml", new Runnable() {
++
++					@Override
++					public void run() {
++						Validator validator = ValidatorUtil.getValidator();
++
++						assertThat( validator.validate( new VariablesBean( "value" ) ) )
++								.containsOnlyViolations( violationOf( VariablesConstraint.class ).withMessage( "Variable: value" ) );
++						assertThat( validator.validate( new BeanPropertiesBean( "value" ) ) )
++								.containsOnlyViolations( violationOf( BeanPropertiesConstraint.class ).withMessage( "Bean property: 118" ) );
++						assertThat( validator.validate( new BeanMethodsBean() ) )
++								.containsOnlyViolations( violationOf( BeanMethodsConstraint.class ).withMessage( "Method execution: ${'aaaa'.substring(0, 1)}" ) );
++					}
++				} );
++	}
++
++	@Test
++	public void property_bean_methods() {
++		validationXmlTestHelper.runWithCustomValidationXml(
++				"validation-constraints-bean-methods.xml", new Runnable() {
++
++					@Override
++					public void run() {
++						Validator validator = ValidatorUtil.getValidator();
++
++						assertThat( validator.validate( new VariablesBean( "value" ) ) )
++						.containsOnlyViolations( violationOf( VariablesConstraint.class ).withMessage( "Variable: value" ) );
++						assertThat( validator.validate( new BeanPropertiesBean( "value" ) ) )
++								.containsOnlyViolations( violationOf( BeanPropertiesConstraint.class ).withMessage( "Bean property: 118" ) );
++						assertThat( validator.validate( new BeanMethodsBean() ) )
++								.containsOnlyViolations( violationOf( BeanMethodsConstraint.class ).withMessage( "Method execution: a" ) );
++					}
++				} );
++	}
++
++	@Target({ FIELD, METHOD, PARAMETER, ANNOTATION_TYPE })
++	@Retention(RUNTIME)
++	@Documented
++	@Constraint(validatedBy = { VariablesStringValidator.class })
++	private @interface VariablesConstraint {
++		String message() default "Variable: ${validatedValue}";
++
++		Class<?>[] groups() default { };
++
++		Class<? extends Payload>[] payload() default { };
++	}
++
++	public static class VariablesStringValidator implements ConstraintValidator<VariablesConstraint, String> {
++
++		@Override
++		public boolean isValid(String value, ConstraintValidatorContext context) {
++			return false;
++		}
++	}
++
++	public static class VariablesBean {
++
++		public VariablesBean(String value) {
++			this.value = value;
++		}
++
++		@VariablesConstraint
++		public String value;
++	}
++
++	@Target({ FIELD, METHOD, PARAMETER, ANNOTATION_TYPE })
++	@Retention(RUNTIME)
++	@Documented
++	@Constraint(validatedBy = { BeanPropertiesConstraintStringValidator.class })
++	private @interface BeanPropertiesConstraint {
++		String message() default "Bean property: ${validatedValue.bytes[0]}";
++
++		Class<?>[] groups() default { };
++
++		Class<? extends Payload>[] payload() default { };
++	}
++
++	public static class BeanPropertiesConstraintStringValidator implements ConstraintValidator<BeanPropertiesConstraint, String> {
++
++		@Override
++		public boolean isValid(String value, ConstraintValidatorContext context) {
++			return false;
++		}
++	}
++
++	public static class BeanPropertiesBean {
++
++		public BeanPropertiesBean(String value) {
++			this.value = value;
++		}
++
++		@BeanPropertiesConstraint
++		public String value;
++	}
++
++	@Target({ FIELD, METHOD, PARAMETER, ANNOTATION_TYPE })
++	@Retention(RUNTIME)
++	@Documented
++	@Constraint(validatedBy = { BeanMethodsConstraintStringValidator.class })
++	private @interface BeanMethodsConstraint {
++		String message() default "Method execution: ${'aaaa'.substring(0, 1)}";
++
++		Class<?>[] groups() default { };
++
++		Class<? extends Payload>[] payload() default { };
++	}
++
++	public static class BeanMethodsConstraintStringValidator implements ConstraintValidator<BeanMethodsConstraint, String> {
++
++		@Override
++		public boolean isValid(String value, ConstraintValidatorContext context) {
++			return false;
++		}
++	}
++
++	public static class BeanMethodsBean {
++
++		@BeanMethodsConstraint
++		public String value;
++	}
++}
+diff --git a/engine/src/test/java/org/hibernate/validator/test/el/CustomViolationExpressionLanguageFeatureLevelTest.java b/engine/src/test/java/org/hibernate/validator/test/el/CustomViolationExpressionLanguageFeatureLevelTest.java
+new file mode 100644
+index 0000000000..a3547c2e5b
+--- /dev/null
++++ b/engine/src/test/java/org/hibernate/validator/test/el/CustomViolationExpressionLanguageFeatureLevelTest.java
+@@ -0,0 +1,388 @@
++/*
++ * Hibernate Validator, declare and validate application constraints
++ *
++ * License: Apache License, Version 2.0
++ * See the license.txt file in the root directory or <http://www.apache.org/licenses/LICENSE-2.0>.
++ */
++package org.hibernate.validator.test.el;
++
++import static java.lang.annotation.ElementType.ANNOTATION_TYPE;
++import static java.lang.annotation.ElementType.FIELD;
++import static java.lang.annotation.ElementType.METHOD;
++import static java.lang.annotation.ElementType.PARAMETER;
++import static java.lang.annotation.RetentionPolicy.RUNTIME;
++import static org.hibernate.validator.testutil.ConstraintViolationAssert.assertThat;
++import static org.hibernate.validator.testutil.ConstraintViolationAssert.violationOf;
++import static org.testng.Assert.assertTrue;
++
++import java.lang.annotation.Documented;
++import java.lang.annotation.Retention;
++import java.lang.annotation.Target;
++
++import jakarta.validation.Constraint;
++import jakarta.validation.ConstraintValidator;
++import jakarta.validation.ConstraintValidatorContext;
++import jakarta.validation.Payload;
++import jakarta.validation.Validation;
++import jakarta.validation.Validator;
++import jakarta.validation.ValidatorFactory;
++
++import org.apache.logging.log4j.Level;
++import org.apache.logging.log4j.core.Logger;
++import org.apache.logging.log4j.core.LoggerContext;
++import org.apache.logging.log4j.test.appender.ListAppender;
++import org.hibernate.validator.HibernateValidator;
++import org.hibernate.validator.constraintvalidation.HibernateConstraintValidatorContext;
++import org.hibernate.validator.internal.engine.constraintvalidation.ConstraintValidatorContextImpl;
++import org.hibernate.validator.messageinterpolation.ExpressionLanguageFeatureLevel;
++import org.hibernate.validator.testutil.TestForIssue;
++import org.hibernate.validator.testutil.ValidationXmlTestHelper;
++import org.hibernate.validator.testutils.ValidatorUtil;
++import org.testng.annotations.AfterTest;
++import org.testng.annotations.BeforeClass;
++import org.testng.annotations.BeforeTest;
++import org.testng.annotations.Test;
++
++/**
++ * @author Guillaume Smet
++ */
++@TestForIssue(jiraKey = "HV-1816")
++public class CustomViolationExpressionLanguageFeatureLevelTest {
++
++	private static ValidationXmlTestHelper validationXmlTestHelper;
++
++	private ListAppender constraintValidatorContextImplLoglistAppender;
++
++
++	@BeforeClass
++	public static void setupValidationXmlTestHelper() {
++		validationXmlTestHelper = new ValidationXmlTestHelper( ConstraintExpressionLanguageFeatureLevelTest.class );
++	}
++
++	@BeforeTest
++	public void setUp() {
++		LoggerContext context = LoggerContext.getContext( false );
++		Logger logger = context.getLogger( ConstraintValidatorContextImpl.class.getName() );
++		constraintValidatorContextImplLoglistAppender = (ListAppender) logger.getAppenders().get( "List" );
++		constraintValidatorContextImplLoglistAppender.clear();
++	}
++
++	@AfterTest
++	public void tearDown() {
++		constraintValidatorContextImplLoglistAppender.clear();
++	}
++
++	@Test
++	public void default_behavior() {
++		ValidatorFactory validatorFactory = Validation.byProvider( HibernateValidator.class )
++				.configure()
++				.buildValidatorFactory();
++
++		Validator validator = validatorFactory.getValidator();
++
++		assertThat( validator.validate( new DefaultLevelBean() ) )
++				.containsOnlyViolations( violationOf( DefaultLevelConstraint.class ).withMessage( "Variable: ${validatedValue}" ),
++						violationOf( DefaultLevelConstraint.class ).withMessage( "Bean property: ${validatedValue.bytes[0]}" ),
++						violationOf( DefaultLevelConstraint.class ).withMessage( "Method execution: ${'aaaa'.substring(0, 1)}" ) );
++	}
++
++	@Test
++	public void enable_el() {
++		ValidatorFactory validatorFactory = Validation.byProvider( HibernateValidator.class )
++				.configure()
++				.buildValidatorFactory();
++
++		Validator validator = validatorFactory.getValidator();
++
++		assertThat( validator.validate( new EnableELBean( "value" ) ) )
++				.containsOnlyViolations( violationOf( EnableELConstraint.class ).withMessage( "Variable: value" ),
++						violationOf( EnableELConstraint.class ).withMessage( "Bean property: ${validatedValue.bytes[0]}" ),
++						violationOf( EnableELConstraint.class ).withMessage( "Method execution: ${'aaaa'.substring(0, 1)}" ) );
++	}
++
++	@Test
++	public void enable_el_bean_properties() {
++		ValidatorFactory validatorFactory = Validation.byProvider( HibernateValidator.class )
++				.configure()
++				.buildValidatorFactory();
++
++		Validator validator = validatorFactory.getValidator();
++
++		assertThat( validator.validate( new EnableELBeanPropertiesBean( "value" ) ) )
++				.containsOnlyViolations( violationOf( EnableELBeanPropertiesConstraint.class ).withMessage( "Variable: value" ),
++						violationOf( EnableELBeanPropertiesConstraint.class ).withMessage( "Bean property: 118" ),
++						violationOf( EnableELBeanPropertiesConstraint.class ).withMessage( "Method execution: ${'aaaa'.substring(0, 1)}" ) );
++	}
++
++	@Test
++	public void enable_el_bean_methods() {
++		ValidatorFactory validatorFactory = Validation.byProvider( HibernateValidator.class )
++				.configure()
++				.buildValidatorFactory();
++
++		Validator validator = validatorFactory.getValidator();
++
++		assertThat( validator.validate( new EnableELBeanMethodsBean( "value" ) ) )
++				.containsOnlyViolations( violationOf( EnableELBeanMethodsConstraint.class ).withMessage( "Variable: value" ),
++						violationOf( EnableELBeanMethodsConstraint.class ).withMessage( "Bean property: 118" ),
++						violationOf( EnableELBeanMethodsConstraint.class ).withMessage( "Method execution: a" ) );
++	}
++
++	@Test
++	public void warn_when_default_behavior_and_expression_variables() {
++		ValidatorFactory validatorFactory = Validation.byProvider( HibernateValidator.class )
++				.configure()
++				.buildValidatorFactory();
++
++		Validator validator = validatorFactory.getValidator();
++
++		assertThat( validator.validate( new DefaultLevelWithExpressionVariablesBean() ) )
++				.containsOnlyViolations( violationOf( DefaultLevelWithExpressionVariablesConstraint.class ).withMessage( "Variable: ${myVariable}" ) );
++
++		assertTrue( constraintValidatorContextImplLoglistAppender.getEvents().stream()
++				.filter( event -> event.getLevel().equals( Level.WARN ) )
++				.map( event -> event.getMessage().getFormattedMessage() )
++				.anyMatch( m -> m.startsWith( "HV000257" ) ) );
++	}
++
++	@Test
++	public void property_default_value() {
++		validationXmlTestHelper.runWithCustomValidationXml(
++				"validation-custom-violations-default.xml", new Runnable() {
++
++					@Override
++					public void run() {
++						Validator validator = ValidatorUtil.getValidator();
++
++						assertThat( validator.validate( new EnableELBean( "value" ) ) )
++								.containsOnlyViolations( violationOf( EnableELConstraint.class ).withMessage( "Variable: value" ),
++										violationOf( EnableELConstraint.class ).withMessage( "Bean property: ${validatedValue.bytes[0]}" ),
++										violationOf( EnableELConstraint.class ).withMessage( "Method execution: ${'aaaa'.substring(0, 1)}" ) );
++					}
++				} );
++	}
++
++	@Test
++	public void property_bean_methods() {
++		validationXmlTestHelper.runWithCustomValidationXml(
++				"validation-custom-violations-bean-methods.xml", new Runnable() {
++
++					@Override
++					public void run() {
++						Validator validator = ValidatorUtil.getValidator();
++
++						assertThat( validator.validate( new EnableELBeanMethodsBean( "value" ) ) )
++								.containsOnlyViolations( violationOf( EnableELBeanMethodsConstraint.class ).withMessage( "Variable: value" ),
++										violationOf( EnableELBeanMethodsConstraint.class ).withMessage( "Bean property: 118" ),
++										violationOf( EnableELBeanMethodsConstraint.class ).withMessage( "Method execution: a" ) );
++					}
++				} );
++	}
++
++	@Target({ FIELD, METHOD, PARAMETER, ANNOTATION_TYPE })
++	@Retention(RUNTIME)
++	@Documented
++	@Constraint(validatedBy = { DefaultLevelStringValidator.class })
++	private @interface DefaultLevelConstraint {
++
++		String message() default "-";
++
++		Class<?>[] groups() default {};
++
++		Class<? extends Payload>[] payload() default {};
++	}
++
++	public static class DefaultLevelStringValidator implements ConstraintValidator<DefaultLevelConstraint, String> {
++
++		@Override
++		public boolean isValid(String value, ConstraintValidatorContext context) {
++			HibernateConstraintValidatorContext hibernateContext = (HibernateConstraintValidatorContext) context;
++
++			hibernateContext.disableDefaultConstraintViolation();
++
++			hibernateContext.buildConstraintViolationWithTemplate( "Variable: ${validatedValue}" ).addConstraintViolation();
++			hibernateContext.buildConstraintViolationWithTemplate( "Bean property: ${validatedValue.bytes[0]}" ).addConstraintViolation();
++			hibernateContext.buildConstraintViolationWithTemplate( "Method execution: ${'aaaa'.substring(0, 1)}" ).addConstraintViolation();
++
++			return false;
++		}
++	}
++
++	public static class DefaultLevelBean {
++
++		@DefaultLevelConstraint
++		public String value;
++	}
++
++	@Target({ FIELD, METHOD, PARAMETER, ANNOTATION_TYPE })
++	@Retention(RUNTIME)
++	@Documented
++	@Constraint(validatedBy = { EnableELStringValidator.class })
++	private @interface EnableELConstraint {
++
++		String message() default "-";
++
++		Class<?>[] groups() default {};
++
++		Class<? extends Payload>[] payload() default {};
++	}
++
++	public static class EnableELStringValidator implements ConstraintValidator<EnableELConstraint, String> {
++
++		@Override
++		public boolean isValid(String value, ConstraintValidatorContext context) {
++			HibernateConstraintValidatorContext hibernateContext = (HibernateConstraintValidatorContext) context;
++
++			hibernateContext.disableDefaultConstraintViolation();
++
++			hibernateContext.buildConstraintViolationWithTemplate( "Variable: ${validatedValue}" )
++					.enableExpressionLanguage()
++					.addConstraintViolation();
++			hibernateContext.buildConstraintViolationWithTemplate( "Bean property: ${validatedValue.bytes[0]}" )
++					.enableExpressionLanguage()
++					.addConstraintViolation();
++			hibernateContext.buildConstraintViolationWithTemplate( "Method execution: ${'aaaa'.substring(0, 1)}" )
++					.enableExpressionLanguage()
++					.addConstraintViolation();
++
++			return false;
++		}
++	}
++
++	public static class EnableELBean {
++
++		public EnableELBean(String value) {
++			this.value = value;
++		}
++
++		@EnableELConstraint
++		public String value;
++	}
++
++	@Target({ FIELD, METHOD, PARAMETER, ANNOTATION_TYPE })
++	@Retention(RUNTIME)
++	@Documented
++	@Constraint(validatedBy = { EnableELBeanPropertiesStringValidator.class })
++	private @interface EnableELBeanPropertiesConstraint {
++
++		String message() default "-";
++
++		Class<?>[] groups() default {};
++
++		Class<? extends Payload>[] payload() default {};
++	}
++
++	public static class EnableELBeanPropertiesStringValidator implements ConstraintValidator<EnableELBeanPropertiesConstraint, String> {
++
++		@Override
++		public boolean isValid(String value, ConstraintValidatorContext context) {
++			HibernateConstraintValidatorContext hibernateContext = (HibernateConstraintValidatorContext) context;
++
++			hibernateContext.disableDefaultConstraintViolation();
++
++			hibernateContext.buildConstraintViolationWithTemplate( "Variable: ${validatedValue}" )
++					.enableExpressionLanguage( ExpressionLanguageFeatureLevel.BEAN_PROPERTIES )
++					.addConstraintViolation();
++			hibernateContext.buildConstraintViolationWithTemplate( "Bean property: ${validatedValue.bytes[0]}" )
++					.enableExpressionLanguage( ExpressionLanguageFeatureLevel.BEAN_PROPERTIES )
++					.addConstraintViolation();
++			hibernateContext.buildConstraintViolationWithTemplate( "Method execution: ${'aaaa'.substring(0, 1)}" )
++					.enableExpressionLanguage( ExpressionLanguageFeatureLevel.BEAN_PROPERTIES )
++					.addConstraintViolation();
++
++			return false;
++		}
++	}
++
++	public static class EnableELBeanPropertiesBean {
++
++		public EnableELBeanPropertiesBean(String value) {
++			this.value = value;
++		}
++
++		@EnableELBeanPropertiesConstraint
++		public String value;
++	}
++
++	@Target({ FIELD, METHOD, PARAMETER, ANNOTATION_TYPE })
++	@Retention(RUNTIME)
++	@Documented
++	@Constraint(validatedBy = { EnableELBeanMethodsStringValidator.class })
++	private @interface EnableELBeanMethodsConstraint {
++
++		String message() default "-";
++
++		Class<?>[] groups() default {};
++
++		Class<? extends Payload>[] payload() default {};
++	}
++
++	public static class EnableELBeanMethodsStringValidator implements ConstraintValidator<EnableELBeanMethodsConstraint, String> {
++
++		@Override
++		public boolean isValid(String value, ConstraintValidatorContext context) {
++			HibernateConstraintValidatorContext hibernateContext = (HibernateConstraintValidatorContext) context;
++
++			hibernateContext.disableDefaultConstraintViolation();
++
++			hibernateContext.buildConstraintViolationWithTemplate( "Variable: ${validatedValue}" )
++					.enableExpressionLanguage( ExpressionLanguageFeatureLevel.BEAN_METHODS )
++					.addConstraintViolation();
++			hibernateContext.buildConstraintViolationWithTemplate( "Bean property: ${validatedValue.bytes[0]}" )
++					.enableExpressionLanguage( ExpressionLanguageFeatureLevel.BEAN_METHODS )
++					.addConstraintViolation();
++			hibernateContext.buildConstraintViolationWithTemplate( "Method execution: ${'aaaa'.substring(0, 1)}" )
++					.enableExpressionLanguage( ExpressionLanguageFeatureLevel.BEAN_METHODS )
++					.addConstraintViolation();
++
++			return false;
++		}
++	}
++
++	public static class EnableELBeanMethodsBean {
++
++		public EnableELBeanMethodsBean(String value) {
++			this.value = value;
++		}
++
++		@EnableELBeanMethodsConstraint
++		public String value;
++	}
++
++	@Target({ FIELD, METHOD, PARAMETER, ANNOTATION_TYPE })
++	@Retention(RUNTIME)
++	@Documented
++	@Constraint(validatedBy = { DefaultLevelWithExpressionVariablesStringValidator.class })
++	private @interface DefaultLevelWithExpressionVariablesConstraint {
++
++		String message() default "-";
++
++		Class<?>[] groups() default {};
++
++		Class<? extends Payload>[] payload() default {};
++	}
++
++	public static class DefaultLevelWithExpressionVariablesStringValidator
++			implements ConstraintValidator<DefaultLevelWithExpressionVariablesConstraint, String> {
++
++		@Override
++		public boolean isValid(String value, ConstraintValidatorContext context) {
++			HibernateConstraintValidatorContext hibernateContext = (HibernateConstraintValidatorContext) context;
++
++			hibernateContext.disableDefaultConstraintViolation();
++
++			hibernateContext
++					.addExpressionVariable( "myVariable", "value" )
++					.buildConstraintViolationWithTemplate( "Variable: ${myVariable}" )
++					.addConstraintViolation();
++
++			return false;
++		}
++	}
++
++	public static class DefaultLevelWithExpressionVariablesBean {
++
++		@DefaultLevelWithExpressionVariablesConstraint
++		public String value;
++	}
++}
+diff --git a/engine/src/test/java/org/hibernate/validator/test/internal/engine/messageinterpolation/ExpressionLanguageMessageInterpolationTest.java b/engine/src/test/java/org/hibernate/validator/test/internal/engine/messageinterpolation/ExpressionLanguageMessageInterpolationTest.java
+index a680b12fb1..1ce25e13cd 100644
+--- a/engine/src/test/java/org/hibernate/validator/test/internal/engine/messageinterpolation/ExpressionLanguageMessageInterpolationTest.java
++++ b/engine/src/test/java/org/hibernate/validator/test/internal/engine/messageinterpolation/ExpressionLanguageMessageInterpolationTest.java
+@@ -20,6 +20,7 @@
+ import org.hibernate.validator.internal.metadata.descriptor.ConstraintDescriptorImpl;
+ import org.hibernate.validator.internal.metadata.location.ConstraintLocation.ConstraintLocationKind;
+ import org.hibernate.validator.internal.util.annotation.ConstraintAnnotationDescriptor;
++import org.hibernate.validator.messageinterpolation.ExpressionLanguageFeatureLevel;
+ import org.hibernate.validator.messageinterpolation.ResourceBundleMessageInterpolator;
+ import org.hibernate.validator.testutil.TestForIssue;
+ import org.testng.annotations.BeforeTest;
+@@ -69,13 +70,52 @@ public void testExpressionLanguageGraphNavigation() {
+ 				null,
+ 				Collections.<String, Object>emptyMap(),
+ 				Collections.<String, Object>emptyMap(),
+-				true );
++				ExpressionLanguageFeatureLevel.BEAN_METHODS,
++				false );
+ 
+ 		String expected = "18";
+ 		String actual = interpolatorUnderTest.interpolate( "${validatedValue.age}", context );
+ 		assertEquals( actual, expected, "Wrong substitution" );
+ 	}
+ 
++	@Test
++	public void testExpressionLanguageGraphNavigationBeanProperties() {
++		User user = new User();
++		user.setAge( 18 );
++		MessageInterpolator.Context context = new MessageInterpolatorContext(
++				notNullDescriptor,
++				user,
++				null,
++				null,
++				Collections.<String, Object>emptyMap(),
++				Collections.<String, Object>emptyMap(),
++				ExpressionLanguageFeatureLevel.BEAN_PROPERTIES,
++				false );
++
++		String expected = "18";
++		String actual = interpolatorUnderTest.interpolate( "${validatedValue.age}", context );
++		assertEquals( actual, expected, "Wrong substitution" );
++	}
++
++	@Test
++	public void testExpressionLanguageGraphNavigationVariables() {
++		User user = new User();
++		user.setAge( 18 );
++		MessageInterpolator.Context context = new MessageInterpolatorContext(
++				notNullDescriptor,
++				user,
++				null,
++				null,
++				Collections.<String, Object>emptyMap(),
++				Collections.<String, Object>emptyMap(),
++				ExpressionLanguageFeatureLevel.VARIABLES,
++				false );
++
++		String expected = "${validatedValue.age}";
++		String actual = interpolatorUnderTest.interpolate( "${validatedValue.age}", context );
++		assertEquals( actual, expected, "Wrong substitution" );
++	}
++
+ 	@Test
+ 	public void testUnknownPropertyInExpressionLanguageGraphNavigation() {
+ 		MessageInterpolator.Context context = new MessageInterpolatorContext(
+@@ -85,7 +125,8 @@ public void testUnknownPropertyInExpressionLanguageGraphNavigation() {
+ 				null,
+ 				Collections.<String, Object>emptyMap(),
+ 				Collections.<String, Object>emptyMap(),
+-				true );
++				ExpressionLanguageFeatureLevel.BEAN_METHODS,
++				false );
+ 
+ 		String expected = "${validatedValue.foo}";
+ 		String actual = interpolatorUnderTest.interpolate( "${validatedValue.foo}", context );
+@@ -94,7 +135,7 @@ public void testUnknownPropertyInExpressionLanguageGraphNavigation() {
+ 
+ 	@Test
+ 	public void testNullValidatedValue() {
+-		MessageInterpolator.Context context = createMessageInterpolatorContext( notNullDescriptor );
++		MessageInterpolator.Context context = createMessageInterpolatorContextELBeanMethods( notNullDescriptor );
+ 
+ 		String expected = "Validated value was null";
+ 		String actual = interpolatorUnderTest.interpolate(
+@@ -106,7 +147,7 @@ public void testNullValidatedValue() {
+ 
+ 	@Test
+ 	public void testExpressionAndParameterInterpolationInSameMessageDescriptor() {
+-		MessageInterpolator.Context context = createMessageInterpolatorContext( sizeDescriptor );
++		MessageInterpolator.Context context = createMessageInterpolatorContextELBeanMethods( sizeDescriptor );
+ 
+ 		String expected = "2 0 2147483647";
+ 		String actual = interpolatorUnderTest.interpolate( "${1+1} {min} {max}", context );
+@@ -115,7 +156,7 @@ public void testExpressionAndParameterInterpolationInSameMessageDescriptor() {
+ 
+ 	@Test
+ 	public void testEscapedExpressionLanguage() {
+-		MessageInterpolator.Context context = createMessageInterpolatorContext( sizeDescriptor );
++		MessageInterpolator.Context context = createMessageInterpolatorContextELBeanMethods( sizeDescriptor );
+ 
+ 		String expected = "${1+1}";
+ 		String actual = interpolatorUnderTest.interpolate( "\\${1+1}", context );
+@@ -124,7 +165,7 @@ public void testEscapedExpressionLanguage() {
+ 
+ 	@Test
+ 	public void testTernaryExpressionLanguageOperator() {
+-		MessageInterpolator.Context context = createMessageInterpolatorContext( sizeDescriptor );
++		MessageInterpolator.Context context = createMessageInterpolatorContext( sizeDescriptor, ExpressionLanguageFeatureLevel.VARIABLES );
+ 
+ 		String expected = "foo";
+ 		String actual = interpolatorUnderTest.interpolate( "${min == 0 ? 'foo' : 'bar'}", context );
+@@ -133,7 +174,7 @@ public void testTernaryExpressionLanguageOperator() {
+ 
+ 	@Test
+ 	public void testParameterFormatting() {
+-		MessageInterpolator.Context context = createMessageInterpolatorContext( sizeDescriptor );
++		MessageInterpolator.Context context = createMessageInterpolatorContext( sizeDescriptor, ExpressionLanguageFeatureLevel.VARIABLES );
+ 
+ 		String expected = "Max 2147483647, min 0";
+ 		String actual = interpolatorUnderTest.interpolate( "${formatter.format('Max %s, min %s', max, min)}", context );
+@@ -142,7 +183,7 @@ public void testParameterFormatting() {
+ 
+ 	@Test
+ 	public void testLiteralStaysUnchanged() {
+-		MessageInterpolator.Context context = createMessageInterpolatorContext( sizeDescriptor );
++		MessageInterpolator.Context context = createMessageInterpolatorContextELBeanMethods( sizeDescriptor );
+ 
+ 		String expected = "foo";
+ 		String actual = interpolatorUnderTest.interpolate( "foo", context );
+@@ -151,7 +192,7 @@ public void testLiteralStaysUnchanged() {
+ 
+ 	@Test
+ 	public void testLiteralBackslash() {
+-		MessageInterpolator.Context context = createMessageInterpolatorContext( sizeDescriptor );
++		MessageInterpolator.Context context = createMessageInterpolatorContextELBeanMethods( sizeDescriptor );
+ 
+ 		String expected = "\\foo";
+ 		String actual = interpolatorUnderTest.interpolate( "\\foo", context );
+@@ -160,7 +201,7 @@ public void testLiteralBackslash() {
+ 
+ 	@Test
+ 	public void testPrecedenceOfParameterInterpolation() {
+-		MessageInterpolator.Context context = createMessageInterpolatorContext( sizeDescriptor );
++		MessageInterpolator.Context context = createMessageInterpolatorContext( sizeDescriptor, ExpressionLanguageFeatureLevel.VARIABLES );
+ 
+ 		String expected = "$0";
+ 		String actual = interpolatorUnderTest.interpolate( "${min}", context );
+@@ -176,7 +217,8 @@ public void testLocaleBasedFormatting() {
+ 				null,
+ 				Collections.<String, Object>emptyMap(),
+ 				Collections.<String, Object>emptyMap(),
+-				true );
++				ExpressionLanguageFeatureLevel.VARIABLES,
++				false );
+ 
+ 		// german locale
+ 		String expected = "42,00";
+@@ -199,7 +241,7 @@ public void testLocaleBasedFormatting() {
+ 
+ 	@Test
+ 	public void testMissingFormatArgument() {
+-		MessageInterpolator.Context context = createMessageInterpolatorContext( sizeDescriptor );
++		MessageInterpolator.Context context = createMessageInterpolatorContext( sizeDescriptor, ExpressionLanguageFeatureLevel.VARIABLES );
+ 
+ 		String expected = "${formatter.format('%1$s')}";
+ 		String actual = interpolatorUnderTest.interpolate( "${formatter.format('%1$s')}", context );
+@@ -212,7 +254,7 @@ public void testMissingFormatArgument() {
+ 
+ 	@Test
+ 	public void testNoParametersToFormatter() {
+-		MessageInterpolator.Context context = createMessageInterpolatorContext( sizeDescriptor );
++		MessageInterpolator.Context context = createMessageInterpolatorContext( sizeDescriptor, ExpressionLanguageFeatureLevel.VARIABLES );
+ 
+ 		String expected = "${formatter.format()}";
+ 		String actual = interpolatorUnderTest.interpolate( "${formatter.format()}", context );
+@@ -221,13 +263,31 @@ public void testNoParametersToFormatter() {
+ 
+ 	@Test
+ 	public void testNonFormatterFunction() {
+-		MessageInterpolator.Context context = createMessageInterpolatorContext( sizeDescriptor );
++		MessageInterpolator.Context context = createMessageInterpolatorContextELBeanMethods( sizeDescriptor );
+ 
+ 		String expected = "foo";
+ 		String actual = interpolatorUnderTest.interpolate( "${'foobar'.substring(0,3)}", context );
+ 		assertEquals( actual, expected, "Calling of String#substring should work" );
+ 	}
+ 
++	@Test
++	public void testNonFormatterFunctionVariables() {
++		MessageInterpolator.Context context = createMessageInterpolatorContext( sizeDescriptor, ExpressionLanguageFeatureLevel.VARIABLES );
++
++		String expected = "${'foobar'.substring(0,3)}";
++		String actual = interpolatorUnderTest.interpolate( "${'foobar'.substring(0,3)}", context );
++		assertEquals( actual, expected, "Calling of String#substring should work" );
++	}
++
++	@Test
++	public void testNonFormatterFunctionBeanProperties() {
++		MessageInterpolator.Context context = createMessageInterpolatorContext( sizeDescriptor, ExpressionLanguageFeatureLevel.BEAN_PROPERTIES );
++
++		String expected = "${'foobar'.substring(0,3)}";
++		String actual = interpolatorUnderTest.interpolate( "${'foobar'.substring(0,3)}", context );
++		assertEquals( actual, expected, "Calling of String#substring should work" );
++	}
++
+ 	@Test
+ 	public void testCallingWrongFormatterMethod() {
+ 		MessageInterpolator.Context context = new MessageInterpolatorContext(
+@@ -237,7 +297,8 @@ public void testCallingWrongFormatterMethod() {
+ 				null,
+ 				Collections.<String, Object>emptyMap(),
+ 				Collections.<String, Object>emptyMap(),
+-				true );
++				ExpressionLanguageFeatureLevel.BEAN_METHODS,
++				false );
+ 
+ 		String expected = "${formatter.foo('%1$.2f', validatedValue)}";
+ 		String actual = interpolatorUnderTest.interpolate(
+@@ -255,7 +316,7 @@ public void testCallingWrongFormatterMethod() {
+ 	@Test
+ 	@TestForIssue(jiraKey = "HV-834")
+ 	public void testOpeningCurlyBraceInELExpression() {
+-		MessageInterpolator.Context context = createMessageInterpolatorContext( sizeDescriptor );
++		MessageInterpolator.Context context = createMessageInterpolatorContextELBeanMethods( sizeDescriptor );
+ 
+ 		String expected = "{";
+ 		String actual = interpolatorUnderTest.interpolate( "${1 > 0 ? '\\{' : '\\}'}", context );
+@@ -265,7 +326,7 @@ public void testOpeningCurlyBraceInELExpression() {
+ 	@Test
+ 	@TestForIssue(jiraKey = "HV-834")
+ 	public void testClosingCurlyBraceInELExpression() {
+-		MessageInterpolator.Context context = createMessageInterpolatorContext( sizeDescriptor );
++		MessageInterpolator.Context context = createMessageInterpolatorContextELBeanMethods( sizeDescriptor );
+ 
+ 		String expected = "}";
+ 		String actual = interpolatorUnderTest.interpolate( "${1 < 0 ? '\\{' : '\\}'}", context );
+@@ -275,7 +336,7 @@ public void testClosingCurlyBraceInELExpression() {
+ 	@Test
+ 	@TestForIssue(jiraKey = "HV-834")
+ 	public void testCurlyBracesInELExpression() {
+-		MessageInterpolator.Context context = createMessageInterpolatorContext( sizeDescriptor );
++		MessageInterpolator.Context context = createMessageInterpolatorContextELBeanMethods( sizeDescriptor );
+ 
+ 		String expected = "a{b}d";
+ 		String actual = interpolatorUnderTest.interpolate( "${1 < 0 ? 'foo' : 'a\\{b\\}d'}", context );
+@@ -285,7 +346,7 @@ public void testCurlyBracesInELExpression() {
+ 	@Test
+ 	@TestForIssue(jiraKey = "HV-834")
+ 	public void testEscapedQuoteInELExpression() {
+-		MessageInterpolator.Context context = createMessageInterpolatorContext( sizeDescriptor );
++		MessageInterpolator.Context context = createMessageInterpolatorContextELBeanMethods( sizeDescriptor );
+ 
+ 		String expected = "\"";
+ 		String actual = interpolatorUnderTest.interpolate( "${ true ? \"\\\"\" : \"foo\"}", context );
+@@ -295,7 +356,7 @@ public void testEscapedQuoteInELExpression() {
+ 	@Test
+ 	@TestForIssue(jiraKey = "HV-834")
+ 	public void testSingleEscapedQuoteInELExpression() {
+-		MessageInterpolator.Context context = createMessageInterpolatorContext( sizeDescriptor );
++		MessageInterpolator.Context context = createMessageInterpolatorContextELBeanMethods( sizeDescriptor );
+ 
+ 		String expected = "'";
+ 		String actual = interpolatorUnderTest.interpolate( "${ false ? 'foo' : '\\''}", context );
+@@ -306,7 +367,12 @@ public void testSingleEscapedQuoteInELExpression() {
+ 		);
+ 	}
+ 
+-	private MessageInterpolatorContext createMessageInterpolatorContext(ConstraintDescriptorImpl<?> descriptor) {
++	private MessageInterpolatorContext createMessageInterpolatorContextELBeanMethods(ConstraintDescriptorImpl<?> descriptor) {
++		return createMessageInterpolatorContext( descriptor, ExpressionLanguageFeatureLevel.BEAN_METHODS );
++	}
++
++	private MessageInterpolatorContext createMessageInterpolatorContext(ConstraintDescriptorImpl<?> descriptor,
++			ExpressionLanguageFeatureLevel expressionLanguageFeatureLevel) {
+ 		return new MessageInterpolatorContext(
+ 				descriptor,
+ 				null,
+@@ -314,6 +380,7 @@ private MessageInterpolatorContext createMessageInterpolatorContext(ConstraintDe
+ 				null,
+ 				Collections.<String, Object>emptyMap(),
+ 				Collections.<String, Object>emptyMap(),
+-				true );
++				expressionLanguageFeatureLevel,
++				false );
+ 	}
+ }
+diff --git a/engine/src/test/java/org/hibernate/validator/test/internal/engine/messageinterpolation/MessageInterpolatorContextTest.java b/engine/src/test/java/org/hibernate/validator/test/internal/engine/messageinterpolation/MessageInterpolatorContextTest.java
+index b538a34a3c..908fbbd135 100644
+--- a/engine/src/test/java/org/hibernate/validator/test/internal/engine/messageinterpolation/MessageInterpolatorContextTest.java
++++ b/engine/src/test/java/org/hibernate/validator/test/internal/engine/messageinterpolation/MessageInterpolatorContextTest.java
+@@ -8,6 +8,7 @@
+ package org.hibernate.validator.test.internal.engine.messageinterpolation;
+ 
+ import org.hibernate.validator.internal.engine.MessageInterpolatorContext;
++import org.hibernate.validator.messageinterpolation.ExpressionLanguageFeatureLevel;
+ import org.hibernate.validator.messageinterpolation.HibernateMessageInterpolatorContext;
+ import org.hibernate.validator.messageinterpolation.ResourceBundleMessageInterpolator;
+ import org.hibernate.validator.spi.resourceloading.ResourceBundleLocator;
+@@ -93,7 +94,8 @@ public void testContextWithRightDescriptorAndValueAndRootBeanClassIsPassedToMess
+ 								null,
+ 								Collections.<String, Object>emptyMap(),
+ 								Collections.<String, Object>emptyMap(),
+-								true )
++								ExpressionLanguageFeatureLevel.BEAN_METHODS,
++								false )
+ 				)
+ 		)
+ 				.andReturn( "invalid" );
+@@ -111,14 +113,14 @@ public void testContextWithRightDescriptorAndValueAndRootBeanClassIsPassedToMess
+ 	@Test(expectedExceptions = ValidationException.class)
+ 	public void testUnwrapToImplementationCausesValidationException() {
+ 		Context context = new MessageInterpolatorContext( null, null, null, null, Collections.<String, Object>emptyMap(),
+-				Collections.<String, Object>emptyMap(), true );
++				Collections.<String, Object>emptyMap(), ExpressionLanguageFeatureLevel.BEAN_METHODS, false );
+ 		context.unwrap( MessageInterpolatorContext.class );
+ 	}
+ 
+ 	@Test
+ 	public void testUnwrapToInterfaceTypesSucceeds() {
+ 		Context context = new MessageInterpolatorContext( null, null, null, null, Collections.<String, Object>emptyMap(),
+-				Collections.<String, Object>emptyMap(), true );
++				Collections.<String, Object>emptyMap(), ExpressionLanguageFeatureLevel.BEAN_METHODS, false );
+ 
+ 		MessageInterpolator.Context asMessageInterpolatorContext = context.unwrap( MessageInterpolator.Context.class );
+ 		assertSame( asMessageInterpolatorContext, context );
+@@ -142,7 +144,8 @@ public void testGetRootBeanType() {
+ 				null,
+ 				Collections.<String, Object>emptyMap(),
+ 				Collections.<String, Object>emptyMap(),
+-				true );
++				ExpressionLanguageFeatureLevel.BEAN_METHODS,
++				false );
+ 
+ 		assertSame( context.unwrap( HibernateMessageInterpolatorContext.class ).getRootBeanType(), rootBeanType );
+ 	}
+@@ -158,7 +161,8 @@ public void testGetPropertyPath() {
+ 				pathMock,
+ 				Collections.<String, Object>emptyMap(),
+ 				Collections.<String, Object>emptyMap(),
+-				true );
++				ExpressionLanguageFeatureLevel.BEAN_METHODS,
++				false );
+ 
+ 		assertSame( context.unwrap( HibernateMessageInterpolatorContext.class ).getPropertyPath(), pathMock );
+ 	}
+diff --git a/engine/src/test/java/org/hibernate/validator/test/internal/engine/messageinterpolation/ResourceBundleMessageInterpolatorTest.java b/engine/src/test/java/org/hibernate/validator/test/internal/engine/messageinterpolation/ResourceBundleMessageInterpolatorTest.java
+index 47c10b9df9..677c2fa67e 100644
+--- a/engine/src/test/java/org/hibernate/validator/test/internal/engine/messageinterpolation/ResourceBundleMessageInterpolatorTest.java
++++ b/engine/src/test/java/org/hibernate/validator/test/internal/engine/messageinterpolation/ResourceBundleMessageInterpolatorTest.java
+@@ -29,6 +29,7 @@
+ import org.hibernate.validator.internal.metadata.descriptor.ConstraintDescriptorImpl;
+ import org.hibernate.validator.internal.metadata.location.ConstraintLocation.ConstraintLocationKind;
+ import org.hibernate.validator.internal.util.annotation.ConstraintAnnotationDescriptor;
++import org.hibernate.validator.messageinterpolation.ExpressionLanguageFeatureLevel;
+ import org.hibernate.validator.messageinterpolation.ResourceBundleMessageInterpolator;
+ import org.hibernate.validator.spi.resourceloading.ResourceBundleLocator;
+ import org.hibernate.validator.testutil.TestForIssue;
+@@ -282,7 +283,8 @@ private MessageInterpolatorContext createMessageInterpolatorContext(ConstraintDe
+ 				null,
+ 				Collections.<String, Object>emptyMap(),
+ 				Collections.<String, Object>emptyMap(),
+-				true );
++				ExpressionLanguageFeatureLevel.BEAN_METHODS,
++				false );
+ 	}
+ 
+ 	private void runInterpolation(boolean cachingEnabled) {
+diff --git a/engine/src/test/java/org/hibernate/validator/testutils/ValidatorUtil.java b/engine/src/test/java/org/hibernate/validator/testutils/ValidatorUtil.java
+index 4806f1470b..e5ef6725b3 100644
+--- a/engine/src/test/java/org/hibernate/validator/testutils/ValidatorUtil.java
++++ b/engine/src/test/java/org/hibernate/validator/testutils/ValidatorUtil.java
+@@ -28,6 +28,7 @@
+ import org.hibernate.validator.constraintvalidation.HibernateConstraintValidatorContext;
+ import org.hibernate.validator.internal.engine.DefaultClockProvider;
+ import org.hibernate.validator.internal.engine.constraintvalidation.ConstraintValidatorContextImpl;
++import org.hibernate.validator.messageinterpolation.ExpressionLanguageFeatureLevel;
+ import org.hibernate.validator.testutil.DummyTraversableResolver;
+ import org.hibernate.validator.testutil.ValidationInvocationHandler;
+ 
+@@ -235,6 +236,7 @@ public static <T, I extends T> T getValidatingProxy(I implementor, Validator exe
+ 	}
+ 
+ 	public static HibernateConstraintValidatorContext getConstraintValidatorContext() {
+-		return new ConstraintValidatorContextImpl( DefaultClockProvider.INSTANCE, null, null, null );
++		return new ConstraintValidatorContextImpl( DefaultClockProvider.INSTANCE, null, null, null, ExpressionLanguageFeatureLevel.BEAN_PROPERTIES,
++				ExpressionLanguageFeatureLevel.NONE );
+ 	}
+ }
+diff --git a/engine/src/test/resources/log4j2.properties b/engine/src/test/resources/log4j2.properties
+index 3a80eeb2c1..6289842165 100644
+--- a/engine/src/test/resources/log4j2.properties
++++ b/engine/src/test/resources/log4j2.properties
+@@ -19,4 +19,8 @@ rootLogger.appenderRef.console.ref = console
+ # Specific loggers options
+ logger.parametermessageinterpolator.name = org.hibernate.validator.messageinterpolation.ParameterMessageInterpolator
+ logger.parametermessageinterpolator.level = info
+-logger.parametermessageinterpolator.appenderRef.list.ref = List
+\ No newline at end of file
++logger.parametermessageinterpolator.appenderRef.list.ref = List
++
++logger.constraintvalidatorcontextimpl.name = org.hibernate.validator.internal.engine.constraintvalidation.ConstraintValidatorContextImpl
++logger.constraintvalidatorcontextimpl.level = info
++logger.constraintvalidatorcontextimpl.appenderRef.list.ref = List
+\ No newline at end of file
+diff --git a/engine/src/test/resources/org/hibernate/validator/test/el/validation-constraints-bean-methods.xml b/engine/src/test/resources/org/hibernate/validator/test/el/validation-constraints-bean-methods.xml
+new file mode 100644
+index 0000000000..671eed5699
+--- /dev/null
++++ b/engine/src/test/resources/org/hibernate/validator/test/el/validation-constraints-bean-methods.xml
+@@ -0,0 +1,16 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!--
++  ~ Hibernate Validator, declare and validate application constraints
++  ~
++  ~ License: Apache License, Version 2.0
++  ~ See the license.txt file in the root directory or <http://www.apache.org/licenses/LICENSE-2.0>.
++  -->
++<validation-config
++    xmlns="http://xmlns.jcp.org/xml/ns/validation/configuration"
++    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
++    xsi:schemaLocation="http://xmlns.jcp.org/xml/ns/validation/configuration
++        http://xmlns.jcp.org/xml/ns/validation/configuration/validation-configuration-2.0.xsd"
++    version="2.0">
++
++    <property name="hibernate.validator.constraint_expression_language_feature_level">bean-methods</property>
++</validation-config>
+diff --git a/engine/src/test/resources/org/hibernate/validator/test/el/validation-constraints-default.xml b/engine/src/test/resources/org/hibernate/validator/test/el/validation-constraints-default.xml
+new file mode 100644
+index 0000000000..cc05e3311c
+--- /dev/null
++++ b/engine/src/test/resources/org/hibernate/validator/test/el/validation-constraints-default.xml
+@@ -0,0 +1,16 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!--
++  ~ Hibernate Validator, declare and validate application constraints
++  ~
++  ~ License: Apache License, Version 2.0
++  ~ See the license.txt file in the root directory or <http://www.apache.org/licenses/LICENSE-2.0>.
++  -->
++<validation-config
++    xmlns="http://xmlns.jcp.org/xml/ns/validation/configuration"
++    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
++    xsi:schemaLocation="http://xmlns.jcp.org/xml/ns/validation/configuration
++        http://xmlns.jcp.org/xml/ns/validation/configuration/validation-configuration-2.0.xsd"
++    version="2.0">
++
++    <property name="hibernate.validator.constraint_expression_language_feature_level">default</property>
++</validation-config>
+diff --git a/engine/src/test/resources/org/hibernate/validator/test/el/validation-custom-violations-bean-methods.xml b/engine/src/test/resources/org/hibernate/validator/test/el/validation-custom-violations-bean-methods.xml
+new file mode 100644
+index 0000000000..ecd0155803
+--- /dev/null
++++ b/engine/src/test/resources/org/hibernate/validator/test/el/validation-custom-violations-bean-methods.xml
+@@ -0,0 +1,16 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!--
++  ~ Hibernate Validator, declare and validate application constraints
++  ~
++  ~ License: Apache License, Version 2.0
++  ~ See the license.txt file in the root directory or <http://www.apache.org/licenses/LICENSE-2.0>.
++  -->
++<validation-config
++    xmlns="http://xmlns.jcp.org/xml/ns/validation/configuration"
++    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
++    xsi:schemaLocation="http://xmlns.jcp.org/xml/ns/validation/configuration
++        http://xmlns.jcp.org/xml/ns/validation/configuration/validation-configuration-2.0.xsd"
++    version="2.0">
++
++    <property name="hibernate.validator.custom_violation_expression_language_feature_level">bean-methods</property>
++</validation-config>
+diff --git a/engine/src/test/resources/org/hibernate/validator/test/el/validation-custom-violations-default.xml b/engine/src/test/resources/org/hibernate/validator/test/el/validation-custom-violations-default.xml
+new file mode 100644
+index 0000000000..62a07bde5a
+--- /dev/null
++++ b/engine/src/test/resources/org/hibernate/validator/test/el/validation-custom-violations-default.xml
+@@ -0,0 +1,16 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!--
++  ~ Hibernate Validator, declare and validate application constraints
++  ~
++  ~ License: Apache License, Version 2.0
++  ~ See the license.txt file in the root directory or <http://www.apache.org/licenses/LICENSE-2.0>.
++  -->
++<validation-config
++    xmlns="http://xmlns.jcp.org/xml/ns/validation/configuration"
++    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
++    xsi:schemaLocation="http://xmlns.jcp.org/xml/ns/validation/configuration
++        http://xmlns.jcp.org/xml/ns/validation/configuration/validation-configuration-2.0.xsd"
++    version="2.0">
++
++    <property name="hibernate.validator.custom_violation_expression_language_feature_level">default</property>
++</validation-config>

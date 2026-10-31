@@ -1,0 +1,112 @@
+From e6e333b195a1e3ad271a18fd79d8ac1eb5289343 Mon Sep 17 00:00:00 2001
+From: Gauthier Roebroeck <gauthier.roebroeck@gmail.com>
+Date: Mon, 20 Jul 2026 17:21:18 +0800
+Subject: [PATCH] fix: prevent directory creation outside target directory
+
+---
+ .../github/junrar/LocalFolderExtractor.java   |  27 +++++-------------
+ .../junrar/LocalFolderExtractorTest.java      |  21 ++++++++++++++
+ .../com/github/junrar/mkdir-escape.rar        | Bin 0 -> 98 bytes
+ 3 files changed, 28 insertions(+), 20 deletions(-)
+ create mode 100644 src/test/resources/com/github/junrar/mkdir-escape.rar
+
+diff --git a/src/main/java/com/github/junrar/LocalFolderExtractor.java b/src/main/java/com/github/junrar/LocalFolderExtractor.java
+index 41377c570..01ae18b15 100644
+--- a/src/main/java/com/github/junrar/LocalFolderExtractor.java
++++ b/src/main/java/com/github/junrar/LocalFolderExtractor.java
+@@ -9,6 +9,8 @@
+ import java.io.FileOutputStream;
+ import java.io.IOException;
+ import java.io.OutputStream;
++import java.nio.file.Files;
++import java.nio.file.Path;
+ 
+ class LocalFolderExtractor {
+ 
+@@ -64,7 +66,7 @@ private File createFile(final FileHeader fh, final File destination) throws IOEx
+         }
+         if (!f.exists()) {
+             try {
+-                f = makeFile(destination, name);
++                f = makeFile(f.toPath().normalize());
+             } catch (final IOException e) {
+                 logger.error("error creating the new file: {}", f.getName(), e);
+             }
+@@ -72,25 +74,10 @@ private File createFile(final FileHeader fh, final File destination) throws IOEx
+         return f;
+     }
+ 
+-    private File makeFile(final File destination, final String name) throws IOException {
+-        final String[] dirs = name.split("/");
+-        String path = "";
+-        final int size = dirs.length;
+-        if (size == 1) {
+-            return new File(destination, name);
+-        } else if (size > 1) {
+-            for (int i = 0; i < dirs.length - 1; i++) {
+-                path = path + File.separator + dirs[i];
+-                File dir = new File(destination, path);
+-                dir.mkdir();
+-            }
+-            path = path + File.separator + dirs[dirs.length - 1];
+-            final File f = new File(destination, path);
+-            f.createNewFile();
+-            return f;
+-        } else {
+-            return null;
+-        }
++    private File makeFile(final Path file) throws IOException {
++        if(file.getParent() == null) return null;
++        Files.createDirectories(file.getParent());
++        return file.toFile();
+     }
+ 
+     static String invariantSeparatorsPathString(String path) {
+diff --git a/src/test/java/com/github/junrar/LocalFolderExtractorTest.java b/src/test/java/com/github/junrar/LocalFolderExtractorTest.java
+index f69707778..bd2138541 100644
+--- a/src/test/java/com/github/junrar/LocalFolderExtractorTest.java
++++ b/src/test/java/com/github/junrar/LocalFolderExtractorTest.java
+@@ -10,6 +10,8 @@
+ 
+ import java.io.File;
+ import java.io.IOException;
++import java.nio.file.Files;
++import java.nio.file.Path;
+ 
+ import static org.assertj.core.api.Assertions.assertThat;
+ import static org.assertj.core.api.Assertions.catchThrowable;
+@@ -109,4 +111,23 @@ public void rarWithFileOutsideTarget_ShouldThrowException3() throws Exception {
+                 .containsIgnoringCase(expectedInvalidPath);
+         }
+     }
++
++    @DisabledOnOs(OS.WINDOWS)
++    @Test
++    public void rarWithDirectoryCreationOutsideTarget_ShouldThrowException() throws Exception {
++        File file = TestCommons.writeResourceToFolder(tempFolder, "mkdir-escape.rar");
++
++        Path root = Files.createTempDirectory("mkdir-escape");
++        Path tempDir = Files.createDirectories(root.resolve("extract"));
++        LocalFolderExtractor localFolderExtractor = new LocalFolderExtractor(tempDir.toFile());
++
++        try (Archive archive = new Archive(file)) {
++            FileHeader fileHeader = archive.nextFileHeader();
++
++            Path mkdirEscapeDir = root.resolve("extract_evil");
++            localFolderExtractor.extract(archive, fileHeader);
++
++            assertThat(mkdirEscapeDir).doesNotExist();
++        }
++    }
+ }
+diff --git a/src/test/resources/com/github/junrar/mkdir-escape.rar b/src/test/resources/com/github/junrar/mkdir-escape.rar
+new file mode 100644
+index 0000000000000000000000000000000000000000..80a86d934b1c7c8752a51e45c87ede7e8f3074c8
+GIT binary patch
+literal 98
+zcmWGaEK-zWXJB9`W?<k2QV>wWz~IKf2xNmWbF<i;9+0@Kff|DXkk-@FPpv2^N=z<^
+gPc6&L(MRz03lb}H@)J|^N-9b!j@VW+IIuGS00m$bX8-^I
+
+literal 0
+HcmV?d00001
+

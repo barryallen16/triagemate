@@ -1,0 +1,574 @@
+{
+  "sample": {
+    "rows": 64,
+    "off-CWE": 32,
+    "method-only": 41,
+    "on-CWE-sample": 15
+  },
+  "overall": {
+    "real": 39,
+    "partial": 5,
+    "not-real": 20
+  },
+  "groups": {
+    "off-CWE": {
+      "n": 32,
+      "real": 8,
+      "partial": 5,
+      "not-real": 19,
+      "real_rate": 0.25
+    },
+    "method-only": {
+      "n": 41,
+      "real": 27,
+      "partial": 2,
+      "not-real": 12,
+      "real_rate": 0.6585
+    },
+    "on-CWE-sample": {
+      "n": 15,
+      "real": 15,
+      "partial": 0,
+      "not-real": 0,
+      "real_rate": 1.0
+    }
+  },
+  "rows": [
+    {
+      "id": "GHSA-2jc4-r94c-rp7h:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:src/java/org/apache/ivy/util/XMLHelper.java:227",
+      "tags": [
+        "on-CWE-sample"
+      ],
+      "verdict": "real",
+      "reason": "fix commit adds safe parser configuration and external-access restrictions to the XMLHelper factories, covering the flagged getDocBuilder path"
+    },
+    {
+      "id": "GHSA-3gm7-v7vw-866c:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:solr/contrib/dataimporthandler/src/java/org/apache/solr/handler/dataimport/DataImporter.java:205",
+      "tags": [
+        "off-CWE"
+      ],
+      "verdict": "real",
+      "reason": "patch routes XML without a system ID through EmptyEntityResolver, blocking external entities at the flagged factory"
+    },
+    {
+      "id": "GHSA-3mcp-9wr4-cjqf:java.lang.security.audit.el-injection.el-injection:dropwizard-validation/src/main/java/io/dropwizard/validation/selfvalidating/ViolationCollector.java:24",
+      "tags": [
+        "off-CWE"
+      ],
+      "verdict": "real",
+      "reason": "patch escapes EL expressions in addViolation before building the constraint message"
+    },
+    {
+      "id": "GHSA-3ppr-72x5-x67q:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:src/main/java/hudson/plugins/mstest/MSTestReportConverter.java:116",
+      "tags": [
+        "method-only"
+      ],
+      "verdict": "real",
+      "reason": "patch disables DOCTYPE, external entities and external DTDs on the MSTest report parser factory"
+    },
+    {
+      "id": "GHSA-3ppr-72x5-x67q:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:src/main/java/hudson/plugins/mstest/MSTestReportConverter.java:151",
+      "tags": [
+        "method-only"
+      ],
+      "verdict": "real",
+      "reason": "patch hardens getDocumentBuilder with DOCTYPE, entity and external DTD restrictions"
+    },
+    {
+      "id": "GHSA-3ppr-72x5-x67q:java.lang.security.audit.xxe.transformerfactory-dtds-not-disabled.transformerfactory-dtds-not-disabled:src/main/java/hudson/plugins/mstest/XslTransformer.java:25",
+      "tags": [
+        "method-only"
+      ],
+      "verdict": "real",
+      "reason": "patch sets accessExternalDTD and accessExternalStylesheet to empty on the XSLT transformer factory"
+    },
+    {
+      "id": "GHSA-3ppr-72x5-x67q:java.lang.security.audit.xxe.transformerfactory-dtds-not-disabled.transformerfactory-dtds-not-disabled:src/main/java/hudson/plugins/mstest/XslTransformer.java:31",
+      "tags": [
+        "method-only"
+      ],
+      "verdict": "real",
+      "reason": "patch sets accessExternalDTD and accessExternalStylesheet to empty on the XSLT transformer factory"
+    },
+    {
+      "id": "GHSA-3vrc-rrpw-r5pw:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:src/main/java/com/jamesmurty/utils/BaseXMLBuilder.java:134",
+      "tags": [
+        "method-only",
+        "on-CWE-sample"
+      ],
+      "verdict": "real",
+      "reason": "patch adds enableOrDisableExternalEntityParsing and applies it to the builder factory in createDocumentImpl"
+    },
+    {
+      "id": "GHSA-3vrc-rrpw-r5pw:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:src/main/java/com/jamesmurty/utils/BaseXMLBuilder.java:165",
+      "tags": [
+        "method-only"
+      ],
+      "verdict": "real",
+      "reason": "patch adds enableOrDisableExternalEntityParsing and applies it to the builder factory in parseDocumentImpl"
+    },
+    {
+      "id": "GHSA-3xrr-7m6p-p7xh:java.lang.security.audit.xxe.transformerfactory-dtds-not-disabled.transformerfactory-dtds-not-disabled:src/main/java/com/gargoylesoftware/htmlunit/javascript/host/xml/XSLTProcessor.java:144",
+      "tags": [
+        "off-CWE",
+        "method-only"
+      ],
+      "verdict": "partial",
+      "reason": "patch enables FEATURE_SECURE_PROCESSING on the transformer factory but leaves external DTD and stylesheet access enabled, so the flagged XXE pattern is only partly mitigated"
+    },
+    {
+      "id": "GHSA-3xrr-7m6p-p7xh:java.lang.security.audit.xxe.transformerfactory-dtds-not-disabled.transformerfactory-dtds-not-disabled:src/main/java/com/gargoylesoftware/htmlunit/javascript/host/xml/XSLTProcessor.java:171",
+      "tags": [
+        "off-CWE",
+        "method-only"
+      ],
+      "verdict": "partial",
+      "reason": "patch enables FEATURE_SECURE_PROCESSING on the transformer factory but leaves external DTD and stylesheet access enabled, so the flagged XXE pattern is only partly mitigated"
+    },
+    {
+      "id": "GHSA-3xrr-7m6p-p7xh:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:src/main/java/com/gargoylesoftware/htmlunit/javascript/host/xml/XSLTProcessor.java:177",
+      "tags": [
+        "off-CWE",
+        "method-only"
+      ],
+      "verdict": "not-real",
+      "reason": "patch does not touch the DocumentBuilderFactory created inside transform; only the transformer factory is changed"
+    },
+    {
+      "id": "GHSA-7c5v-895v-w4q5:java.lang.security.audit.object-deserialization.object-deserialization:modules/jooby-pac4j/src/main/java/io/jooby/internal/pac4j/SessionStoreImpl.java:131",
+      "tags": [
+        "on-CWE-sample"
+      ],
+      "verdict": "real",
+      "reason": "patch replaces ObjectInputStream with the configured pac4j Serializer"
+    },
+    {
+      "id": "GHSA-7v6m-28jr-rg84:java.lang.security.audit.el-injection.el-injection:engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/ElTermResolver.java:31",
+      "tags": [
+        "method-only"
+      ],
+      "verdict": "real",
+      "reason": "patch adds an expression-language feature level that can disable bean and method resolution"
+    },
+    {
+      "id": "GHSA-8c3x-hq82-gjcm:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:org.hl7.fhir.publisher.core/src/main/java/org/hl7/fhir/igtools/publisher/Publisher.java:14317",
+      "tags": [
+        "on-CWE-sample"
+      ],
+      "verdict": "real",
+      "reason": "patch replaces the factory with XMLUtil.newXXEProtectedDocumentBuilderFactory"
+    },
+    {
+      "id": "GHSA-8c3x-hq82-gjcm:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:org.hl7.fhir.publisher.core/src/main/java/org/hl7/fhir/igtools/publisher/utils/PackageReleaser.java:844",
+      "tags": [
+        "on-CWE-sample"
+      ],
+      "verdict": "real",
+      "reason": "patch replaces the factory with XMLUtil.newXXEProtectedDocumentBuilderFactory"
+    },
+    {
+      "id": "GHSA-8c3x-hq82-gjcm:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:org.hl7.fhir.publisher.core/src/main/java/org/hl7/fhir/igtools/publisher/utils/TemplateReleaser.java:605",
+      "tags": [
+        "on-CWE-sample"
+      ],
+      "verdict": "real",
+      "reason": "patch replaces the factory with XMLUtil.newXXEProtectedDocumentBuilderFactory"
+    },
+    {
+      "id": "GHSA-8gqp-hr9g-pg62:java.lang.security.audit.script-engine-injection.script-engine-injection:conductor-clients/java/conductor-java-sdk/sdk/src/main/java/com/netflix/conductor/sdk/workflow/def/tasks/Javascript.java:102",
+      "tags": [
+        "off-CWE"
+      ],
+      "verdict": "real",
+      "reason": "patch switches the script engine to Nashorn with --no-java, blocking Java class access"
+    },
+    {
+      "id": "GHSA-8gqp-hr9g-pg62:java.lang.security.audit.script-engine-injection.script-engine-injection:conductor-clients/java/conductor-java-sdk/sdk/src/main/java/com/netflix/conductor/sdk/workflow/def/tasks/Javascript.java:129",
+      "tags": [
+        "off-CWE"
+      ],
+      "verdict": "real",
+      "reason": "patch switches the script engine to Nashorn with --no-java, blocking Java class access"
+    },
+    {
+      "id": "GHSA-54wc-49qj-5ghj:java.lang.security.audit.crypto.use-of-md5.use-of-md5:src/main/java/net/mingsoft/cms/action/BaseAction.java:157",
+      "tags": [
+        "off-CWE"
+      ],
+      "verdict": "not-real",
+      "reason": "patch only reorders upload handling; the MD5 digest in the flagged method is unchanged"
+    },
+    {
+      "id": "GHSA-65hj-9ppw-77xc:java.lang.security.audit.crlf-injection-logs.crlf-injection-logs:ff4j-web/src/main/java/org/ff4j/web/embedded/ConsoleOperations.java:87",
+      "tags": [
+        "off-CWE",
+        "method-only"
+      ],
+      "verdict": "not-real",
+      "reason": "patch adds a FlippingStrategy type check for the RCE advisory; the flagged log statement is unchanged"
+    },
+    {
+      "id": "GHSA-83w4-x5w9-hf4h:java.spring.security.unrestricted-request-mapping.unrestricted-request-mapping:xxl-job-admin/src/main/java/com/xxl/job/admin/controller/JobLogController.java:138",
+      "tags": [
+        "off-CWE"
+      ],
+      "verdict": "partial",
+      "reason": "patch removes the user-controlled executorAddress and fixes the SSRF, but the flagged request mapping still allows all HTTP methods"
+    },
+    {
+      "id": "GHSA-763j-q7wv-vf3m:java.lang.security.audit.unvalidated-redirect.unvalidated-redirect:dspace-jspui/src/main/java/org/dspace/app/webui/servlet/ControlledVocabularyServlet.java:31",
+      "tags": [
+        "on-CWE-sample"
+      ],
+      "verdict": "real",
+      "reason": "patch rejects callerUrl values outside the servlet context path before the redirect"
+    },
+    {
+      "id": "GHSA-763j-q7wv-vf3m:java.lang.security.audit.tainted-session-from-http-request.tainted-session-from-http-request:dspace-jspui/src/main/java/org/dspace/app/webui/servlet/ControlledVocabularyServlet.java:51",
+      "tags": [
+        "off-CWE",
+        "method-only"
+      ],
+      "verdict": "not-real",
+      "reason": "patch only guards the redirect target; the flagged session attributes still take request parameters"
+    },
+    {
+      "id": "GHSA-763j-q7wv-vf3m:java.lang.security.audit.tainted-session-from-http-request.tainted-session-from-http-request:dspace-jspui/src/main/java/org/dspace/app/webui/servlet/ControlledVocabularyServlet.java:52",
+      "tags": [
+        "off-CWE",
+        "method-only"
+      ],
+      "verdict": "not-real",
+      "reason": "patch only guards the redirect target; the flagged session attributes still take request parameters"
+    },
+    {
+      "id": "GHSA-f5h9-qx38-2hgp:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:aws-android-sdk-core/src/main/java/com/amazonaws/regions/RegionMetadataParser.java:115",
+      "tags": [
+        "off-CWE"
+      ],
+      "verdict": "real",
+      "reason": "patch disables DOCTYPE, XInclude and entity expansion on the flagged region-metadata factory"
+    },
+    {
+      "id": "GHSA-f63g-88cj-hjf9:java.lang.security.audit.object-deserialization.object-deserialization:izpack-installer/src/main/java/com/izforge/izpack/installer/unpacker/UnpackerBase.java:312",
+      "tags": [
+        "off-CWE",
+        "method-only"
+      ],
+      "verdict": "not-real",
+      "reason": "patch is a path-traversal fix in UnpackerBase and does not change the deserialization calls"
+    },
+    {
+      "id": "GHSA-f63g-88cj-hjf9:java.lang.security.audit.object-deserialization.object-deserialization:izpack-installer/src/main/java/com/izforge/izpack/installer/unpacker/UnpackerBase.java:1206",
+      "tags": [
+        "off-CWE",
+        "method-only"
+      ],
+      "verdict": "not-real",
+      "reason": "patch is a path-traversal fix in UnpackerBase and does not change the deserialization calls"
+    },
+    {
+      "id": "GHSA-f729-58x4-gqgf:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:140",
+      "tags": [
+        "method-only",
+        "on-CWE-sample"
+      ],
+      "verdict": "real",
+      "reason": "patch adds canonical-path containment checks in getRequestedFile"
+    },
+    {
+      "id": "GHSA-f729-58x4-gqgf:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:190",
+      "tags": [
+        "method-only",
+        "on-CWE-sample"
+      ],
+      "verdict": "real",
+      "reason": "patch adds canonical-path containment checks in getRequestedFile"
+    },
+    {
+      "id": "GHSA-f729-58x4-gqgf:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:194",
+      "tags": [
+        "method-only"
+      ],
+      "verdict": "real",
+      "reason": "patch adds canonical-path containment checks in getRequestedFile"
+    },
+    {
+      "id": "GHSA-f729-58x4-gqgf:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:204",
+      "tags": [
+        "method-only"
+      ],
+      "verdict": "not-real",
+      "reason": "the flagged directory-list loop operates on a file already built from the servlet root; the patch hardens the File constructors, not this sink"
+    },
+    {
+      "id": "GHSA-fmj2-7wx8-qj4v:java.lang.security.audit.xxe.transformerfactory-dtds-not-disabled.transformerfactory-dtds-not-disabled:src/main/java/org/apache/xmlgraphics/xmp/XMPParser.java:57",
+      "tags": [
+        "off-CWE",
+        "method-only"
+      ],
+      "verdict": "real",
+      "reason": "patch sets accessExternalDTD and accessExternalStylesheet to empty on the XMP transformer factory"
+    },
+    {
+      "id": "GHSA-g4r8-28fp-f255:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:src/main/java/de/timroes/axmlrpc/ResponseParser.java:51",
+      "tags": [
+        "method-only",
+        "on-CWE-sample"
+      ],
+      "verdict": "real",
+      "reason": "patch sets disallow-doctype-decl and disables XInclude and entity expansion on the response parser factory"
+    },
+    {
+      "id": "GHSA-g5mj-c26g-vmpm:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:src/main/java/com/smartbear/jenkins/plugins/testcomplete/parser/LogNodeUtils.java:172",
+      "tags": [
+        "method-only",
+        "on-CWE-sample"
+      ],
+      "verdict": "real",
+      "reason": "patch adds secureDocumentBuilderFactory and calls it on the flagged factory"
+    },
+    {
+      "id": "GHSA-g43x-pcc9-f472:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:src/main/java/com/compuware/jenkins/common/utils/CLIVersionUtils.java:192",
+      "tags": [
+        "method-only"
+      ],
+      "verdict": "real",
+      "reason": "patch sets disallow-doctype-decl and disables external general entities on the version parser factory"
+    },
+    {
+      "id": "GHSA-h7qf-qmf3-85qg:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:plugins/junit-xml-plugin/src/main/java/io/qameta/allure/junitxml/JunitXmlPlugin.java:136",
+      "tags": [
+        "method-only"
+      ],
+      "verdict": "real",
+      "reason": "patch installs an entity resolver that serves only classpath entities, blocking external resolution"
+    },
+    {
+      "id": "GHSA-h7qf-qmf3-85qg:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:plugins/trx-plugin/src/main/java/io/qameta/allure/trx/TrxPlugin.java:109",
+      "tags": [
+        "method-only"
+      ],
+      "verdict": "real",
+      "reason": "patch installs an entity resolver that serves only classpath entities, blocking external resolution"
+    },
+    {
+      "id": "GHSA-h7qf-qmf3-85qg:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:plugins/xunit-xml-plugin/src/main/java/io/qameta/allure/xunitxml/XunitXmlPlugin.java:97",
+      "tags": [
+        "method-only",
+        "on-CWE-sample"
+      ],
+      "verdict": "real",
+      "reason": "patch installs an entity resolver that serves only classpath entities, blocking external resolution"
+    },
+    {
+      "id": "GHSA-hg25-w3vg-7279:java.lang.security.audit.crypto.ssl.defaulthttpclient-is-deprecated.defaulthttpclient-is-deprecated:modules/jpawebapi/src/com/haulmont/addon/jpawebapi/api/controller/RestFileDownloadController.java:148",
+      "tags": [
+        "off-CWE",
+        "method-only"
+      ],
+      "verdict": "not-real",
+      "reason": "patch adds an inline-versus-attachment XSS policy; the flagged DefaultHttpClient remains"
+    },
+    {
+      "id": "GHSA-j7jm-8gf5-frcm:java.lang.security.audit.object-deserialization.object-deserialization:ngrinder-core/src/main/java/net/grinder/communication/Connector.java:199",
+      "tags": [
+        "method-only",
+        "on-CWE-sample"
+      ],
+      "verdict": "real",
+      "reason": "patch installs an ObjectInputFilter allowlist on the Connector stream"
+    },
+    {
+      "id": "GHSA-jmw5-58c7-587h:java.lang.security.audit.crypto.unencrypted-socket.unencrypted-socket:collector/log4j-socket/src/main/java/org/apache/karaf/decanter/collector/log/socket/SocketCollector.java:78",
+      "tags": [
+        "off-CWE"
+      ],
+      "verdict": "not-real",
+      "reason": "patch adds authentication and host binding but keeps the plaintext ServerSocket; no TLS is added"
+    },
+    {
+      "id": "GHSA-jqfv-jrvq-95jm:java.lang.security.audit.xxe.transformerfactory-dtds-not-disabled.transformerfactory-dtds-not-disabled:fop-core/src/main/java/org/apache/fop/cli/InputHandler.java:272",
+      "tags": [
+        "method-only"
+      ],
+      "verdict": "real",
+      "reason": "patch enables FEATURE_SECURE_PROCESSING on the FOP transformer factory, the fix for the advisory's XXE"
+    },
+    {
+      "id": "GHSA-jqfv-jrvq-95jm:java.lang.security.audit.xxe.transformerfactory-dtds-not-disabled.transformerfactory-dtds-not-disabled:fop-core/src/main/java/org/apache/fop/cli/InputHandler.java:274",
+      "tags": [
+        "method-only"
+      ],
+      "verdict": "real",
+      "reason": "patch enables FEATURE_SECURE_PROCESSING on the FOP transformer factory, the fix for the advisory's XXE"
+    },
+    {
+      "id": "GHSA-m964-fjrh-xxq2:java.lang.security.audit.object-deserialization.object-deserialization:server/src/main/java/org/apache/seata/server/cluster/raft/sync/RaftSyncMessageSerializer.java:65",
+      "tags": [
+        "on-CWE-sample"
+      ],
+      "verdict": "real",
+      "reason": "patch adds a resolveClass allowlist to the Raft message decoder"
+    },
+    {
+      "id": "GHSA-qrp9-23p7-g5mf:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:contrib/views/wfmanager/src/main/java/org/apache/oozie/ambari/view/Utils.java:67",
+      "tags": [
+        "method-only"
+      ],
+      "verdict": "real",
+      "reason": "patch sets disallow-doctype-decl on the shared DocumentBuilderFactory in the Utils constructor"
+    },
+    {
+      "id": "GHSA-rpj9-pc39-h8j8:java.lang.security.audit.xxe.transformerfactory-dtds-not-disabled.transformerfactory-dtds-not-disabled:portal-impl/src/com/liferay/portlet/xslcontent/util/XSLContentUtil.java:54",
+      "tags": [
+        "off-CWE",
+        "method-only"
+      ],
+      "verdict": "real",
+      "reason": "patch enables FEATURE_SECURE_PROCESSING on the XSL content transformer factory"
+    },
+    {
+      "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:194",
+      "tags": [
+        "off-CWE"
+      ],
+      "verdict": "not-real",
+      "reason": "patch is an SSRF/XSS fix that removes saveConfig and adds null checks; the flagged path is still built from request input without a containment check"
+    },
+    {
+      "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:223",
+      "tags": [
+        "off-CWE"
+      ],
+      "verdict": "not-real",
+      "reason": "patch is an SSRF/XSS fix that removes saveConfig and adds null checks; the flagged path is still built from request input without a containment check"
+    },
+    {
+      "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:291",
+      "tags": [
+        "off-CWE",
+        "method-only"
+      ],
+      "verdict": "not-real",
+      "reason": "patch does not add a canonical-path check to getRequestedFile; the flagged File construction is unchanged"
+    },
+    {
+      "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:295",
+      "tags": [
+        "off-CWE",
+        "method-only"
+      ],
+      "verdict": "not-real",
+      "reason": "patch does not add a canonical-path check to getRequestedFile; the flagged File construction is unchanged"
+    },
+    {
+      "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:307",
+      "tags": [
+        "off-CWE",
+        "method-only"
+      ],
+      "verdict": "not-real",
+      "reason": "patch does not add a canonical-path check to getRequestedFile; the flagged File construction is unchanged"
+    },
+    {
+      "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:545",
+      "tags": [
+        "off-CWE"
+      ],
+      "verdict": "not-real",
+      "reason": "patch does not harden the processStaticRequest file path; the flagged construction remains"
+    },
+    {
+      "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:548",
+      "tags": [
+        "off-CWE"
+      ],
+      "verdict": "not-real",
+      "reason": "patch does not harden the processStaticRequest file path; the flagged construction remains"
+    },
+    {
+      "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:558",
+      "tags": [
+        "off-CWE"
+      ],
+      "verdict": "not-real",
+      "reason": "patch does not harden the processStaticRequest file path; the flagged construction remains"
+    },
+    {
+      "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:560",
+      "tags": [
+        "off-CWE"
+      ],
+      "verdict": "not-real",
+      "reason": "patch does not harden the processStaticRequest file path; the flagged construction remains"
+    },
+    {
+      "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:851",
+      "tags": [
+        "off-CWE"
+      ],
+      "verdict": "partial",
+      "reason": "patch removes the saveConfig call from doPost, disabling the endpoint, but does not sanitize the path inside saveConfig"
+    },
+    {
+      "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:873",
+      "tags": [
+        "off-CWE"
+      ],
+      "verdict": "partial",
+      "reason": "patch removes the saveConfig call from doPost, disabling the endpoint, but does not sanitize the path inside saveConfig"
+    },
+    {
+      "id": "GHSA-vhwv-8897-jm7q:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:src/main/java/com/compuware/jenkins/totaltest/TotalTestCTRunner.java:326",
+      "tags": [
+        "method-only"
+      ],
+      "verdict": "real",
+      "reason": "patch applies DOCTYPE, external entity, external DTD and XInclude restrictions to the XA result parser factory"
+    },
+    {
+      "id": "GHSA-wg5r-wc3x-39vc:java.lang.security.audit.object-deserialization.object-deserialization:openam-core/src/main/java/com/sun/identity/authentication/share/AuthXMLUtils.java:1786",
+      "tags": [
+        "off-CWE",
+        "method-only"
+      ],
+      "verdict": "real",
+      "reason": "patch installs a Subject deserialization filter and hardens the custom callback class loading"
+    },
+    {
+      "id": "GHSA-x832-fpvj-r5ph:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:library/src/main/java/org/mustangproject/ZUGFeRD/ZUGFeRDVisualizer.java:104",
+      "tags": [
+        "method-only"
+      ],
+      "verdict": "real",
+      "reason": "patch adds DOCTYPE, entity and secure-processing restrictions to the ZUGFeRD visualizer factory"
+    },
+    {
+      "id": "GHSA-x832-fpvj-r5ph:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:validator/src/main/java/org/mustangproject/validator/XMLValidator.java:155",
+      "tags": [
+        "method-only",
+        "on-CWE-sample"
+      ],
+      "verdict": "real",
+      "reason": "patch adds DOCTYPE, entity and secure-processing restrictions to the XMLValidator factory"
+    },
+    {
+      "id": "GHSA-x832-fpvj-r5ph:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:validator/src/main/java/org/mustangproject/validator/ZUGFeRDValidator.java:145",
+      "tags": [
+        "method-only"
+      ],
+      "verdict": "real",
+      "reason": "patch adds DOCTYPE, entity and secure-processing restrictions to the ZUGFeRDValidator factory"
+    },
+    {
+      "id": "GHSA-xrrw-9j78-hpf3:java.lang.security.audit.crypto.use-of-sha1.use-of-sha1:src/main/java/htmlpublisher/HtmlPublisher.java:118",
+      "tags": [
+        "off-CWE",
+        "method-only"
+      ],
+      "verdict": "not-real",
+      "reason": "patch escapes HTML for the stored-XSS advisory; the flagged SHA-1 digest is unchanged"
+    }
+  ]
+}

@@ -1,0 +1,127 @@
+From e9816501df1e364a3d39d7fe37d6e167c40eaa1b Mon Sep 17 00:00:00 2001
+From: Vasiliy Pankov <c4lm@users.noreply.github.com>
+Date: Wed, 2 Apr 2025 01:29:12 +0400
+Subject: [PATCH] Add --no-java flag for Nashorn runtime (#429)
+
+--no-java flag for nashorn runtime
+---
+ .../java/conductor-java-sdk/build.gradle            |  1 +
+ .../sdk/workflow/def/tasks/Javascript.java          |  6 +++---
+ .../conductor/core/events/ScriptEvaluator.java      |  7 +++----
+ .../sdk/workflow/def/tasks/Javascript.java          | 13 ++++++-------
+ 4 files changed, 13 insertions(+), 14 deletions(-)
+
+diff --git a/conductor-clients/java/conductor-java-sdk/build.gradle b/conductor-clients/java/conductor-java-sdk/build.gradle
+index f7d42fb422..90c1812754 100644
+--- a/conductor-clients/java/conductor-java-sdk/build.gradle
++++ b/conductor-clients/java/conductor-java-sdk/build.gradle
+@@ -35,6 +35,7 @@ subprojects {
+         implementation "com.fasterxml.jackson.datatype:jackson-datatype-jsr310:${versions.jackson}"
+         implementation "com.fasterxml.jackson.module:jackson-module-kotlin:${versions.jackson}"
+         implementation "com.fasterxml.jackson.module:jackson-module-afterburner:${versions.jackson}"
++        implementation "org.openjdk.nashorn:nashorn-core:15.4"
+ 
+         implementation "org.slf4j:slf4j-api:${versions.slf4j}"
+         implementation "org.apache.commons:commons-lang3:${versions.commonsLang}"
+diff --git a/conductor-clients/java/conductor-java-sdk/sdk/src/main/java/com/netflix/conductor/sdk/workflow/def/tasks/Javascript.java b/conductor-clients/java/conductor-java-sdk/sdk/src/main/java/com/netflix/conductor/sdk/workflow/def/tasks/Javascript.java
+index 0c4a43c479..90e129b7af 100644
+--- a/conductor-clients/java/conductor-java-sdk/sdk/src/main/java/com/netflix/conductor/sdk/workflow/def/tasks/Javascript.java
++++ b/conductor-clients/java/conductor-java-sdk/sdk/src/main/java/com/netflix/conductor/sdk/workflow/def/tasks/Javascript.java
+@@ -19,9 +19,9 @@
+ 
+ import javax.script.Bindings;
+ import javax.script.ScriptEngine;
+-import javax.script.ScriptEngineManager;
+ import javax.script.ScriptException;
+ 
++import org.openjdk.nashorn.api.scripting.NashornScriptEngineFactory;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ 
+@@ -100,7 +100,7 @@ public String getExpression() {
+      * @return
+      */
+     public Javascript validate() {
+-        ScriptEngine scriptEngine = new ScriptEngineManager().getEngineByName(ENGINE);
++        ScriptEngine scriptEngine = new NashornScriptEngineFactory().getScriptEngine("--no-java");
+         if (scriptEngine == null) {
+             LOGGER.error("missing " + ENGINE + " engine.  Ensure you are running supported JVM");
+             return this;
+@@ -128,7 +128,7 @@ public Javascript validate() {
+      */
+     public Object test(Map<String, Object> input) {
+ 
+-        ScriptEngine scriptEngine = new ScriptEngineManager().getEngineByName(ENGINE);
++        ScriptEngine scriptEngine = new NashornScriptEngineFactory().getScriptEngine("--no-java");
+         if (scriptEngine == null) {
+             LOGGER.error("missing " + ENGINE + " engine.  Ensure you are running supported JVM");
+             return this;
+diff --git a/core/src/main/java/com/netflix/conductor/core/events/ScriptEvaluator.java b/core/src/main/java/com/netflix/conductor/core/events/ScriptEvaluator.java
+index c77f3860d4..e9c345a514 100644
+--- a/core/src/main/java/com/netflix/conductor/core/events/ScriptEvaluator.java
++++ b/core/src/main/java/com/netflix/conductor/core/events/ScriptEvaluator.java
+@@ -14,7 +14,6 @@
+ 
+ import javax.script.Bindings;
+ import javax.script.ScriptEngine;
+-import javax.script.ScriptEngineManager;
+ import javax.script.ScriptException;
+ 
+ import org.openjdk.nashorn.api.scripting.NashornScriptEngineFactory;
+@@ -61,11 +60,11 @@ public static String getEnv(String name) {
+ 
+     public static void initEngine(boolean reInit) {
+         if (engine == null || reInit) {
++            NashornScriptEngineFactory factory = new NashornScriptEngineFactory();
+             if ("true".equalsIgnoreCase(getEnv("CONDUCTOR_NASHORN_ES6_ENABLED"))) {
+-                NashornScriptEngineFactory factory = new NashornScriptEngineFactory();
+-                engine = factory.getScriptEngine("--language=es6");
++                engine = factory.getScriptEngine("--language=es6", "--no-java");
+             } else {
+-                engine = new ScriptEngineManager().getEngineByName("Nashorn");
++                engine = factory.getScriptEngine("--no-java");
+             }
+         }
+         if (engine == null) {
+diff --git a/java-sdk/src/main/java/com/netflix/conductor/sdk/workflow/def/tasks/Javascript.java b/java-sdk/src/main/java/com/netflix/conductor/sdk/workflow/def/tasks/Javascript.java
+index d6d4af2ba5..ca394ed332 100644
+--- a/java-sdk/src/main/java/com/netflix/conductor/sdk/workflow/def/tasks/Javascript.java
++++ b/java-sdk/src/main/java/com/netflix/conductor/sdk/workflow/def/tasks/Javascript.java
+@@ -19,7 +19,6 @@
+ 
+ import javax.script.Bindings;
+ import javax.script.ScriptEngine;
+-import javax.script.ScriptEngineManager;
+ import javax.script.ScriptException;
+ 
+ import org.openjdk.nashorn.api.scripting.NashornScriptEngineFactory;
+@@ -103,11 +102,11 @@ public String getExpression() {
+      */
+     public Javascript validate() {
+         ScriptEngine scriptEngine;
++        NashornScriptEngineFactory factory = new NashornScriptEngineFactory();
+         if ("true".equalsIgnoreCase(System.getenv("CONDUCTOR_NASHORN_ES6_ENABLED"))) {
+-            NashornScriptEngineFactory factory = new NashornScriptEngineFactory();
+-            scriptEngine = factory.getScriptEngine("--language=es6");
++            scriptEngine = factory.getScriptEngine("--language=es6", "--no-java");
+         } else {
+-            scriptEngine = new ScriptEngineManager().getEngineByName("Nashorn");
++            scriptEngine = factory.getScriptEngine("--no-java");
+         }
+         if (scriptEngine == null) {
+             LOGGER.error("missing " + ENGINE + " engine.  Ensure you are running supported JVM");
+@@ -137,11 +136,11 @@ public Javascript validate() {
+     public Object test(Map<String, Object> input) {
+ 
+         ScriptEngine scriptEngine;
++        NashornScriptEngineFactory factory = new NashornScriptEngineFactory();
+         if ("true".equalsIgnoreCase(System.getenv("CONDUCTOR_NASHORN_ES6_ENABLED"))) {
+-            NashornScriptEngineFactory factory = new NashornScriptEngineFactory();
+-            scriptEngine = factory.getScriptEngine("--language=es6");
++            scriptEngine = factory.getScriptEngine("--language=es6", "--no-java");
+         } else {
+-            scriptEngine = new ScriptEngineManager().getEngineByName("Nashorn");
++            scriptEngine = factory.getScriptEngine("--no-java");
+         }
+         if (scriptEngine == null) {
+             LOGGER.error("missing " + ENGINE + " engine.  Ensure you are running supported JVM");

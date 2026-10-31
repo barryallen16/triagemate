@@ -1,0 +1,29 @@
+From d96ba9a11710d02716b6f4f6107ebfa9ccec7134 Mon Sep 17 00:00:00 2001
+From: Simon Steiner <ssteiner@apache.org>
+Date: Tue, 5 Mar 2024 11:28:18 +0000
+Subject: [PATCH] FOP-3168: Add secure processing for XSL input
+
+---
+ fop-core/src/main/java/org/apache/fop/cli/InputHandler.java | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/fop-core/src/main/java/org/apache/fop/cli/InputHandler.java b/fop-core/src/main/java/org/apache/fop/cli/InputHandler.java
+index 6d99bbe40f5..fb72762e91b 100644
+--- a/fop-core/src/main/java/org/apache/fop/cli/InputHandler.java
++++ b/fop-core/src/main/java/org/apache/fop/cli/InputHandler.java
+@@ -26,6 +26,7 @@
+ import java.lang.reflect.InvocationTargetException;
+ import java.util.Vector;
+ 
++import javax.xml.XMLConstants;
+ import javax.xml.parsers.ParserConfigurationException;
+ import javax.xml.parsers.SAXParserFactory;
+ import javax.xml.transform.ErrorListener;
+@@ -265,6 +266,7 @@ protected void transformTo(Result result) throws FOPException {
+         try {
+             // Setup XSLT
+             TransformerFactory factory = TransformerFactory.newInstance();
++            factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+             Transformer transformer;
+ 
+             Source xsltSource = createXSLTSource();

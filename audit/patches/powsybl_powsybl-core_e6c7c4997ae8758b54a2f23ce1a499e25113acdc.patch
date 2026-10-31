@@ -1,0 +1,1022 @@
+From e6c7c4997ae8758b54a2f23ce1a499e25113acdc Mon Sep 17 00:00:00 2001
+From: Olivier Perrin <olivier.perrin@rte-france.com>
+Date: Thu, 19 Jun 2025 09:49:27 +0200
+Subject: [PATCH] Secure XMLReader by adding security properties
+ (GHSA-qpj9-qcwx-8jv2)
+
+Signed-off-by: Olivier Perrin <olivier.perrin@rte-france.com>
+---
+ .../powsybl/cgmes/conversion/CgmesImport.java |  27 +++-
+ .../cgmes/conversion/test/ConversionUtil.java |  11 +-
+ .../test/export/CgmesExportTest.java          |   4 +-
+ .../export/CommonGridModelExportTest.java     |   6 +-
+ .../test/export/StateVariablesExportTest.java |   7 +-
+ .../SteadyStateHypothesisExportTest.java      |   5 +-
+ .../issues/TapChangerNeutralStepTest.java     |   4 +-
+ .../com/powsybl/cgmes/model/FullModel.java    |  17 +--
+ .../powsybl/cgmes/model/NamespaceReader.java  |  15 +-
+ .../java/com/powsybl/cim/CimAnonymizer.java   |   7 +-
+ .../com/powsybl/cim/CimAnonymizerTest.java    |  62 +++++++-
+ .../PropertiesModuleConfigRepository.java     |  10 +-
+ .../config/XmlModuleConfigRepository.java     |   8 +-
+ .../com/powsybl/commons/xml/XmlReader.java    |  21 ++-
+ .../java/com/powsybl/commons/xml/XmlUtil.java |  83 +++++++++-
+ .../powsybl/commons/xml/XmlReaderTest.java    | 142 ++++++++++++++++++
+ .../com/powsybl/commons/xml/XmlUtilTest.java  |  11 +-
+ .../com/powsybl/iidm/serde/XMLImporter.java   |  10 +-
+ 18 files changed, 376 insertions(+), 74 deletions(-)
+ create mode 100644 commons/src/test/java/com/powsybl/commons/xml/XmlReaderTest.java
+
+diff --git a/cgmes/cgmes-conversion/src/main/java/com/powsybl/cgmes/conversion/CgmesImport.java b/cgmes/cgmes-conversion/src/main/java/com/powsybl/cgmes/conversion/CgmesImport.java
+index dc07668e509..c9acb68abaf 100644
+--- a/cgmes/cgmes-conversion/src/main/java/com/powsybl/cgmes/conversion/CgmesImport.java
++++ b/cgmes/cgmes-conversion/src/main/java/com/powsybl/cgmes/conversion/CgmesImport.java
+@@ -12,7 +12,11 @@
+ import com.google.common.io.ByteStreams;
+ import com.powsybl.cgmes.conversion.export.CgmesExportContext;
+ import com.powsybl.cgmes.conversion.naming.NamingStrategyFactory;
+-import com.powsybl.cgmes.model.*;
++import com.powsybl.cgmes.model.CgmesModel;
++import com.powsybl.cgmes.model.CgmesModelFactory;
++import com.powsybl.cgmes.model.CgmesNames;
++import com.powsybl.cgmes.model.CgmesOnDataSource;
++import com.powsybl.cgmes.model.CgmesSubset;
+ import com.powsybl.commons.PowsyblException;
+ import com.powsybl.commons.compress.SafeZipInputStream;
+ import com.powsybl.commons.config.PlatformConfig;
+@@ -21,7 +25,11 @@
+ import com.powsybl.commons.datasource.DataSourceUtil;
+ import com.powsybl.commons.datasource.GenericReadOnlyDataSource;
+ import com.powsybl.commons.datasource.ReadOnlyDataSource;
+-import com.powsybl.commons.parameters.*;
++import com.powsybl.commons.parameters.ConfiguredParameter;
++import com.powsybl.commons.parameters.Parameter;
++import com.powsybl.commons.parameters.ParameterDefaultValueConfig;
++import com.powsybl.commons.parameters.ParameterScope;
++import com.powsybl.commons.parameters.ParameterType;
+ import com.powsybl.commons.report.ReportNode;
+ import com.powsybl.commons.util.ServiceLoaderCache;
+ import com.powsybl.iidm.network.Importer;
+@@ -44,11 +52,22 @@
+ import java.nio.file.FileSystems;
+ import java.nio.file.Files;
+ import java.nio.file.Path;
+-import java.util.*;
++import java.util.ArrayList;
++import java.util.Arrays;
++import java.util.Collections;
++import java.util.HashSet;
++import java.util.List;
++import java.util.Map;
++import java.util.Objects;
++import java.util.Optional;
++import java.util.Properties;
++import java.util.Set;
++import java.util.UUID;
+ import java.util.function.Predicate;
+ import java.util.stream.Collectors;
+ import java.util.zip.ZipInputStream;
+ 
++import static com.powsybl.commons.xml.XmlUtil.getXMLInputFactory;
+ import static java.util.function.Predicate.not;
+ 
+ /**
+@@ -248,7 +267,7 @@ Set<ReadOnlyDataSource> separate(SubnetworkDefinedBy separatingBy) {
+         }
+ 
+         private Set<ReadOnlyDataSource> separateByModelingAuthority() {
+-            xmlInputFactory = XMLInputFactory.newInstance();
++            xmlInputFactory = getXMLInputFactory();
+             Map<String, List<String>> igmNames = new CgmesOnDataSource(dataSource).names().stream()
+                     // We consider IGMs only the modeling authorities that have an EQ file
+                     // The CGM SV should have the MA of the merging agent
+diff --git a/cgmes/cgmes-conversion/src/test/java/com/powsybl/cgmes/conversion/test/ConversionUtil.java b/cgmes/cgmes-conversion/src/test/java/com/powsybl/cgmes/conversion/test/ConversionUtil.java
+index f45d5c6f5a2..c450f554010 100644
+--- a/cgmes/cgmes-conversion/src/test/java/com/powsybl/cgmes/conversion/test/ConversionUtil.java
++++ b/cgmes/cgmes-conversion/src/test/java/com/powsybl/cgmes/conversion/test/ConversionUtil.java
+@@ -21,7 +21,6 @@
+ import com.powsybl.iidm.network.Network;
+ import com.powsybl.triplestore.api.TripleStoreFactory;
+ 
+-import javax.xml.stream.XMLInputFactory;
+ import javax.xml.stream.XMLStreamConstants;
+ import javax.xml.stream.XMLStreamException;
+ import javax.xml.stream.XMLStreamReader;
+@@ -30,7 +29,13 @@
+ import java.io.InputStream;
+ import java.nio.file.Files;
+ import java.nio.file.Path;
+-import java.util.*;
++import java.util.Collections;
++import java.util.HashSet;
++import java.util.List;
++import java.util.Properties;
++import java.util.Set;
++
++import static com.powsybl.commons.xml.XmlUtil.getXMLInputFactory;
+ 
+ /**
+  * @author Geoffroy Jamgotchian {@literal <geoffroy.jamgotchian at rte-france.com>}
+@@ -72,7 +77,7 @@ public static boolean xmlContains(byte[] xml, String clazz, String ns, String at
+ 
+     public static boolean xmlContains(InputStream is, String clazz, String ns, String attr, String expectedValue) {
+         try {
+-            XMLStreamReader reader = XMLInputFactory.newInstance().createXMLStreamReader(is);
++            XMLStreamReader reader = getXMLInputFactory().createXMLStreamReader(is);
+             while (reader.hasNext()) {
+                 if (reader.next() == XMLStreamConstants.START_ELEMENT && reader.getLocalName().equals(clazz)) {
+                     String actualValue = reader.getAttributeValue(ns, attr);
+diff --git a/cgmes/cgmes-conversion/src/test/java/com/powsybl/cgmes/conversion/test/export/CgmesExportTest.java b/cgmes/cgmes-conversion/src/test/java/com/powsybl/cgmes/conversion/test/export/CgmesExportTest.java
+index 2800510efc2..3621cf2907d 100644
+--- a/cgmes/cgmes-conversion/src/test/java/com/powsybl/cgmes/conversion/test/export/CgmesExportTest.java
++++ b/cgmes/cgmes-conversion/src/test/java/com/powsybl/cgmes/conversion/test/export/CgmesExportTest.java
+@@ -29,7 +29,6 @@
+ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Test;
+ 
+-import javax.xml.stream.XMLInputFactory;
+ import javax.xml.stream.XMLStreamConstants;
+ import javax.xml.stream.XMLStreamException;
+ import javax.xml.stream.XMLStreamReader;
+@@ -40,6 +39,7 @@
+ import java.util.Properties;
+ 
+ import static com.powsybl.cgmes.conversion.test.ConversionUtil.*;
++import static com.powsybl.commons.xml.XmlUtil.getXMLInputFactory;
+ import static org.junit.jupiter.api.Assertions.*;
+ 
+ /**
+@@ -181,7 +181,7 @@ private static boolean cgmesFileContainsRegulatingControl(String regulatingContr
+ 
+     private static boolean xmlFileContainsRegulatingControl(String expectedRdfIdAttributeValue, String rdfIdAttributeName, Path file) throws IOException, XMLStreamException {
+         try (InputStream is = Files.newInputStream(file)) {
+-            XMLStreamReader reader = XMLInputFactory.newInstance().createXMLStreamReader(is);
++            XMLStreamReader reader = getXMLInputFactory().createXMLStreamReader(is);
+             while (reader.hasNext()) {
+                 if (reader.next() == XMLStreamConstants.START_ELEMENT && reader.getLocalName().equals("TapChangerControl")) {
+                     String id = reader.getAttributeValue(CgmesNamespace.RDF_NAMESPACE, rdfIdAttributeName);
+diff --git a/cgmes/cgmes-conversion/src/test/java/com/powsybl/cgmes/conversion/test/export/CommonGridModelExportTest.java b/cgmes/cgmes-conversion/src/test/java/com/powsybl/cgmes/conversion/test/export/CommonGridModelExportTest.java
+index b77903d4067..c929ad4d894 100644
+--- a/cgmes/cgmes-conversion/src/test/java/com/powsybl/cgmes/conversion/test/export/CommonGridModelExportTest.java
++++ b/cgmes/cgmes-conversion/src/test/java/com/powsybl/cgmes/conversion/test/export/CommonGridModelExportTest.java
+@@ -26,7 +26,6 @@
+ import com.powsybl.iidm.network.*;
+ import org.junit.jupiter.api.Test;
+ 
+-import javax.xml.stream.XMLInputFactory;
+ import javax.xml.stream.XMLStreamConstants;
+ import javax.xml.stream.XMLStreamException;
+ import javax.xml.stream.XMLStreamReader;
+@@ -38,6 +37,7 @@
+ import java.util.*;
+ 
+ import static com.powsybl.cgmes.conversion.test.ConversionUtil.*;
++import static com.powsybl.commons.xml.XmlUtil.getXMLInputFactory;
+ import static org.junit.jupiter.api.Assertions.assertEquals;
+ import static org.junit.jupiter.api.Assertions.assertFalse;
+ 
+@@ -594,7 +594,7 @@ private static Optional<Integer> readVersion(ReadOnlyDataSource ds, String filen
+ 
+     private static Optional<Integer> readVersion(InputStream is) {
+         try {
+-            XMLStreamReader reader = XMLInputFactory.newInstance().createXMLStreamReader(is);
++            XMLStreamReader reader = getXMLInputFactory().createXMLStreamReader(is);
+             while (reader.hasNext()) {
+                 int next = reader.next();
+                 if (next == XMLStreamConstants.START_ELEMENT && reader.getLocalName().equals("Model.version")) {
+@@ -620,7 +620,7 @@ private static String readModelId(ReadOnlyDataSource ds, String filename) {
+ 
+     private static String readId(InputStream is) {
+         try {
+-            XMLStreamReader reader = XMLInputFactory.newInstance().createXMLStreamReader(is);
++            XMLStreamReader reader = getXMLInputFactory().createXMLStreamReader(is);
+             while (reader.hasNext()) {
+                 int next = reader.next();
+                 if (next == XMLStreamConstants.START_ELEMENT && reader.getLocalName().equals("FullModel")) {
+diff --git a/cgmes/cgmes-conversion/src/test/java/com/powsybl/cgmes/conversion/test/export/StateVariablesExportTest.java b/cgmes/cgmes-conversion/src/test/java/com/powsybl/cgmes/conversion/test/export/StateVariablesExportTest.java
+index d3856421a70..cfb74914e26 100644
+--- a/cgmes/cgmes-conversion/src/test/java/com/powsybl/cgmes/conversion/test/export/StateVariablesExportTest.java
++++ b/cgmes/cgmes-conversion/src/test/java/com/powsybl/cgmes/conversion/test/export/StateVariablesExportTest.java
+@@ -49,6 +49,7 @@
+ import java.util.stream.Stream;
+ 
+ import static com.powsybl.cgmes.conversion.test.ConversionUtil.matcherCount;
++import static com.powsybl.commons.xml.XmlUtil.getXMLInputFactory;
+ import static org.junit.jupiter.api.Assertions.*;
+ 
+ /**
+@@ -267,7 +268,7 @@ private static SvShuntCompensatorSections readSvShuntCompensatorSections(String
+ 
+         SvShuntCompensatorSections svdata = new SvShuntCompensatorSections();
+         try (InputStream is = new ByteArrayInputStream(sv.getBytes(StandardCharsets.UTF_8))) {
+-            XMLStreamReader reader = XMLInputFactory.newInstance().createXMLStreamReader(is);
++            XMLStreamReader reader = getXMLInputFactory().createXMLStreamReader(is);
+             Integer sections = null;
+             String shuntCompensatorId = null;
+             while (reader.hasNext()) {
+@@ -425,7 +426,7 @@ private static String readFirstTopologicalIslandDescription(Path sv) {
+         String description = "";
+         boolean insideTopologicalIsland = false;
+         try (InputStream is = Files.newInputStream(sv)) {
+-            XMLStreamReader reader = XMLInputFactory.newInstance().createXMLStreamReader(is);
++            XMLStreamReader reader = getXMLInputFactory().createXMLStreamReader(is);
+             while (reader.hasNext()) {
+                 int token = reader.next();
+                 if (token == XMLStreamConstants.START_ELEMENT) {
+@@ -497,7 +498,7 @@ private static SvTapSteps readSvTapSteps(String sv) {
+ 
+         SvTapSteps svTapSteps = new SvTapSteps();
+         try (InputStream is = new ByteArrayInputStream(sv.getBytes(StandardCharsets.UTF_8))) {
+-            XMLStreamReader reader = XMLInputFactory.newInstance().createXMLStreamReader(is);
++            XMLStreamReader reader = getXMLInputFactory().createXMLStreamReader(is);
+             Integer position = null;
+             String tapChangerId = null;
+             while (reader.hasNext()) {
+diff --git a/cgmes/cgmes-conversion/src/test/java/com/powsybl/cgmes/conversion/test/export/SteadyStateHypothesisExportTest.java b/cgmes/cgmes-conversion/src/test/java/com/powsybl/cgmes/conversion/test/export/SteadyStateHypothesisExportTest.java
+index 1beea520d93..0fbf1e42356 100644
+--- a/cgmes/cgmes-conversion/src/test/java/com/powsybl/cgmes/conversion/test/export/SteadyStateHypothesisExportTest.java
++++ b/cgmes/cgmes-conversion/src/test/java/com/powsybl/cgmes/conversion/test/export/SteadyStateHypothesisExportTest.java
+@@ -45,6 +45,7 @@
+ import java.nio.file.Path;
+ import java.util.*;
+ 
++import static com.powsybl.commons.xml.XmlUtil.getXMLInputFactory;
+ import static org.junit.jupiter.api.Assertions.*;
+ 
+ /**
+@@ -205,7 +206,7 @@ private static SshLinearShuntCompensators readSshLinearShuntCompensator(String s
+ 
+         SshLinearShuntCompensators sshLinearShuntCompensators = new SshLinearShuntCompensators();
+         try (InputStream is = new ByteArrayInputStream(ssh.getBytes(StandardCharsets.UTF_8))) {
+-            XMLStreamReader reader = XMLInputFactory.newInstance().createXMLStreamReader(is);
++            XMLStreamReader reader = getXMLInputFactory().createXMLStreamReader(is);
+             Integer sections = null;
+             Boolean controlEnabled = null;
+             String shuntCompensatorId = null;
+@@ -295,7 +296,7 @@ private static Collection<SshExportedControlArea> readSshControlAreas(Path ssh)
+         List<SshExportedControlArea> sshExportedControlAreas = new ArrayList<>();
+         SshExportedControlArea sshExportedControlArea = null;
+         try (InputStream is = Files.newInputStream(ssh)) {
+-            XMLStreamReader reader = XMLInputFactory.newInstance().createXMLStreamReader(is);
++            XMLStreamReader reader = getXMLInputFactory().createXMLStreamReader(is);
+             while (reader.hasNext()) {
+                 int next = reader.next();
+                 if (next == XMLStreamConstants.START_ELEMENT) {
+diff --git a/cgmes/cgmes-conversion/src/test/java/com/powsybl/cgmes/conversion/test/export/issues/TapChangerNeutralStepTest.java b/cgmes/cgmes-conversion/src/test/java/com/powsybl/cgmes/conversion/test/export/issues/TapChangerNeutralStepTest.java
+index b0f2cf31804..f2ea70fee1b 100644
+--- a/cgmes/cgmes-conversion/src/test/java/com/powsybl/cgmes/conversion/test/export/issues/TapChangerNeutralStepTest.java
++++ b/cgmes/cgmes-conversion/src/test/java/com/powsybl/cgmes/conversion/test/export/issues/TapChangerNeutralStepTest.java
+@@ -17,7 +17,6 @@
+ import com.powsybl.iidm.network.test.EurostagTutorialExample1Factory;
+ import org.junit.jupiter.api.Test;
+ 
+-import javax.xml.stream.XMLInputFactory;
+ import javax.xml.stream.XMLStreamConstants;
+ import javax.xml.stream.XMLStreamException;
+ import javax.xml.stream.XMLStreamReader;
+@@ -27,6 +26,7 @@
+ import java.nio.file.Path;
+ import java.util.*;
+ 
++import static com.powsybl.commons.xml.XmlUtil.getXMLInputFactory;
+ import static org.junit.jupiter.api.Assertions.assertEquals;
+ 
+ /**
+@@ -54,7 +54,7 @@ private static Map<String, Integer> readTapChangerNeutralSteps(Path eq) {
+         String tapChangerId = null;
+         Integer neutralStep = null;
+         try (InputStream is = Files.newInputStream(eq)) {
+-            XMLStreamReader reader = XMLInputFactory.newInstance().createXMLStreamReader(is);
++            XMLStreamReader reader = getXMLInputFactory().createXMLStreamReader(is);
+             while (reader.hasNext()) {
+                 int next = reader.next();
+                 if (next == XMLStreamConstants.START_ELEMENT) {
+diff --git a/cgmes/cgmes-model/src/main/java/com/powsybl/cgmes/model/FullModel.java b/cgmes/cgmes-model/src/main/java/com/powsybl/cgmes/model/FullModel.java
+index cd37c9cacd5..bf48ded16cb 100644
+--- a/cgmes/cgmes-model/src/main/java/com/powsybl/cgmes/model/FullModel.java
++++ b/cgmes/cgmes-model/src/main/java/com/powsybl/cgmes/model/FullModel.java
+@@ -7,19 +7,17 @@
+  */
+ package com.powsybl.cgmes.model;
+ 
+-import com.google.common.base.Suppliers;
+ import com.powsybl.commons.PowsyblException;
+ import com.powsybl.commons.exceptions.UncheckedXmlStreamException;
+ import com.powsybl.commons.xml.XmlUtil;
+ 
+-import javax.xml.XMLConstants;
+-import javax.xml.stream.XMLInputFactory;
+ import javax.xml.stream.XMLStreamException;
+ import javax.xml.stream.XMLStreamReader;
+ import java.io.Reader;
+ import java.time.ZonedDateTime;
+ import java.util.*;
+-import java.util.function.Supplier;
++
++import static com.powsybl.commons.xml.XmlUtil.getXMLInputFactory;
+ 
+ /**
+  *
+@@ -27,13 +25,6 @@
+  */
+ public class FullModel {
+ 
+-    private static final Supplier<XMLInputFactory> XML_INPUT_FACTORY_SUPPLIER = Suppliers.memoize(() -> {
+-        XMLInputFactory factory = XMLInputFactory.newInstance();
+-        factory.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+-        factory.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+-        return factory;
+-    });
+-
+     private final String id;
+ 
+     private final ZonedDateTime scenarioTime;
+@@ -144,7 +135,7 @@ public static FullModel parse(Reader reader) {
+         Objects.requireNonNull(reader);
+         ParsingContext context = new ParsingContext();
+         try {
+-            XMLStreamReader xmlReader = XML_INPUT_FACTORY_SUPPLIER.get().createXMLStreamReader(reader);
++            XMLStreamReader xmlReader = getXMLInputFactory().createXMLStreamReader(reader);
+             try {
+                 XmlUtil.readUntilStartElement(new String[] {"/", CgmesNames.RDF, CgmesNames.FULL_MODEL}, xmlReader, elementName1 -> {
+                     context.id = xmlReader.getAttributeValue(CgmesNamespace.RDF_NAMESPACE, CgmesNames.ABOUT);
+@@ -152,7 +143,7 @@ public static FullModel parse(Reader reader) {
+                 });
+             } finally {
+                 xmlReader.close();
+-                XmlUtil.gcXmlInputFactory(XML_INPUT_FACTORY_SUPPLIER.get());
++                XmlUtil.gcXmlInputFactory(getXMLInputFactory());
+             }
+         } catch (XMLStreamException e) {
+             throw new UncheckedXmlStreamException(e);
+diff --git a/cgmes/cgmes-model/src/main/java/com/powsybl/cgmes/model/NamespaceReader.java b/cgmes/cgmes-model/src/main/java/com/powsybl/cgmes/model/NamespaceReader.java
+index 453b2e421a1..f2fae8018a4 100644
+--- a/cgmes/cgmes-model/src/main/java/com/powsybl/cgmes/model/NamespaceReader.java
++++ b/cgmes/cgmes-model/src/main/java/com/powsybl/cgmes/model/NamespaceReader.java
+@@ -8,17 +8,16 @@
+ 
+ package com.powsybl.cgmes.model;
+ 
+-import com.google.common.base.Suppliers;
+ import com.powsybl.commons.xml.XmlUtil;
+ 
+-import javax.xml.stream.XMLInputFactory;
+ import javax.xml.stream.XMLStreamConstants;
+ import javax.xml.stream.XMLStreamException;
+ import javax.xml.stream.XMLStreamReader;
+ import java.io.InputStream;
+ import java.util.HashSet;
+ import java.util.Set;
+-import java.util.function.Supplier;
++
++import static com.powsybl.commons.xml.XmlUtil.getXMLInputFactory;
+ 
+ /**
+  * @author Luma Zamarreño {@literal <zamarrenolm at aia.es>}
+@@ -46,7 +45,7 @@ public static Set<String> namespacesOrEmpty(InputStream is) {
+ 
+     private static Set<String> namespaces1(InputStream is) throws XMLStreamException {
+         Set<String> found = new HashSet<>();
+-        XMLStreamReader xmlsr = XML_INPUT_FACTORY_SUPPLIER.get().createXMLStreamReader(is);
++        XMLStreamReader xmlsr = getXMLInputFactory().createXMLStreamReader(is);
+         try {
+             boolean root = false;
+             while (xmlsr.hasNext() && !root) {
+@@ -60,7 +59,7 @@ private static Set<String> namespaces1(InputStream is) throws XMLStreamException
+             }
+         } finally {
+             xmlsr.close();
+-            XmlUtil.gcXmlInputFactory(XML_INPUT_FACTORY_SUPPLIER.get());
++            XmlUtil.gcXmlInputFactory(getXMLInputFactory());
+         }
+         return found;
+     }
+@@ -68,7 +67,7 @@ private static Set<String> namespaces1(InputStream is) throws XMLStreamException
+     public static String base(InputStream is) {
+         XMLStreamReader xmlsr;
+         try {
+-            xmlsr = XML_INPUT_FACTORY_SUPPLIER.get().createXMLStreamReader(is);
++            xmlsr = getXMLInputFactory().createXMLStreamReader(is);
+             try {
+                 while (xmlsr.hasNext()) {
+                     int eventType = xmlsr.next();
+@@ -78,13 +77,11 @@ public static String base(InputStream is) {
+                 }
+             } finally {
+                 xmlsr.close();
+-                XmlUtil.gcXmlInputFactory(XML_INPUT_FACTORY_SUPPLIER.get());
++                XmlUtil.gcXmlInputFactory(getXMLInputFactory());
+             }
+             return null;
+         } catch (XMLStreamException e) {
+             throw new CgmesModelException("base", e);
+         }
+     }
+-
+-    private static final Supplier<XMLInputFactory> XML_INPUT_FACTORY_SUPPLIER = Suppliers.memoize(XMLInputFactory::newInstance);
+ }
+diff --git a/cim-anonymiser/src/main/java/com/powsybl/cim/CimAnonymizer.java b/cim-anonymiser/src/main/java/com/powsybl/cim/CimAnonymizer.java
+index 47a595ea13b..2f215e1b84f 100644
+--- a/cim-anonymiser/src/main/java/com/powsybl/cim/CimAnonymizer.java
++++ b/cim-anonymiser/src/main/java/com/powsybl/cim/CimAnonymizer.java
+@@ -28,6 +28,9 @@
+ import java.util.zip.ZipEntry;
+ import java.util.zip.ZipOutputStream;
+ 
++import static com.powsybl.commons.xml.XmlUtil.getXMLInputFactory;
++import static com.powsybl.commons.xml.XmlUtil.getXMLOutputFactory;
++
+ /**
+  * @author Geoffroy Jamgotchian {@literal <geoffroy.jamgotchian at rte-france.com>}
+  */
+@@ -64,8 +67,8 @@ public void logSkipped(Set<String> skipped) {
+     private static final QName RDF_ABOUT = new QName(RDF_URI, "about");
+ 
+     private static final class XmlStaxContext {
+-        private final XMLInputFactory inputFactory = XMLInputFactory.newFactory();
+-        private final XMLOutputFactory outputFactory = XMLOutputFactory.newFactory();
++        private final XMLInputFactory inputFactory = getXMLInputFactory();
++        private final XMLOutputFactory outputFactory = getXMLOutputFactory();
+         private final XMLEventFactory eventFactory = XMLEventFactory.newInstance();
+     }
+ 
+diff --git a/cim-anonymiser/src/test/java/com/powsybl/cim/CimAnonymizerTest.java b/cim-anonymiser/src/test/java/com/powsybl/cim/CimAnonymizerTest.java
+index 96ec66dce34..f4f877975f0 100644
+--- a/cim-anonymiser/src/test/java/com/powsybl/cim/CimAnonymizerTest.java
++++ b/cim-anonymiser/src/test/java/com/powsybl/cim/CimAnonymizerTest.java
+@@ -21,6 +21,8 @@
+ import org.xmlunit.diff.Diff;
+ 
+ import javax.xml.transform.Source;
++import java.io.BufferedReader;
++import java.io.IOException;
+ import java.io.InputStream;
+ import java.io.InputStreamReader;
+ import java.nio.charset.StandardCharsets;
+@@ -30,7 +32,10 @@
+ import java.util.zip.ZipEntry;
+ import java.util.zip.ZipOutputStream;
+ 
+-import static org.junit.jupiter.api.Assertions.*;
++import static org.junit.jupiter.api.Assertions.assertEquals;
++import static org.junit.jupiter.api.Assertions.assertFalse;
++import static org.junit.jupiter.api.Assertions.assertNotNull;
++import static org.junit.jupiter.api.Assertions.assertTrue;
+ 
+ /**
+  * @author Geoffroy Jamgotchian {@literal <geoffroy.jamgotchian at rte-france.com>}
+@@ -87,4 +92,59 @@ void anonymizeZip() throws Exception {
+         assertEquals(TestUtil.normalizeLineSeparator(CharStreams.toString(new InputStreamReader(getClass().getResourceAsStream("/sample.csv")))),
+                 TestUtil.normalizeLineSeparator(Files.readString(dictionaryFile, StandardCharsets.UTF_8)));
+     }
++
++    @Test
++    void secureDeserializationTest() throws IOException {
++        // Prepare sample temp files and paths
++        Path workDir = fileSystem.getPath("work");
++        Path outputDir = workDir.resolve("output");
++        Files.createDirectories(workDir);
++        Files.createDirectories(outputDir);
++        Path xmlPath = workDir.resolve("exploit.xml");
++        Path zipPath = workDir.resolve("exploit.zip");
++        Path dictFile = workDir.resolve("dict.csv");
++
++        // Exploit message
++        String exploitMessage = "OH NO!!!";
++
++        // Write the XML exploit file
++        prepareExploitXml(workDir, xmlPath, exploitMessage);
++
++        // Create ZIP with XXE XML
++        try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(zipPath))) {
++            zos.putNextEntry(new ZipEntry("sample_EQ.xml"));
++            Files.copy(xmlPath, zos);
++            zos.closeEntry();
++        }
++
++        // Run anonymizeZip and check that the dictionary file does not contain the exploit message
++        CimAnonymizer anonymizer = new CimAnonymizer();
++        anonymizer.anonymizeZip(zipPath, outputDir, dictFile, new CimAnonymizer.DefaultLogger(), false);
++        try (BufferedReader reader = Files.newBufferedReader(dictFile, StandardCharsets.UTF_8)) {
++            reader.lines().forEach(line -> assertFalse(line.contains(exploitMessage)));
++        }
++    }
++
++    private void prepareExploitXml(Path workDir, Path xmlPath, String exploitMessage) throws IOException {
++        // Write a secret file
++        Path secretFile = workDir.resolve("secret");
++        Files.writeString(secretFile, exploitMessage, StandardCharsets.UTF_8);
++        String uri = secretFile.toUri().toString();
++
++        // Write XXE XML (modified from sample_EQ.xml)
++        String exploitXml =
++            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
++                + "<!DOCTYPE rdf:RDF [\n"
++                + "  <!ENTITY xxe SYSTEM \""
++                + uri
++                + "\">\n"
++                + "]>\n"
++                + "<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\""
++                + " xmlns:cim=\"http://iec.ch/TC57/2013/CIM-schema-cim16#\">\n"
++                + "  <cim:ACLineSegment rdf:ID=\"L1\">\n"
++                + "    <cim:IdentifiedObject.name>&xxe;</cim:IdentifiedObject.name>\n"
++                + "  </cim:ACLineSegment>\n"
++                + "</rdf:RDF>\n";
++        Files.writeString(xmlPath, exploitXml, StandardCharsets.UTF_8);
++    }
+ }
+diff --git a/commons/src/main/java/com/powsybl/commons/config/PropertiesModuleConfigRepository.java b/commons/src/main/java/com/powsybl/commons/config/PropertiesModuleConfigRepository.java
+index 46809168574..1fa5e741f5a 100644
+--- a/commons/src/main/java/com/powsybl/commons/config/PropertiesModuleConfigRepository.java
++++ b/commons/src/main/java/com/powsybl/commons/config/PropertiesModuleConfigRepository.java
+@@ -13,7 +13,11 @@
+ import javax.xml.stream.XMLOutputFactory;
+ import javax.xml.stream.XMLStreamException;
+ import javax.xml.stream.XMLStreamWriter;
+-import java.io.*;
++import java.io.IOException;
++import java.io.InputStream;
++import java.io.Reader;
++import java.io.UncheckedIOException;
++import java.io.Writer;
+ import java.nio.charset.StandardCharsets;
+ import java.nio.file.DirectoryStream;
+ import java.nio.file.Files;
+@@ -22,6 +26,8 @@
+ import java.util.Optional;
+ import java.util.Properties;
+ 
++import static com.powsybl.commons.xml.XmlUtil.getXMLOutputFactory;
++
+ /**
+  *
+  * @author Geoffroy Jamgotchian {@literal <geoffroy.jamgotchian at rte-france.com>}
+@@ -59,7 +65,7 @@ public Optional<ModuleConfig> getModuleConfig(String name) {
+     }
+ 
+     public static void writeXml(Path configDir, Path xmlFile) throws IOException, XMLStreamException {
+-        XMLOutputFactory output = XMLOutputFactory.newInstance();
++        XMLOutputFactory output = getXMLOutputFactory();
+         try (Writer writer = Files.newBufferedWriter(xmlFile, StandardCharsets.UTF_8)) {
+             XMLStreamWriter xmlWriter = output.createXMLStreamWriter(writer);
+             try {
+diff --git a/commons/src/main/java/com/powsybl/commons/config/XmlModuleConfigRepository.java b/commons/src/main/java/com/powsybl/commons/config/XmlModuleConfigRepository.java
+index d1a32b47a40..cef77f85d6b 100644
+--- a/commons/src/main/java/com/powsybl/commons/config/XmlModuleConfigRepository.java
++++ b/commons/src/main/java/com/powsybl/commons/config/XmlModuleConfigRepository.java
+@@ -15,7 +15,6 @@
+ import org.w3c.dom.NodeList;
+ import org.xml.sax.SAXException;
+ 
+-import javax.xml.XMLConstants;
+ import javax.xml.parsers.DocumentBuilder;
+ import javax.xml.parsers.DocumentBuilderFactory;
+ import javax.xml.parsers.ParserConfigurationException;
+@@ -28,6 +27,8 @@
+ import java.util.Map;
+ import java.util.Objects;
+ 
++import static com.powsybl.commons.xml.XmlUtil.getDocumentBuilderFactory;
++
+ /**
+  *
+  * @author Geoffroy Jamgotchian {@literal <geoffroy.jamgotchian at rte-france.com>}
+@@ -38,10 +39,7 @@ public XmlModuleConfigRepository(Path xmlConfigFile) {
+         Objects.requireNonNull(xmlConfigFile);
+ 
+         try (InputStream is = Files.newInputStream(xmlConfigFile)) {
+-            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+-            factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+-            factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+-            factory.setNamespaceAware(true);
++            DocumentBuilderFactory factory = getDocumentBuilderFactory();
+             DocumentBuilder builder = factory.newDocumentBuilder();
+             Document doc = builder.parse(is);
+             Element root = doc.getDocumentElement();
+diff --git a/commons/src/main/java/com/powsybl/commons/xml/XmlReader.java b/commons/src/main/java/com/powsybl/commons/xml/XmlReader.java
+index 0ebc6217238..1f4c0bab5cf 100644
+--- a/commons/src/main/java/com/powsybl/commons/xml/XmlReader.java
++++ b/commons/src/main/java/com/powsybl/commons/xml/XmlReader.java
+@@ -7,34 +7,39 @@
+  */
+ package com.powsybl.commons.xml;
+ 
+-import com.google.common.base.Suppliers;
+ import com.powsybl.commons.PowsyblException;
+ import com.powsybl.commons.exceptions.UncheckedXmlStreamException;
+ import com.powsybl.commons.extensions.ExtensionSerDe;
+ import com.powsybl.commons.io.AbstractTreeDataReader;
+ 
+-import javax.xml.stream.XMLInputFactory;
+ import javax.xml.stream.XMLStreamConstants;
+ import javax.xml.stream.XMLStreamException;
+ import javax.xml.stream.XMLStreamReader;
+ import java.io.InputStream;
+-import java.util.*;
+-import java.util.function.Supplier;
++import java.util.Arrays;
++import java.util.Collection;
++import java.util.HashMap;
++import java.util.List;
++import java.util.Map;
++import java.util.Objects;
++import java.util.Optional;
++import java.util.OptionalDouble;
++import java.util.OptionalInt;
+ import java.util.stream.IntStream;
+ 
++import static com.powsybl.commons.xml.XmlUtil.getXMLInputFactory;
++
+ /**
+  * @author Geoffroy Jamgotchian {@literal <geoffroy.jamgotchian at rte-france.com>}
+  */
+ public class XmlReader extends AbstractTreeDataReader {
+ 
+-    private static final Supplier<XMLInputFactory> XML_INPUT_FACTORY_SUPPLIER = Suppliers.memoize(XMLInputFactory::newInstance);
+-
+     private final XMLStreamReader reader;
+     private final Map<String, String> namespaceVersionsMap;
+     private final Collection<ExtensionSerDe> extensionProviders;
+ 
+     public XmlReader(InputStream is, Map<String, String> namespaceVersionMap, Collection<ExtensionSerDe> extensionProviders) throws XMLStreamException {
+-        this.reader = XML_INPUT_FACTORY_SUPPLIER.get().createXMLStreamReader(Objects.requireNonNull(is));
++        this.reader = getXMLInputFactory().createXMLStreamReader(Objects.requireNonNull(is));
+         int state = reader.next();
+         while (state == XMLStreamConstants.COMMENT) {
+             state = reader.next();
+@@ -170,7 +175,7 @@ public void readEndNode() {
+     public void close() {
+         try {
+             reader.close();
+-            XmlUtil.gcXmlInputFactory(XML_INPUT_FACTORY_SUPPLIER.get());
++            XmlUtil.gcXmlInputFactory(getXMLInputFactory());
+         } catch (XMLStreamException e) {
+             throw new UncheckedXmlStreamException(e);
+         }
+diff --git a/commons/src/main/java/com/powsybl/commons/xml/XmlUtil.java b/commons/src/main/java/com/powsybl/commons/xml/XmlUtil.java
+index b29581a7b41..fcbda6f04d3 100644
+--- a/commons/src/main/java/com/powsybl/commons/xml/XmlUtil.java
++++ b/commons/src/main/java/com/powsybl/commons/xml/XmlUtil.java
+@@ -15,8 +15,20 @@
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ 
+-import javax.xml.stream.*;
+-import java.io.*;
++import javax.xml.XMLConstants;
++import javax.xml.parsers.DocumentBuilderFactory;
++import javax.xml.parsers.ParserConfigurationException;
++import javax.xml.stream.XMLInputFactory;
++import javax.xml.stream.XMLOutputFactory;
++import javax.xml.stream.XMLStreamConstants;
++import javax.xml.stream.XMLStreamException;
++import javax.xml.stream.XMLStreamReader;
++import javax.xml.stream.XMLStreamWriter;
++import java.io.ByteArrayInputStream;
++import java.io.IOException;
++import java.io.InputStream;
++import java.io.OutputStream;
++import java.io.Writer;
+ import java.nio.charset.Charset;
+ import java.nio.charset.StandardCharsets;
+ import java.util.Objects;
+@@ -31,7 +43,9 @@ public final class XmlUtil {
+ 
+     private static final Logger LOGGER = LoggerFactory.getLogger(XmlUtil.class);
+ 
+-    private static final Supplier<XMLOutputFactory> XML_OUTPUT_FACTORY_SUPPLIER = Suppliers.memoize(XMLOutputFactory::newFactory);
++    private static final Supplier<XMLInputFactory> XML_INPUT_FACTORY_SUPPLIER = Suppliers.memoize(XmlUtil::createXMLInputFactoryInstance);
++    private static final Supplier<XMLOutputFactory> XML_OUTPUT_FACTORY_SUPPLIER = Suppliers.memoize(XmlUtil::createXMLOutputFactoryInstance);
++    private static final Supplier<DocumentBuilderFactory> DOCUMENT_BUILDER_FACTORY_SUPPLIER = Suppliers.memoize(XmlUtil::createDocumentBuilderFactoryInstance);
+ 
+     private XmlUtil() {
+     }
+@@ -201,4 +215,67 @@ public static void readEndElementOrThrow(XMLStreamReader reader) throws XMLStrea
+             throw new PowsyblException("XMLStreamConstants.END_ELEMENT expected but found another event (eventType = '" + reader.getEventType() + "')");
+         }
+     }
++
++    private static XMLInputFactory createXMLInputFactoryInstance() {
++        LOGGER.info("Configuring StAX XMLInputFactory...");
++        LOGGER.info("Some properties may not be supported by your implementation.");
++        LOGGER.info("This may not be a problem because some are overlapping.");
++        XMLInputFactory factory = XMLInputFactory.newInstance();
++        setProperty(factory, XMLInputFactory.SUPPORT_DTD, false);
++        setProperty(factory, XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false);
++        setProperty(factory, XMLInputFactory.IS_REPLACING_ENTITY_REFERENCES, false);
++        // This causes XMLStreamException to be thrown if external DTDs are accessed.
++        setProperty(factory, XMLConstants.ACCESS_EXTERNAL_DTD, "");
++        setProperty(factory, XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
++        setProperty(factory, XMLConstants.ACCESS_EXTERNAL_STYLESHEET, "");
++
++        setProperty(factory, XMLConstants.FEATURE_SECURE_PROCESSING, true);
++        return factory;
++    }
++
++    private static void setProperty(XMLInputFactory factory, String property, Object value) {
++        try {
++            factory.setProperty(property, value);
++        } catch (IllegalArgumentException e) {
++            LOGGER.info("- Property unsupported by StAX implementation: {}", property);
++        }
++    }
++
++    private static XMLOutputFactory createXMLOutputFactoryInstance() {
++        return XMLOutputFactory.newFactory();
++    }
++
++    public static XMLOutputFactory getXMLOutputFactory() {
++        return XML_OUTPUT_FACTORY_SUPPLIER.get();
++    }
++
++    public static XMLInputFactory getXMLInputFactory() {
++        return XML_INPUT_FACTORY_SUPPLIER.get();
++    }
++
++    private static DocumentBuilderFactory createDocumentBuilderFactoryInstance() {
++        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
++        factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
++        factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
++        factory.setNamespaceAware(true);
++        setFeature(factory, XMLConstants.FEATURE_SECURE_PROCESSING, true);
++        setFeature(factory, "http://apache.org/xml/features/disallow-doctype-decl", true);
++        setFeature(factory, "http://xml.org/sax/features/external-general-entities", false);
++        setFeature(factory, "http://xml.org/sax/features/external-parameter-entities", false);
++        factory.setXIncludeAware(false);
++        factory.setExpandEntityReferences(false);
++        return factory;
++    }
++
++    private static void setFeature(DocumentBuilderFactory factory, String feature, boolean value) {
++        try {
++            factory.setFeature(feature, value);
++        } catch (ParserConfigurationException e) {
++            LOGGER.warn("Unable to set feature {} to {}", feature, value);
++        }
++    }
++
++    public static DocumentBuilderFactory getDocumentBuilderFactory() {
++        return DOCUMENT_BUILDER_FACTORY_SUPPLIER.get();
++    }
+ }
+diff --git a/commons/src/test/java/com/powsybl/commons/xml/XmlReaderTest.java b/commons/src/test/java/com/powsybl/commons/xml/XmlReaderTest.java
+new file mode 100644
+index 00000000000..32cf0516ba5
+--- /dev/null
++++ b/commons/src/test/java/com/powsybl/commons/xml/XmlReaderTest.java
+@@ -0,0 +1,142 @@
++/**
++ * Copyright (c) 2025, RTE (http://www.rte-france.com)
++ * This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
++ * SPDX-License-Identifier: MPL-2.0
++ */
++package com.powsybl.commons.xml;
++
++import com.google.common.jimfs.Configuration;
++import com.google.common.jimfs.Jimfs;
++import com.powsybl.commons.exceptions.UncheckedXmlStreamException;
++import org.junit.jupiter.api.AfterEach;
++import org.junit.jupiter.api.BeforeEach;
++import org.junit.jupiter.api.Test;
++
++import javax.xml.stream.XMLStreamConstants;
++import javax.xml.stream.XMLStreamReader;
++import java.io.IOException;
++import java.io.InputStream;
++import java.lang.reflect.Field;
++import java.nio.charset.StandardCharsets;
++import java.nio.file.FileSystem;
++import java.nio.file.Files;
++import java.nio.file.Path;
++import java.util.Collections;
++
++import static org.junit.jupiter.api.Assertions.assertTrue;
++import static org.junit.jupiter.api.Assertions.fail;
++
++/**
++ * @author Nicolas Rol {@literal <nicolas.rol at rte-france.com>}
++ */
++class XmlReaderTest {
++
++    private FileSystem fileSystem;
++    private Path workDir;
++
++    @BeforeEach
++    void setUp() throws Exception {
++        fileSystem = Jimfs.newFileSystem(Configuration.unix());
++        workDir = fileSystem.getPath("work");
++        Files.createDirectories(workDir);
++    }
++
++    @AfterEach
++    void tearDown() throws Exception {
++        fileSystem.close();
++    }
++
++    @Test
++    void secureDeserializationTest() throws Exception {
++        // Write the XML exploit file
++        Path xmlPath = workDir.resolve("exploit.xml");
++        String exploitMessage = "Secret data";
++        prepareExploitXml(workDir, xmlPath, exploitMessage);
++
++        try (InputStream is = Files.newInputStream(xmlPath)) {
++            XmlReader reader = new XmlReader(is, Collections.emptyMap(), Collections.emptyList());
++
++            // Dirty reflection to advance the reader to correct element.
++            Field readerField = XmlReader.class.getDeclaredField("reader");
++            readerField.setAccessible(true);
++            XMLStreamReader xmlStreamReader = (XMLStreamReader) readerField.get(reader);
++            while (xmlStreamReader.hasNext()) {
++                int event = xmlStreamReader.next();
++                if (event == XMLStreamConstants.START_ELEMENT) {
++                    break;
++                }
++            }
++
++            // Compare the reader content with the exploit message
++            assertNoLeak(reader.readContent());
++            reader.close();
++        }
++    }
++
++    private void assertNoLeak(String content) {
++        assertTrue(content == null || "null".equals(content),
++                () -> "Leaked content: \"" + content + "\"");
++    }
++
++    @Test
++    void anotherSecuredDeserializationTest() throws Exception {
++        // Write the XML exploit file
++        Path xmlPath = workDir.resolve("exploit.xml");
++        prepareAnotherExploitXml(xmlPath);
++
++        try (InputStream is = Files.newInputStream(xmlPath)) {
++            XmlReader reader = new XmlReader(is, Collections.emptyMap(), Collections.emptyList());
++
++            // Dirty reflection to advance the reader to correct element.
++            Field readerField = XmlReader.class.getDeclaredField("reader");
++            readerField.setAccessible(true);
++            XMLStreamReader xmlStreamReader = (XMLStreamReader) readerField.get(reader);
++            while (xmlStreamReader.hasNext()) {
++                int event = xmlStreamReader.next();
++                if (event == XMLStreamConstants.START_ELEMENT) {
++                    break;
++                }
++            }
++
++            // Compare the reader content with the exploit message
++            assertNoLeak(reader.readContent());
++            reader.close();
++        } catch (UncheckedXmlStreamException e) {
++            fail("Reader should not throw an exception", e);
++        }
++    }
++
++    private void prepareExploitXml(Path workDir, Path xmlPath, String exploitMessage) throws IOException {
++        // Write a secret file
++        Path secretFile = workDir.resolve("secret");
++        Files.writeString(secretFile, exploitMessage, StandardCharsets.UTF_8);
++        String uri = secretFile.toUri().toString();
++
++        // Write XXE XML (modified from sample_EQ.xml)
++        String exploitXml =
++            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
++                + "<!DOCTYPE rdf:RDF [\n"
++                + "  <!ENTITY xxe SYSTEM \""
++                + uri
++                + "\">\n"
++                + "]>\n"
++                + "<foo>&xxe;</foo>\n";
++        Files.writeString(xmlPath, exploitXml, StandardCharsets.UTF_8);
++    }
++
++    private void prepareAnotherExploitXml(Path xmlPath) throws IOException {
++        // Write XXE XML (modified from sample_EQ.xml)
++        String exploitXml =
++            """
++                <?xml version="1.0" encoding="UTF-8"?>
++                <!DOCTYPE rdf:RDF [
++                  <!ENTITY xxe SYSTEM "\
++                http://localhost:12345/ssrf">
++                ]>
++                <foo>&xxe;</foo>
++                """;
++        Files.writeString(xmlPath, exploitXml, StandardCharsets.UTF_8);
++    }
++}
+diff --git a/commons/src/test/java/com/powsybl/commons/xml/XmlUtilTest.java b/commons/src/test/java/com/powsybl/commons/xml/XmlUtilTest.java
+index 65d14e17338..38f2127c834 100644
+--- a/commons/src/test/java/com/powsybl/commons/xml/XmlUtilTest.java
++++ b/commons/src/test/java/com/powsybl/commons/xml/XmlUtilTest.java
+@@ -21,6 +21,7 @@
+ import java.util.concurrent.atomic.AtomicInteger;
+ import java.util.concurrent.atomic.AtomicReference;
+ 
++import static com.powsybl.commons.xml.XmlUtil.getXMLInputFactory;
+ import static org.junit.jupiter.api.Assertions.assertEquals;
+ import static org.junit.jupiter.api.Assertions.assertTrue;
+ 
+@@ -46,7 +47,7 @@ void readAttributes() throws XMLStreamException {
+         AtomicReference<Double> attrDbl = new AtomicReference<>(0d);
+         AtomicReference<Float> attrFloat = new AtomicReference<>(0f);
+         try (StringReader reader = new StringReader(XML)) {
+-            XMLStreamReader xmlReader = XMLInputFactory.newInstance().createXMLStreamReader(reader);
++            XMLStreamReader xmlReader = getXMLInputFactory().createXMLStreamReader(reader);
+             xmlReader.next();
+             try {
+                 XmlUtil.readSubElements(xmlReader, elementName -> {
+@@ -76,7 +77,7 @@ void readAttributes() throws XMLStreamException {
+     void readUntilEndElementWithDepthTest() throws XMLStreamException {
+         Map<String, Integer> depths = new HashMap<>();
+         try (StringReader reader = new StringReader(XML)) {
+-            XMLStreamReader xmlReader = XMLInputFactory.newInstance().createXMLStreamReader(reader);
++            XMLStreamReader xmlReader = getXMLInputFactory().createXMLStreamReader(reader);
+             xmlReader.next();
+             try {
+                 XmlUtil.readSubElements(xmlReader, elementName -> {
+@@ -97,7 +98,7 @@ void readUntilEndElementWithDepthTest() throws XMLStreamException {
+     void nestedReadUntilEndElementWithDepthTest() throws XMLStreamException {
+         Map<String, Integer> depths = new HashMap<>();
+         try (StringReader reader = new StringReader(XML)) {
+-            XMLStreamReader xmlReader = XMLInputFactory.newInstance().createXMLStreamReader(reader);
++            XMLStreamReader xmlReader = getXMLInputFactory().createXMLStreamReader(reader);
+             try {
+                 xmlReader.next();
+                 XmlUtil.readSubElements(xmlReader, elementName -> {
+@@ -135,7 +136,7 @@ void readUntilStartElementTest() throws XMLStreamException {
+ 
+     private void readUntilStartElementTest(String path, String expected) throws XMLStreamException {
+         try (StringReader reader = new StringReader(XML)) {
+-            XMLStreamReader xmlReader = XMLInputFactory.newInstance().createXMLStreamReader(reader);
++            XMLStreamReader xmlReader = getXMLInputFactory().createXMLStreamReader(reader);
+             try {
+                 XmlUtil.readUntilStartElement(path, xmlReader, elementName -> assertEquals(expected, xmlReader.getLocalName()));
+             } finally {
+@@ -156,7 +157,7 @@ private void readUntilStartElementNotFoundTest(String path, String parent) throw
+     void readTextTest() throws XMLStreamException {
+         String xml = "<a>hello</a>";
+         try (StringReader reader = new StringReader(xml)) {
+-            XMLStreamReader xmlReader = XMLInputFactory.newInstance().createXMLStreamReader(reader);
++            XMLStreamReader xmlReader = getXMLInputFactory().createXMLStreamReader(reader);
+             try {
+                 String text = null;
+                 while (xmlReader.hasNext()) {
+diff --git a/iidm/iidm-serde/src/main/java/com/powsybl/iidm/serde/XMLImporter.java b/iidm/iidm-serde/src/main/java/com/powsybl/iidm/serde/XMLImporter.java
+index f1910f38716..9d954ba1105 100644
+--- a/iidm/iidm-serde/src/main/java/com/powsybl/iidm/serde/XMLImporter.java
++++ b/iidm/iidm-serde/src/main/java/com/powsybl/iidm/serde/XMLImporter.java
+@@ -8,7 +8,6 @@
+ package com.powsybl.iidm.serde;
+ 
+ import com.google.auto.service.AutoService;
+-import com.google.common.base.Suppliers;
+ import com.powsybl.commons.config.PlatformConfig;
+ import com.powsybl.commons.datasource.ReadOnlyDataSource;
+ import com.powsybl.commons.xml.XmlUtil;
+@@ -16,15 +15,14 @@
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ 
+-import javax.xml.stream.XMLInputFactory;
+ import javax.xml.stream.XMLStreamConstants;
+ import javax.xml.stream.XMLStreamException;
+ import javax.xml.stream.XMLStreamReader;
+ import java.io.IOException;
+ import java.io.InputStream;
+-import java.util.function.Supplier;
+ import java.util.stream.Stream;
+ 
++import static com.powsybl.commons.xml.XmlUtil.getXMLInputFactory;
+ import static com.powsybl.iidm.serde.IidmSerDeConstants.CURRENT_IIDM_VERSION;
+ 
+ /**
+@@ -36,8 +34,6 @@ public class XMLImporter extends AbstractTreeDataImporter {
+     private static final Logger LOGGER = LoggerFactory.getLogger(XMLImporter.class);
+     private static final String[] EXTENSIONS = {"xiidm", "iidm", "xml"};
+ 
+-    private static final Supplier<XMLInputFactory> XML_INPUT_FACTORY_SUPPLIER = Suppliers.memoize(XMLInputFactory::newInstance);
+-
+     public XMLImporter() {
+         super();
+     }
+@@ -66,7 +62,7 @@ protected boolean exists(ReadOnlyDataSource dataSource, String ext) throws IOExc
+             if (ext != null) {
+                 try (InputStream is = dataSource.newInputStream(null, ext)) {
+                     // check the first root element is network and namespace is IIDM
+-                    XMLStreamReader xmlsr = XML_INPUT_FACTORY_SUPPLIER.get().createXMLStreamReader(is);
++                    XMLStreamReader xmlsr = getXMLInputFactory().createXMLStreamReader(is);
+                     try {
+                         while (xmlsr.hasNext()) {
+                             int eventType = xmlsr.next();
+@@ -93,7 +89,7 @@ protected boolean exists(ReadOnlyDataSource dataSource, String ext) throws IOExc
+     private void cleanClose(XMLStreamReader xmlStreamReader) {
+         try {
+             xmlStreamReader.close();
+-            XmlUtil.gcXmlInputFactory(XML_INPUT_FACTORY_SUPPLIER.get());
++            XmlUtil.gcXmlInputFactory(getXMLInputFactory());
+         } catch (XMLStreamException e) {
+             LOGGER.error(e.toString(), e);
+         }

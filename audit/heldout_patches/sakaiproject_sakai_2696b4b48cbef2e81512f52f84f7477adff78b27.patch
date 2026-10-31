@@ -1,0 +1,804 @@
+From 2696b4b48cbef2e81512f52f84f7477adff78b27 Mon Sep 17 00:00:00 2001
+From: Sam Ottenhoff <ottenhoff@longsight.com>
+Date: Sat, 23 May 2026 20:02:14 -0400
+Subject: [PATCH] SAK-52622 Conversations API fixes
+
+---
+ .../impl/ConversationsServiceImpl.java        | 26 ++++++
+ .../src/main/webapp/WEB-INF/components.xml    |  1 +
+ .../impl/ConversationsServiceTests.java       | 65 +++++++++++++++
+ .../impl/ConversationsTestConfiguration.java  | 10 +++
+ .../tasks/impl/TaskServiceImpl.java           | 15 ++++
+ .../tasks/impl/test/TaskServiceTest.java      | 25 ++++++
+ .../test/TaskServiceTestConfiguration.java    | 13 +++
+ .../rubrics/impl/RubricsServiceImpl.java      | 82 +++++++++++++++++++
+ .../impl/test/RubricsServiceTests.java        | 24 ++++++
+ .../impl/test/RubricsTestConfiguration.java   | 12 ++-
+ .../controllers/DashboardController.java      | 13 ++-
+ .../webapi/test/DashboardControllerTests.java | 46 +++++++++++
+ 12 files changed, 329 insertions(+), 3 deletions(-)
+
+diff --git a/conversations/impl/src/main/java/org/sakaiproject/conversations/impl/ConversationsServiceImpl.java b/conversations/impl/src/main/java/org/sakaiproject/conversations/impl/ConversationsServiceImpl.java
+index f32f84ee2d24..d7ad0b371594 100644
+--- a/conversations/impl/src/main/java/org/sakaiproject/conversations/impl/ConversationsServiceImpl.java
++++ b/conversations/impl/src/main/java/org/sakaiproject/conversations/impl/ConversationsServiceImpl.java
+@@ -120,6 +120,7 @@
+ import org.sakaiproject.user.api.UserNotDefinedException;
+ import org.sakaiproject.util.CalendarEventType;
+ import org.sakaiproject.util.ResourceLoader;
++import org.sakaiproject.util.api.FormattedText;
+ import org.sakaiproject.entity.api.EntityTransferrer;
+ 
+ import com.fasterxml.jackson.core.JsonProcessingException;
+@@ -157,6 +158,8 @@ public class ConversationsServiceImpl implements ConversationsService, EntityTra
+ 
+     private EventTrackingService eventTrackingService;
+ 
++    private FormattedText formattedText;
++
+     private MemoryService memoryService;
+ 
+     private ConversationsPostRepository postRepository;
+@@ -526,6 +529,8 @@ public TopicTransferBean saveTopic(final TopicTransferBean topicBean, boolean se
+             topicBean.hidden = true;
+         }
+ 
++        sanitizeTopicBean(topicBean);
++
+         ConversationsTopic topic = topicRepository.save(topicBean.asTopic());
+ 
+         syncGradingItem(isNew, existingGradingItemId, topic, topicBean);
+@@ -1034,6 +1039,7 @@ public PostTransferBean savePost(PostTransferBean postBean, boolean sendMessage)
+         }
+         postBean.setModifier(currentUserId);
+         postBean.setModified(now);
++        sanitizePostBean(postBean);
+ 
+         ConversationsPost post = postBean.asPost();
+ 
+@@ -1722,6 +1728,7 @@ public CommentTransferBean saveComment(CommentTransferBean commentBean) throws C
+         }
+         commentBean.setModifier(currentUserId);
+         commentBean.setModified(now);
++        sanitizeCommentBean(commentBean);
+ 
+         ConversationsComment comment = commentBean.asComment();
+         comment.setPost(postRepository.getReferenceById(commentBean.postId));
+@@ -2196,6 +2203,23 @@ public void deleteTag(Long tagId) throws ConversationsPermissionsException {
+         }
+     }
+ 
++    // Rich text is cleaned before persistence; read paths return stored values unchanged.
++    private void sanitizeTopicBean(TopicTransferBean topicBean) {
++        topicBean.message = sanitizeFormattedText(topicBean.message);
++    }
++
++    private void sanitizePostBean(PostTransferBean postBean) {
++        postBean.message = sanitizeFormattedText(postBean.message);
++    }
++
++    private void sanitizeCommentBean(CommentTransferBean commentBean) {
++        commentBean.message = sanitizeFormattedText(commentBean.message);
++    }
++
++    private String sanitizeFormattedText(String text) {
++        return formattedText.processFormattedText(text, null, FormattedText.Level.HIGH);
++    }
++
+     private String getCheckedCurrentUserId() throws ConversationsPermissionsException {
+ 
+         String currentUserId = sessionManager.getCurrentSessionUserId();
+@@ -2222,6 +2246,8 @@ public Settings saveSettings(Settings settings) throws ConversationsPermissionsE
+             throw new ConversationsPermissionsException("Current user cannot set site settings");
+         }
+ 
++        settings.setGuidelines(sanitizeFormattedText(settings.getGuidelines()));
++
+         Settings old = getSettingsForSite(settings.getSiteId());
+         Boolean oldSiteLocked = old.getSiteLocked();
+         Boolean newSiteLocked = settings.getSiteLocked();
+diff --git a/conversations/impl/src/main/webapp/WEB-INF/components.xml b/conversations/impl/src/main/webapp/WEB-INF/components.xml
+index 0f43784ca1f2..1f2225efb16a 100644
+--- a/conversations/impl/src/main/webapp/WEB-INF/components.xml
++++ b/conversations/impl/src/main/webapp/WEB-INF/components.xml
+@@ -121,6 +121,7 @@
+     <property name="convStatusRepository" ref="org.sakaiproject.conversations.api.repository.ConvStatusRepository" />
+     <property name="entityManager" ref="org.sakaiproject.entity.api.EntityManager" />
+     <property name="eventTrackingService" ref="org.sakaiproject.event.api.EventTrackingService" />
++    <property name="formattedText" ref="org.sakaiproject.util.api.FormattedText" />
+     <property name="functionManager" ref="org.sakaiproject.authz.api.FunctionManager" />
+     <property name="memoryService" ref="org.sakaiproject.memory.api.MemoryService" />
+     <property name="postRepository" ref="org.sakaiproject.conversations.api.repository.ConversationsPostRepository" />
+diff --git a/conversations/impl/src/test/org/sakaiproject/conversations/impl/ConversationsServiceTests.java b/conversations/impl/src/test/org/sakaiproject/conversations/impl/ConversationsServiceTests.java
+index ff512142fd7f..39c22821f68d 100644
+--- a/conversations/impl/src/test/org/sakaiproject/conversations/impl/ConversationsServiceTests.java
++++ b/conversations/impl/src/test/org/sakaiproject/conversations/impl/ConversationsServiceTests.java
+@@ -43,6 +43,7 @@
+ import org.sakaiproject.conversations.api.repository.ConversationsCommentRepository;
+ import org.sakaiproject.conversations.api.repository.ConversationsPostRepository;
+ import org.sakaiproject.conversations.api.repository.ConversationsTopicRepository;
++import org.sakaiproject.conversations.api.repository.SettingsRepository;
+ import org.sakaiproject.conversations.api.repository.TopicStatusRepository;
+ import org.sakaiproject.entity.api.Entity;
+ import org.sakaiproject.entity.api.Reference;
+@@ -61,6 +62,7 @@
+ import org.sakaiproject.user.api.UserDirectoryService;
+ import org.sakaiproject.user.api.UserNotDefinedException;
+ import org.sakaiproject.util.ResourceLoader;
++import org.sakaiproject.util.api.FormattedText;
+ import org.sakaiproject.util.Xml;
+ 
+ import org.springframework.beans.factory.annotation.Autowired;
+@@ -120,6 +122,8 @@ public class ConversationsServiceTests extends AbstractTransactionalJUnit4Spring
+     @Autowired private ServerConfigurationService serverConfigurationService;
+     @Autowired private ConversationsTopicRepository topicRepository;
+     @Autowired private TopicStatusRepository topicStatusRepository;
++    @Autowired private SettingsRepository settingsRepository;
++    @Autowired private FormattedText formattedText;
+ 
+     private ResourceLoader resourceLoader;
+ 
+@@ -150,6 +154,9 @@ public void setup() {
+         reset(sessionManager);
+         reset(securityService);
+         reset(userDirectoryService);
++        reset(formattedText);
++        when(formattedText.processFormattedText(anyString(), isNull(), eq(FormattedText.Level.HIGH)))
++            .thenAnswer(invocation -> invocation.getArgument(0));
+         topicBean = new TopicTransferBean();
+         topicBean.setTitle("Topic 1");
+         topicBean.setMessage("Topic 1 messaage");
+@@ -1208,6 +1215,64 @@ public void crudComment() {
+         }
+     }
+ 
++    @Test
++    public void richTextFieldsAreSanitizedOnSave() throws Exception {
++
++        switchToUser1();
++
++        String topicPayload = "<img src=x onerror=alert(1)>";
++        String sanitizedTopic = "<img src=\"x\" />";
++        when(formattedText.processFormattedText(eq(topicPayload), isNull(), eq(FormattedText.Level.HIGH))).thenReturn(sanitizedTopic);
++
++        TopicTransferBean topic = new TopicTransferBean();
++        topic.siteId = site1Id;
++        topic.title = "Topic Title";
++        topic.message = topicPayload;
++        TopicTransferBean savedTopic = conversationsService.saveTopic(topic, true);
++
++        assertEquals(sanitizedTopic, savedTopic.message);
++        assertEquals(sanitizedTopic, topicRepository.findById(savedTopic.id).get().getMessage());
++
++        String postPayload = "<script>alert(document.cookie)</script>";
++        String sanitizedPost = "";
++        when(formattedText.processFormattedText(eq(postPayload), isNull(), eq(FormattedText.Level.HIGH))).thenReturn(sanitizedPost);
++
++        PostTransferBean post = new PostTransferBean();
++        post.siteId = site1Id;
++        post.topic = savedTopic.id;
++        post.message = postPayload;
++        PostTransferBean savedPost = conversationsService.savePost(post, true);
++
++        assertEquals(sanitizedPost, savedPost.message);
++        assertEquals(sanitizedPost, postRepository.findById(savedPost.id).get().getMessage());
++
++        String commentPayload = "<svg onload=alert(1)>x</svg>";
++        String sanitizedComment = "x";
++        when(formattedText.processFormattedText(eq(commentPayload), isNull(), eq(FormattedText.Level.HIGH))).thenReturn(sanitizedComment);
++
++        CommentTransferBean comment = new CommentTransferBean();
++        comment.postId = savedPost.id;
++        comment.topicId = savedTopic.id;
++        comment.siteId = site1Id;
++        comment.message = commentPayload;
++        CommentTransferBean savedComment = conversationsService.saveComment(comment);
++
++        assertEquals(sanitizedComment, savedComment.message);
++        assertEquals(sanitizedComment, commentRepository.findById(savedComment.id).get().getMessage());
++
++        String guidelinesPayload = "<a href=\"javascript:alert(1)\">guidelines</a>";
++        String sanitizedGuidelines = "<a>guidelines</a>";
++        when(formattedText.processFormattedText(eq(guidelinesPayload), isNull(), eq(FormattedText.Level.HIGH))).thenReturn(sanitizedGuidelines);
++        when(securityService.unlock(SiteService.SECURE_UPDATE_SITE, site1Ref)).thenReturn(true);
++
++        Settings settings = conversationsService.getSettingsForSite(site1Id);
++        settings.setGuidelines(guidelinesPayload);
++        Settings savedSettings = conversationsService.saveSettings(settings);
++
++        assertEquals(sanitizedGuidelines, savedSettings.getGuidelines());
++        assertEquals(sanitizedGuidelines, settingsRepository.findBySiteId(site1Id).get().getGuidelines());
++    }
++
+     @Test
+     public void crudTags() {
+ 
+diff --git a/conversations/impl/src/test/org/sakaiproject/conversations/impl/ConversationsTestConfiguration.java b/conversations/impl/src/test/org/sakaiproject/conversations/impl/ConversationsTestConfiguration.java
+index 0fba8add529c..e76737f37ff6 100644
+--- a/conversations/impl/src/test/org/sakaiproject/conversations/impl/ConversationsTestConfiguration.java
++++ b/conversations/impl/src/test/org/sakaiproject/conversations/impl/ConversationsTestConfiguration.java
+@@ -19,6 +19,7 @@
+ import static org.mockito.Mockito.when;
+ import static org.mockito.ArgumentMatchers.anyString;
+ import static org.mockito.ArgumentMatchers.any;
++import static org.mockito.ArgumentMatchers.isNull;
+ 
+ import java.io.IOException;
+ import java.util.Properties;
+@@ -57,6 +58,7 @@
+ import org.sakaiproject.time.api.TimeService;
+ import org.sakaiproject.time.api.UserTimeService;
+ import org.sakaiproject.user.api.UserNotificationPreferencesRegistration;
++import org.sakaiproject.util.api.FormattedText;
+ 
+ import org.springframework.context.annotation.Bean;
+ import org.springframework.context.annotation.Configuration;
+@@ -162,6 +164,14 @@ public ServerConfigurationService serverConfigurationService() {
+         return mock(ServerConfigurationService.class);
+     }
+ 
++    @Bean(name = "org.sakaiproject.util.api.FormattedText")
++    public FormattedText formattedText() {
++        FormattedText formattedText = mock(FormattedText.class);
++        when(formattedText.processFormattedText(anyString(), isNull(), any(FormattedText.Level.class)))
++            .thenAnswer(invocation -> invocation.getArgument(0));
++        return formattedText;
++    }
++
+     @Bean(name = "org.sakaiproject.search.api.SearchIndexBuilder")
+     public SearchIndexBuilder searchIndexBuilder() {
+         return mock(SearchIndexBuilder.class);
+diff --git a/kernel/kernel-impl/src/main/java/org/sakaiproject/tasks/impl/TaskServiceImpl.java b/kernel/kernel-impl/src/main/java/org/sakaiproject/tasks/impl/TaskServiceImpl.java
+index 4dad36f936bc..d21bbd5ebef9 100644
+--- a/kernel/kernel-impl/src/main/java/org/sakaiproject/tasks/impl/TaskServiceImpl.java
++++ b/kernel/kernel-impl/src/main/java/org/sakaiproject/tasks/impl/TaskServiceImpl.java
+@@ -53,6 +53,7 @@
+ import org.sakaiproject.tasks.api.repository.TaskRepository;
+ import org.sakaiproject.tasks.api.repository.UserTaskRepository;
+ import org.sakaiproject.tool.api.SessionManager;
++import org.sakaiproject.util.api.FormattedText;
+ 
+ import org.springframework.beans.BeanUtils;
+ import org.springframework.beans.factory.annotation.Autowired;
+@@ -75,6 +76,7 @@ public class TaskServiceImpl implements TaskService, Observer {
+     @Autowired private SecurityService securityService;
+     @Autowired private SessionManager sessionManager;
+     @Autowired private SiteService siteService;
++    @Autowired private FormattedText formattedText;
+     @Autowired private TaskAssignedRepository taskAssignedRepository;
+     @Autowired private TaskRepository taskRepository;
+     @Autowired private UserTaskRepository userTaskRepository;
+@@ -142,6 +144,7 @@ public void update(Observable o, Object arg) {
+     public UserTask createSingleUserTask(UserTaskAdapterBean transfer) {
+ 
+         String userId = sessionManager.getCurrentSessionUserId();
++        sanitizeUserTaskAdapterBean(transfer);
+ 
+         Task task = new Task();
+         BeanUtils.copyProperties(transfer, task);
+@@ -202,6 +205,7 @@ public UserTask saveUserTask(UserTaskAdapterBean transfer) {
+         }
+ 
+         UserTask userTask = optionalUserTask.get();
++        sanitizeUserTaskAdapterBean(transfer);
+ 
+         // Trigger the load of the Task entity
+         Task task = userTask.getTask();
+@@ -219,6 +223,7 @@ public UserTask saveUserTask(UserTaskAdapterBean transfer) {
+     public UserTask createUserTask(Task task, UserTaskAdapterBean transfer) {
+         UserTask userTask = new UserTask();
+         userTask.setTask(task);
++        sanitizeUserTaskAdapterBean(transfer);
+         BeanUtils.copyProperties(transfer, userTask);
+         return userTaskRepository.save(userTask);
+     }
+@@ -276,6 +281,16 @@ public List<UserTaskAdapterBean> getAllTasksForCurrentUserOnSite(String siteId)
+                 }).collect(Collectors.toList());
+     }
+ 
++    // Rich text is cleaned before persistence; read paths return stored values unchanged.
++    private void sanitizeUserTaskAdapterBean(UserTaskAdapterBean bean) {
++
++        bean.setNotes(sanitizeFormattedText(bean.getNotes()));
++    }
++
++    private String sanitizeFormattedText(String text) {
++        return formattedText.processFormattedText(text, null, FormattedText.Level.HIGH);
++    }
++
+     public List<UserTask> getCurrentUserTasks(String userId) {
+         return userTaskRepository.findByUserIdAndTask_StartsLessThanEqual(userId, Instant.now());
+     }
+diff --git a/kernel/kernel-impl/src/test/java/org/sakaiproject/tasks/impl/test/TaskServiceTest.java b/kernel/kernel-impl/src/test/java/org/sakaiproject/tasks/impl/test/TaskServiceTest.java
+index dc34132fcb58..be6c42afb8d3 100644
+--- a/kernel/kernel-impl/src/test/java/org/sakaiproject/tasks/impl/test/TaskServiceTest.java
++++ b/kernel/kernel-impl/src/test/java/org/sakaiproject/tasks/impl/test/TaskServiceTest.java
+@@ -19,6 +19,8 @@
+ package org.sakaiproject.tasks.impl.test;
+ 
+ import static org.junit.runners.MethodSorters.NAME_ASCENDING;
++import static org.mockito.ArgumentMatchers.eq;
++import static org.mockito.ArgumentMatchers.isNull;
+ 
+ import java.time.Instant;
+ import java.time.temporal.ChronoUnit;
+@@ -42,6 +44,7 @@
+ import org.sakaiproject.tasks.api.TaskPermissions;
+ import org.sakaiproject.tasks.api.UserTaskAdapterBean;
+ import org.sakaiproject.tool.api.SessionManager;
++import org.sakaiproject.util.api.FormattedText;
+ 
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.test.context.ContextConfiguration;
+@@ -58,6 +61,7 @@ public class TaskServiceTest extends AbstractTransactionalJUnit4SpringContextTes
+     @Autowired private SessionManager sessionManager;
+     @Autowired private SiteService siteService;
+     @Autowired private TaskService taskService;
++    @Autowired private FormattedText formattedText;
+ 
+     private String siteId = "playpen";
+     private String student = "student";
+@@ -104,6 +108,27 @@ public void testCanCreateSingleUserTask() {
+         Assert.isTrue(userTask.getPriority() == priority, "task.priority were not the same");
+     }
+ 
++    @Test
++    public void testCreateSingleUserTaskSanitizesNotesOnSave() {
++
++        switchToStudent();
++
++        String payload = "<img src=x onerror=alert(1)>";
++        String clean = "<img src=\"x\" />";
++        when(formattedText.processFormattedText(eq(payload), isNull(), eq(FormattedText.Level.HIGH))).thenReturn(clean);
++
++        UserTaskAdapterBean bean = new UserTaskAdapterBean();
++        bean.setDescription("Description about my task");
++        bean.setNotes(payload);
++        bean.setPriority(Priorities.QUITE_HIGH);
++
++        taskService.createSingleUserTask(bean);
++
++        UserTaskAdapterBean userTask = taskService.getCurrentTasksForCurrentUser().stream().findFirst().get();
++
++        assertEquals("User task notes should be sanitized before storage", clean, userTask.getNotes());
++    }
++
+     @Test
+     public void testCanCreateTask() {
+ 
+diff --git a/kernel/kernel-impl/src/test/java/org/sakaiproject/tasks/impl/test/TaskServiceTestConfiguration.java b/kernel/kernel-impl/src/test/java/org/sakaiproject/tasks/impl/test/TaskServiceTestConfiguration.java
+index 71fee8955d25..64f3dd999cc7 100644
+--- a/kernel/kernel-impl/src/test/java/org/sakaiproject/tasks/impl/test/TaskServiceTestConfiguration.java
++++ b/kernel/kernel-impl/src/test/java/org/sakaiproject/tasks/impl/test/TaskServiceTestConfiguration.java
+@@ -15,7 +15,11 @@
+  */
+ package org.sakaiproject.tasks.impl.test;
+ 
++import static org.mockito.ArgumentMatchers.any;
++import static org.mockito.ArgumentMatchers.anyString;
++import static org.mockito.ArgumentMatchers.isNull;
+ import static org.mockito.Mockito.mock;
++import static org.mockito.Mockito.when;
+ 
+ import org.hibernate.SessionFactory;
+ import org.sakaiproject.authz.api.AuthzGroupService;
+@@ -32,6 +36,7 @@
+ import org.sakaiproject.tasks.impl.repository.TaskRepositoryImpl;
+ import org.sakaiproject.tasks.impl.repository.UserTaskRepositoryImpl;
+ import org.sakaiproject.test.SakaiTestConfiguration;
++import org.sakaiproject.util.api.FormattedText;
+ 
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.beans.factory.annotation.Qualifier;
+@@ -78,6 +83,14 @@ public FunctionManager functionManager() {
+         return mock(FunctionManager.class);
+     }
+ 
++    @Bean(name = "org.sakaiproject.util.api.FormattedText")
++    public FormattedText formattedText() {
++        FormattedText formattedText = mock(FormattedText.class);
++        when(formattedText.processFormattedText(anyString(), isNull(), any(FormattedText.Level.class)))
++            .thenAnswer(invocation -> invocation.getArgument(0));
++        return formattedText;
++    }
++
+     @Bean
+     public TaskService taskService() {
+         return new TaskServiceImpl();
+diff --git a/rubrics/impl/src/main/java/org/sakaiproject/rubrics/impl/RubricsServiceImpl.java b/rubrics/impl/src/main/java/org/sakaiproject/rubrics/impl/RubricsServiceImpl.java
+index 08acb38aaeb5..86e3982045b2 100644
+--- a/rubrics/impl/src/main/java/org/sakaiproject/rubrics/impl/RubricsServiceImpl.java
++++ b/rubrics/impl/src/main/java/org/sakaiproject/rubrics/impl/RubricsServiceImpl.java
+@@ -279,6 +279,7 @@ public RubricTransferBean copyRubricToSite(Long rubricId, String toSiteId) {
+             copy.setModified(now);
+             copy.setCreatorId(sessionManager.getCurrentSessionUserId());
+             copy.setTitle(copy.getTitle() + " " + resourceLoader.getString("copy"));
++            sanitizeRubric(copy);
+             return decorateRubricBean(new RubricTransferBean(rubricRepository.save(copy)));
+         }).orElseThrow(() -> new IllegalArgumentException("No rubric with id: " + rubricId));
+     }
+@@ -375,6 +376,7 @@ public CriterionTransferBean copyCriterion(Long rubricId, Long sourceId) {
+         clone.setRubric(rubric);
+         rubric.getCriteria().add(clone);
+         clone.setTitle(clone.getTitle() + " " + resourceLoader.getString("copy"));
++        sanitizeCriterion(clone);
+ 
+         Rubric savedRubric = rubricRepository.save(updateRubricMaxPoints(rubric));
+         Criterion newCriterion = savedRubric.getCriteria().stream()
+@@ -576,6 +578,8 @@ public RubricTransferBean saveRubric(RubricTransferBean bean) {
+             throw new SecurityException("You must be a rubrics editor to create/edit rubrics");
+         }
+ 
++        sanitizeRubricBean(bean);
++
+         Rubric rubric;
+         if (bean.getId() == null) {
+             rubric = new Rubric();
+@@ -675,6 +679,7 @@ public CriterionTransferBean updateCriterion(CriterionTransferBean bean, String
+         }
+ 
+         if (bean.getId() != null) {
++            sanitizeCriterionBean(bean);
+             // we can use getById since a bean with an id should exist
+             Criterion criterion = criterionRepository.getById(bean.getId());
+             criterion.setTitle(bean.getTitle());
+@@ -721,6 +726,7 @@ public RatingTransferBean updateRating(RatingTransferBean bean, String siteId) {
+         }
+ 
+         if (bean.getId() != null) {
++            sanitizeRatingBean(bean);
+             Rating rating = ratingRepository.getById(bean.getId());
+             rating.setTitle(bean.getTitle());
+             rating.setDescription(bean.getDescription());
+@@ -789,6 +795,40 @@ public Optional<CriterionTransferBean> getCriterion(Long criterionId, String sit
+         return criterionRepository.findById(criterionId).map(CriterionTransferBean::new);
+     }
+ 
++    // Rich text is cleaned before persistence; read paths return stored values unchanged.
++    private void sanitizeRubric(Rubric rubric) {
++
++        if (rubric.getCriteria() != null) {
++            rubric.getCriteria().forEach(this::sanitizeCriterion);
++        }
++    }
++
++    private void sanitizeCriterion(Criterion criterion) {
++
++        criterion.setDescription(sanitizeFormattedText(criterion.getDescription()));
++        if (criterion.getRatings() != null) {
++            criterion.getRatings().forEach(this::sanitizeRating);
++        }
++    }
++
++    private void sanitizeRating(Rating rating) {
++
++        rating.setDescription(sanitizeFormattedText(rating.getDescription()));
++    }
++
++    private void sanitizeEvaluation(Evaluation evaluation) {
++
++        evaluation.setOverallComment(sanitizeFormattedText(evaluation.getOverallComment()));
++        if (evaluation.getCriterionOutcomes() != null) {
++            evaluation.getCriterionOutcomes().forEach(this::sanitizeCriterionOutcome);
++        }
++    }
++
++    private void sanitizeCriterionOutcome(CriterionOutcome outcome) {
++
++        outcome.setComments(sanitizeFormattedText(outcome.getComments()));
++    }
++
+     @Transactional(readOnly = true)
+     public Optional<AssociationTransferBean> getAssociationForToolAndItem(String toolId, String itemId, String siteId) {
+ 
+@@ -863,6 +903,43 @@ public List<EvaluationTransferBean> getEvaluationsForToolAndItem(String toolId,
+             .collect(Collectors.toList());
+     }
+ 
++    private void sanitizeRubricBean(RubricTransferBean bean) {
++
++        if (bean.getCriteria() != null) {
++            bean.getCriteria().forEach(this::sanitizeCriterionBean);
++        }
++    }
++
++    private void sanitizeCriterionBean(CriterionTransferBean bean) {
++
++        bean.setDescription(sanitizeFormattedText(bean.getDescription()));
++        if (bean.getRatings() != null) {
++            bean.getRatings().forEach(this::sanitizeRatingBean);
++        }
++    }
++
++    private void sanitizeRatingBean(RatingTransferBean bean) {
++
++        bean.setDescription(sanitizeFormattedText(bean.getDescription()));
++    }
++
++    private void sanitizeEvaluationBean(EvaluationTransferBean bean) {
++
++        bean.setOverallComment(sanitizeFormattedText(bean.getOverallComment()));
++        if (bean.getCriterionOutcomes() != null) {
++            bean.getCriterionOutcomes().forEach(this::sanitizeCriterionOutcomeBean);
++        }
++    }
++
++    private void sanitizeCriterionOutcomeBean(CriterionOutcomeTransferBean bean) {
++
++        bean.setComments(sanitizeFormattedText(bean.getComments()));
++    }
++
++    private String sanitizeFormattedText(String text) {
++        return formattedText.processFormattedText(text, null, FormattedText.Level.HIGH);
++    }
++
+ 
+     public EvaluationTransferBean saveEvaluation(EvaluationTransferBean evaluationBean, String siteId) {
+ 
+@@ -870,6 +947,8 @@ public EvaluationTransferBean saveEvaluation(EvaluationTransferBean evaluationBe
+             throw new SecurityException("You must be an evaluator to evaluate rubrics");
+         }
+ 
++        sanitizeEvaluationBean(evaluationBean);
++
+         Evaluation evaluation;
+         List<Long> newOutcomesCriterionIds = new ArrayList<>();
+ 
+@@ -1022,6 +1101,7 @@ public EvaluationTransferBean cancelDraftEvaluation(Long draftEvaluationId) {
+                 co.setComments(rco.getComments());
+             });
+             evaluation.setStatus(EvaluationStatus.RETURNED);
++            sanitizeEvaluation(evaluation);
+             return new EvaluationTransferBean(evaluationRepository.save(evaluation));
+         } else {
+             evaluationRepository.deleteById(draftEvaluationId);
+@@ -1604,6 +1684,7 @@ public Map<String, String> transferCopyEntities(String fromContext, String toCon
+                     Rubric clone = rubric.clone(toContext);
+                     clone.setCreated(Instant.now());
+                     clone.setModified(Instant.now());
++                    sanitizeRubric(clone);
+                     clone = rubricRepository.save(clone);
+                     traversalMap.put(RBCS_PREFIX + rubric.getId(), RBCS_PREFIX + clone.getId());
+                 } catch (Exception e) {
+@@ -1716,6 +1797,7 @@ public String merge(String toSiteId, Element root, String archivePath, String fr
+                 criterion.getRatings().forEach(r -> r.setCriterion(criterion));
+             }
+ 
++            sanitizeRubric(rubric);
+             rubricRepository.save(rubric);
+         });
+ 
+diff --git a/rubrics/impl/src/test/org/sakaiproject/rubrics/impl/test/RubricsServiceTests.java b/rubrics/impl/src/test/org/sakaiproject/rubrics/impl/test/RubricsServiceTests.java
+index 8ffd8149e514..a689cf9ab169 100644
+--- a/rubrics/impl/src/test/org/sakaiproject/rubrics/impl/test/RubricsServiceTests.java
++++ b/rubrics/impl/src/test/org/sakaiproject/rubrics/impl/test/RubricsServiceTests.java
+@@ -22,6 +22,8 @@
+ import static org.junit.Assert.assertNotNull;
+ import static org.junit.Assert.assertThrows;
+ import static org.junit.Assert.assertTrue;
++import static org.mockito.ArgumentMatchers.eq;
++import static org.mockito.ArgumentMatchers.isNull;
+ import static org.mockito.Mockito.mock;
+ import static org.mockito.Mockito.reset;
+ import static org.mockito.Mockito.when;
+@@ -73,6 +75,7 @@
+ import org.sakaiproject.user.api.UserDirectoryService;
+ import org.sakaiproject.user.api.UserNotDefinedException;
+ import org.sakaiproject.util.ResourceLoader;
++import org.sakaiproject.util.api.FormattedText;
+ import org.sakaiproject.util.Xml;
+ 
+ import org.springframework.beans.factory.annotation.Autowired;
+@@ -104,6 +107,7 @@ public class RubricsServiceTests extends AbstractTransactionalJUnit4SpringContex
+     @Autowired private SiteService siteService;
+     @Autowired private ToolManager toolManager;
+     @Autowired private UserDirectoryService userDirectoryService;
++    @Autowired private FormattedText formattedText;
+ 
+     String siteId = "playpen";
+     String siteTitle = "Playpen";
+@@ -277,6 +281,26 @@ public void updateRubric() {
+         assertEquals(newTitle, rubricBean.getTitle());
+     }
+ 
++    @Test
++    public void saveRubricSanitizesRichTextFields() {
++
++        switchToInstructor();
++
++        String payload = "<img src=x onerror=alert(1)>";
++        String clean = "<img src=\"x\" />";
++        when(formattedText.processFormattedText(eq(payload), isNull(), eq(FormattedText.Level.HIGH))).thenReturn(clean);
++
++        RubricTransferBean rubricBean = rubricsService.createDefaultRubric(siteId);
++        rubricBean.getCriteria().get(0).setDescription(payload);
++        rubricBean.getCriteria().get(0).getRatings().get(0).setDescription(payload);
++
++        RubricTransferBean savedRubric = rubricsService.saveRubric(rubricBean);
++        Rubric persistedRubric = rubricRepository.findById(savedRubric.getId()).get();
++
++        assertEquals(clean, persistedRubric.getCriteria().get(0).getDescription());
++        assertEquals(clean, persistedRubric.getCriteria().get(0).getRatings().get(0).getDescription());
++    }
++
+     @Test
+     public void copyRubric() {
+ 
+diff --git a/rubrics/impl/src/test/org/sakaiproject/rubrics/impl/test/RubricsTestConfiguration.java b/rubrics/impl/src/test/org/sakaiproject/rubrics/impl/test/RubricsTestConfiguration.java
+index e5a6af8a0d71..0a16a4a4b408 100644
+--- a/rubrics/impl/src/test/org/sakaiproject/rubrics/impl/test/RubricsTestConfiguration.java
++++ b/rubrics/impl/src/test/org/sakaiproject/rubrics/impl/test/RubricsTestConfiguration.java
+@@ -42,7 +42,12 @@
+ import org.springframework.context.annotation.PropertySource;
+ import org.springframework.transaction.annotation.EnableTransactionManagement;
+ 
++import static org.mockito.ArgumentMatchers.any;
++import static org.mockito.ArgumentMatchers.anyBoolean;
++import static org.mockito.ArgumentMatchers.anyString;
++import static org.mockito.ArgumentMatchers.isNull;
+ import static org.mockito.Mockito.mock;
++import static org.mockito.Mockito.when;
+ 
+ @Configuration
+ @EnableTransactionManagement
+@@ -102,7 +107,12 @@ public UserTimeService userTimeService() {
+ 
+     @Bean(name = "org.sakaiproject.util.api.FormattedText")
+     public FormattedText formattedText() {
+-        return mock(FormattedText.class);
++        FormattedText formattedText = mock(FormattedText.class);
++        when(formattedText.processFormattedText(anyString(), isNull(), any(FormattedText.Level.class)))
++            .thenAnswer(invocation -> invocation.getArgument(0));
++        when(formattedText.stripHtmlFromText(anyString(), anyBoolean()))
++            .thenAnswer(invocation -> invocation.getArgument(0));
++        return formattedText;
+     }
+ 
+     @Bean(name = "org.sakaiproject.assignment.api.AssignmentService")
+diff --git a/webapi/src/main/java/org/sakaiproject/webapi/controllers/DashboardController.java b/webapi/src/main/java/org/sakaiproject/webapi/controllers/DashboardController.java
+index 9d48423a53ab..088f305d82e3 100644
+--- a/webapi/src/main/java/org/sakaiproject/webapi/controllers/DashboardController.java
++++ b/webapi/src/main/java/org/sakaiproject/webapi/controllers/DashboardController.java
+@@ -46,6 +46,7 @@
+ import org.sakaiproject.user.api.PreferencesService;
+ import org.sakaiproject.user.api.UserDirectoryService;
+ import org.sakaiproject.user.api.UserNotDefinedException;
++import org.sakaiproject.util.api.FormattedText;
+ 
+ import org.sakaiproject.entity.api.ResourcePropertiesEdit;
+ 
+@@ -106,6 +107,9 @@ public class DashboardController extends AbstractSakaiApiController implements E
+     @Autowired
+     private SakaiPersonManager sakaiPersonManager;
+ 
++    @Autowired
++    private FormattedText formattedText;
++
+     private List<String> courseWidgets = new ArrayList<>();
+     private List<String> homeWidgets = new ArrayList<>();
+ 
+@@ -313,7 +317,7 @@ public void saveSiteDashboard(@PathVariable String siteId, @RequestBody Dashboar
+ 
+         try {
+             Site site = siteService.getSite(siteId);
+-            site.setDescription(bean.getOverview());
++            site.setDescription(sanitizeFormattedText(bean.getOverview()));
+             site.setShortDescription(bean.getProgramme());
+             String configJson = (new ObjectMapper())
+                 .writeValueAsString(Map.of("widgetLayout", bean.getWidgetLayout(), "template", bean.getTemplate()));
+@@ -323,6 +327,11 @@ public void saveSiteDashboard(@PathVariable String siteId, @RequestBody Dashboar
+         }
+     }
+ 
++    // Rich text is cleaned before persistence; read paths return stored values unchanged.
++    private String sanitizeFormattedText(String text) {
++        return formattedText.processFormattedText(text, null, FormattedText.Level.HIGH);
++    }
++
+     @Override
+     public String getLabel() {
+         return "dashboard";
+@@ -351,7 +360,7 @@ public Map<String, String> transferCopyEntities(String fromContext, String toCon
+             String fromConfig = fromSite.getProperties().getProperty("dashboard-config");
+             if (fromConfig != null) {
+                 Site toSite = siteService.getSite(toContext);
+-                toSite.setDescription(fromSite.getDescription());
++                toSite.setDescription(sanitizeFormattedText(fromSite.getDescription()));
+                 toSite.getProperties().addProperty("dashboard-config", fromConfig);
+                 siteService.save(toSite);
+             }
+diff --git a/webapi/src/test/java/org/sakaiproject/webapi/test/DashboardControllerTests.java b/webapi/src/test/java/org/sakaiproject/webapi/test/DashboardControllerTests.java
+index 4e851ab33588..30f71fea43e6 100644
+--- a/webapi/src/test/java/org/sakaiproject/webapi/test/DashboardControllerTests.java
++++ b/webapi/src/test/java/org/sakaiproject/webapi/test/DashboardControllerTests.java
+@@ -17,6 +17,10 @@
+ 
+ import static org.junit.Assert.assertEquals;
+ import static org.junit.Assert.assertFalse;
++import static org.mockito.ArgumentMatchers.any;
++import static org.mockito.ArgumentMatchers.anyString;
++import static org.mockito.ArgumentMatchers.eq;
++import static org.mockito.ArgumentMatchers.isNull;
+ import static org.mockito.Mockito.mock;
+ import static org.mockito.Mockito.verify;
+ import static org.mockito.Mockito.when;
+@@ -38,11 +42,14 @@
+ import org.sakaiproject.entity.api.EntityManager;
+ import org.sakaiproject.entity.api.ResourceProperties;
+ import org.sakaiproject.portal.api.PortalConstants;
++import org.sakaiproject.site.api.Site;
++import org.sakaiproject.site.api.SiteService;
+ import org.sakaiproject.tool.api.Session;
+ import org.sakaiproject.tool.api.SessionManager;
+ import org.sakaiproject.user.api.Preferences;
+ import org.sakaiproject.user.api.PreferencesService;
+ import org.sakaiproject.user.api.UserDirectoryService;
++import org.sakaiproject.util.api.FormattedText;
+ import org.sakaiproject.webapi.beans.DashboardRestBean;
+ import org.sakaiproject.webapi.controllers.DashboardController;
+ import org.springframework.test.util.ReflectionTestUtils;
+@@ -70,9 +77,15 @@ public class DashboardControllerTests {
+     @Mock
+     private SessionManager sessionManager;
+ 
++    @Mock
++    private SiteService siteService;
++
+     @Mock
+     private UserDirectoryService userDirectoryService;
+ 
++    @Mock
++    private FormattedText formattedText;
++
+     private DashboardController dashboardController;
+     private AutoCloseable mocks;
+ 
+@@ -90,10 +103,15 @@ public void setup() {
+         ReflectionTestUtils.setField(dashboardController, "securityService", securityService);
+         ReflectionTestUtils.setField(dashboardController, "serverConfigurationService", serverConfigurationService);
+         ReflectionTestUtils.setField(dashboardController, "entityManager", entityManager);
++        ReflectionTestUtils.setField(dashboardController, "siteService", siteService);
+         ReflectionTestUtils.setField(dashboardController, "userDirectoryService", userDirectoryService);
++        ReflectionTestUtils.setField(dashboardController, "formattedText", formattedText);
+         ReflectionTestUtils.setField(dashboardController, "defaultHomeLayout", List.of());
+         ReflectionTestUtils.setField(dashboardController, "homeWidgets", List.of());
+         ReflectionTestUtils.setField(dashboardController, "maxNumberMotd", 5);
++
++        when(formattedText.processFormattedText(anyString(), isNull(), any(FormattedText.Level.class)))
++            .thenAnswer(invocation -> invocation.getArgument(0));
+     }
+ 
+     @After
+@@ -230,4 +248,32 @@ public void testGetUserDashboardWithNoSavedLayoutUsesDefaultHomeLayout() throws
+         assertEquals(List.of("courses", "announcements", "calendar", "grades", "forums"), bean.getWidgetLayout());
+         assertEquals("courses", bean.getWidgetLayout().get(0));
+     }
++
++    @Test
++    public void testSaveSiteDashboardSanitizesOverviewOnSave() throws Exception {
++
++        Session session = mock(Session.class);
++        when(session.getUserId()).thenReturn("admin-user");
++        when(sessionManager.getCurrentSession()).thenReturn(session);
++
++        String siteId = "site1";
++        Site site = mock(Site.class);
++        ResourceProperties properties = mock(ResourceProperties.class);
++        when(siteService.getSite(siteId)).thenReturn(site);
++        when(site.getProperties()).thenReturn(properties);
++
++        String payload = "<img src=x onerror=alert(1)>";
++        String clean = "<img src=\"x\" />";
++        when(formattedText.processFormattedText(eq(payload), isNull(), eq(FormattedText.Level.HIGH))).thenReturn(clean);
++
++        DashboardRestBean bean = new DashboardRestBean();
++        bean.setOverview(payload);
++        bean.setProgramme("Programme");
++        bean.setWidgetLayout(List.of("announcements"));
++        bean.setTemplate(1);
++
++        dashboardController.saveSiteDashboard(siteId, bean);
++
++        verify(site).setDescription(clean);
++    }
+ }

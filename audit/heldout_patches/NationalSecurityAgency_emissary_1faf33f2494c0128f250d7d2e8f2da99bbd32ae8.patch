@@ -1,0 +1,192 @@
+From 1faf33f2494c0128f250d7d2e8f2da99bbd32ae8 Mon Sep 17 00:00:00 2001
+From: Yujia Lin <blueandhack@gmail.com>
+Date: Fri, 10 Apr 2026 12:35:59 -0700
+Subject: [PATCH] Merge commit from fork
+
+* fix: sanitize file ending values
+
+Add validation and cleaning for file ending values to prevent shell/meta-character injection. Introduce INVALID_FILE_ENDING_CHARS and cleanFileEnding() which preserves leading dot and allows alphanumerics, underscore, hyphen and dot while replacing other chars with '_'. Apply cleaning to constructor config reads and to setInFileEnding/setOutFileEnding. Extend ExecutrixTest with unit tests covering cleanFileEnding behavior, setter sanitization, and configuration-time sanitization.
+
+* chore: deduplicate and strengthen cleanFileEnding tests
+---
+ .../java/emissary/util/shell/Executrix.java   | 24 ++++-
+ .../emissary/util/shell/ExecutrixTest.java    | 97 +++++++++++++++++++
+ 2 files changed, 117 insertions(+), 4 deletions(-)
+
+diff --git a/src/main/java/emissary/util/shell/Executrix.java b/src/main/java/emissary/util/shell/Executrix.java
+index 061c203904..4719a3cc03 100755
+--- a/src/main/java/emissary/util/shell/Executrix.java
++++ b/src/main/java/emissary/util/shell/Executrix.java
+@@ -77,6 +77,12 @@ public enum OUTPUT_TYPE {
+ 
+     protected static final Pattern INVALID_PLACE_NAME_CHARS = Pattern.compile("[^a-zA-Z0-9_-]");
+ 
++    /**
++     * Allowlist for file ending values. A leading dot is permitted so that normal extensions like {@code .out} are accepted
++     * unchanged; every other character must be alphanumeric, underscore, or hyphen.
++     */
++    protected static final Pattern INVALID_FILE_ENDING_CHARS = Pattern.compile("[^a-zA-Z0-9_.\\-]");
++
+     /**
+      * Create using all defaults
+      */
+@@ -118,8 +124,8 @@ protected void configure(@Nullable final Configurator configGArg) {
+         final Configurator configG = (configGArg != null) ? configGArg : new ServiceConfigGuide();
+ 
+         this.command = configG.findStringEntry("EXEC_COMMAND", "echo 'YouForGotToSetEXEC_COMMAND' | tee bla.txt");
+-        this.inFileEnding = configG.findStringEntry("IN_FILE_ENDING", "");
+-        this.outFileEnding = configG.findStringEntry("OUT_FILE_ENDING", this.inFileEnding.isEmpty() ? ".out" : "");
++        this.inFileEnding = cleanFileEnding(configG.findStringEntry("IN_FILE_ENDING", ""));
++        this.outFileEnding = cleanFileEnding(configG.findStringEntry("OUT_FILE_ENDING", this.inFileEnding.isEmpty() ? ".out" : ""));
+         this.output = configG.findStringEntry("OUTPUT_TYPE", "STD");
+         this.order = configG.findStringEntry("ORDER", "NORMAL");
+         this.numArgs = configG.findStringEntry("NUM_ARGS", "");
+@@ -149,6 +155,16 @@ protected static String cleanPlaceName(final String placeName) {
+         return INVALID_PLACE_NAME_CHARS.matcher(placeName).replaceAll("_");
+     }
+ 
++    /**
++     * Remove invalid characters from a file ending value, see {@link Executrix#INVALID_FILE_ENDING_CHARS}
++     *
++     * @param fileEnding the raw file ending (e.g. {@code .out})
++     * @return a cleaned string with shell-unsafe characters replaced by {@code _}
++     */
++    protected static String cleanFileEnding(final String fileEnding) {
++        return INVALID_FILE_ENDING_CHARS.matcher(fileEnding).replaceAll("_");
++    }
++
+     /**
+      * Creates a set of temp file names (does not do any disk activity)
+      *
+@@ -1174,7 +1190,7 @@ public String getInFileEnding() {
+      * @param argInFileEnding Value to assign to this.inFileEnding
+      */
+     public void setInFileEnding(final String argInFileEnding) {
+-        this.inFileEnding = argInFileEnding;
++        this.inFileEnding = cleanFileEnding(argInFileEnding);
+     }
+ 
+     /**
+@@ -1192,7 +1208,7 @@ public String getOutFileEnding() {
+      * @param argOutFileEnding Value to assign to this.outFileEnding
+      */
+     public void setOutFileEnding(final String argOutFileEnding) {
+-        this.outFileEnding = argOutFileEnding;
++        this.outFileEnding = cleanFileEnding(argOutFileEnding);
+     }
+ 
+     /**
+diff --git a/src/test/java/emissary/util/shell/ExecutrixTest.java b/src/test/java/emissary/util/shell/ExecutrixTest.java
+index 18e6d687c8..29589a9a18 100644
+--- a/src/test/java/emissary/util/shell/ExecutrixTest.java
++++ b/src/test/java/emissary/util/shell/ExecutrixTest.java
+@@ -1,5 +1,7 @@
+ package emissary.util.shell;
+ 
++import emissary.config.Configurator;
++import emissary.config.ServiceConfigGuide;
+ import emissary.test.core.junit5.UnitTest;
+ 
+ import jakarta.annotation.Nullable;
+@@ -603,6 +605,101 @@ void testCleanPlaceName() {
+         assertEquals("PLACE-NAME-1", Executrix.cleanPlaceName("PLACE-NAME-1"));
+     }
+ 
++    // -----------------------------------------------------------------------
++    // cleanFileEnding – covers INVALID_FILE_ENDING_CHARS and cleanFileEnding()
++    // -----------------------------------------------------------------------
++
++    @Test
++    void testCleanFileEndingAllowedCharsPassThrough() {
++        // Normal extensions must survive unchanged
++        assertEquals(".out", Executrix.cleanFileEnding(".out"));
++        assertEquals(".txt", Executrix.cleanFileEnding(".txt"));
++        assertEquals("", Executrix.cleanFileEnding(""));
++        assertEquals(".out-1_a", Executrix.cleanFileEnding(".out-1_a"));
++        assertEquals("ABC123._-", Executrix.cleanFileEnding("ABC123._-"));
++    }
++
++    @Test
++    void testCleanFileEndingShellMetacharacters() {
++        // Every shell-special character must be individually replaced with '_'
++        assertEquals("_", Executrix.cleanFileEnding("`"));
++        assertEquals("_", Executrix.cleanFileEnding("$"));
++        assertEquals("_", Executrix.cleanFileEnding(";"));
++        assertEquals("_", Executrix.cleanFileEnding("&"));
++        assertEquals("_", Executrix.cleanFileEnding("|"));
++        assertEquals("_", Executrix.cleanFileEnding(">"));
++        assertEquals("_", Executrix.cleanFileEnding("<"));
++        assertEquals("_", Executrix.cleanFileEnding("!"));
++        assertEquals("_", Executrix.cleanFileEnding(" "));
++        assertEquals("_", Executrix.cleanFileEnding("("));
++        assertEquals("_", Executrix.cleanFileEnding(")"));
++        assertEquals("_", Executrix.cleanFileEnding("'"));
++        assertEquals("_", Executrix.cleanFileEnding("\""));
++        assertEquals("_", Executrix.cleanFileEnding("\\"));
++        assertEquals("_", Executrix.cleanFileEnding("/"));
++        assertEquals("_", Executrix.cleanFileEnding("\n"));
++        assertEquals("_", Executrix.cleanFileEnding("\t"));
++    }
++
++    @Test
++    void testCleanFileEndingDoesNotStripHyphenOrUnderscore() {
++        // Hyphen and underscore are safe in file extensions and must not be replaced
++        assertEquals(".tar.gz", Executrix.cleanFileEnding(".tar.gz"));
++        assertEquals(".out-v2", Executrix.cleanFileEnding(".out-v2"));
++        assertEquals(".out_v2", Executrix.cleanFileEnding(".out_v2"));
++    }
++
++    // -----------------------------------------------------------------------
++    // setInFileEnding / setOutFileEnding – sanitization enforced by setters
++    // -----------------------------------------------------------------------
++
++    @Test
++    void testSetFileEndingsNormalValuesUnchanged() {
++        // Legitimate extensions must not be altered by the setters
++        e.setInFileEnding(".in");
++        assertEquals(".in", e.getInFileEnding());
++
++        e.setOutFileEnding(".out");
++        assertEquals(".out", e.getOutFileEnding());
++    }
++
++    @Test
++    void testSetFileEndingsSanitizeInjectionPayloads() {
++        e.setInFileEnding("`id`");
++        assertEquals("_id_", e.getInFileEnding());
++
++        e.setOutFileEnding(";rm -rf /");
++        assertEquals("_rm_-rf__", e.getOutFileEnding());
++    }
++
++    // -----------------------------------------------------------------------
++    // configure() path – sanitization applied when reading from Configurator
++    // -----------------------------------------------------------------------
++
++    @Test
++    void testConfigureFileEndingsSanitizedFromConfig() {
++        // Injection payloads in config must be neutralized at construction time
++        final Configurator cfg = new ServiceConfigGuide();
++        cfg.addEntry("IN_FILE_ENDING", "`id > /tmp/pwned.txt`");
++        cfg.addEntry("OUT_FILE_ENDING", "$(whoami)");
++
++        final Executrix ex = new Executrix(cfg);
++        assertEquals("_id____tmp_pwned.txt_", ex.getInFileEnding());
++        assertEquals("__whoami_", ex.getOutFileEnding());
++    }
++
++    @Test
++    void testConfigureNormalFileEndingsUnchanged() {
++        // Normal extensions must pass through configure() without modification
++        final Configurator cfg = new ServiceConfigGuide();
++        cfg.addEntry("IN_FILE_ENDING", ".xml");
++        cfg.addEntry("OUT_FILE_ENDING", ".json");
++
++        final Executrix ex = new Executrix(cfg);
++        assertEquals(".xml", ex.getInFileEnding());
++        assertEquals(".json", ex.getOutFileEnding());
++    }
++
+     private static void readAndNuke(final String name) throws IOException {
+         final File f = new File(name);
+         assertTrue(f.exists(), "File " + name + " must exist");

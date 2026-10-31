@@ -1,0 +1,28 @@
+From 648e66d5ef1547a01ff77bf9875f960ca39bbe8e Mon Sep 17 00:00:00 2001
+From: zhangdaiscott <zhangdaiscott@163.com>
+Date: Sun, 23 Jul 2023 16:52:55 +0800
+Subject: [PATCH] =?UTF-8?q?SQL=E6=B3=A8=E5=85=A5=20#5173?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../jeecg/modules/system/controller/SysDictController.java   | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/jeecg-module-system/jeecg-system-biz/src/main/java/org/jeecg/modules/system/controller/SysDictController.java b/jeecg-module-system/jeecg-system-biz/src/main/java/org/jeecg/modules/system/controller/SysDictController.java
+index 72b426d1f4a..d526c162c27 100644
+--- a/jeecg-module-system/jeecg-system-biz/src/main/java/org/jeecg/modules/system/controller/SysDictController.java
++++ b/jeecg-module-system/jeecg-system-biz/src/main/java/org/jeecg/modules/system/controller/SysDictController.java
+@@ -347,6 +347,11 @@ public Result<List<TreeSelectModel>> loadTreeData(@RequestParam(name="pid",requi
+ 		// SQL注入漏洞 sign签名校验(表名,label字段,val字段,条件)
+ 		String dictCode = tbname+","+text+","+code+","+condition;
+         SqlInjectionUtil.filterContent(dictCode);
++		//update-begin-author:scott date:20230723 for:【issues/5173】SQL注入
++		if(!dictQueryBlackListHandler.isPass(dictCode)){
++			return result.error500(dictQueryBlackListHandler.getError());
++		}
++		//update-end-author:scott date:20230723 for:【issues/5173】SQL注入
+ 		List<TreeSelectModel> ls = sysDictService.queryTreeList(query,tbname, text, code, pidField, pid,hasChildField,converIsLeafVal);
+ 		result.setSuccess(true);
+ 		result.setResult(ls);

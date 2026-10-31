@@ -1,0 +1,346 @@
+From 61f43423a337b87db5fec1fe59f0725aaaa38df5 Mon Sep 17 00:00:00 2001
+From: Edgar Espina <espina.edgar@gmail.com>
+Date: Sun, 28 Jun 2026 11:45:21 -0300
+Subject: [PATCH] Fix path traversal and suffix bypass in Spring MVC
+ integration
+
+- Remove dynamic protocol resolution in SpringTemplateLoader.
+- Enforce logical boundaries to prevent path traversal in template resolution.
+- Validate resolved URLs to block fragment (#) and query (?) injection bypasses.
+- Reject unsafe view names containing `..`, `:`, or `#` in HandlebarsViewResolver.
+---
+ .../springmvc/HandlebarsViewResolver.java     | 13 ++-
+ .../springmvc/SpringTemplateLoader.java       | 60 ++++++++++---
+ .../springmvc/HandlebarsViewResolverTest.java | 90 +++++++++++++++++++
+ .../springmvc/SpringTemplateLoaderTest.java   | 90 ++++++++++++++++++-
+ 4 files changed, 236 insertions(+), 17 deletions(-)
+ create mode 100644 handlebars-springmvc/src/test/java/com/github/jknack/handlebars/springmvc/HandlebarsViewResolverTest.java
+
+diff --git a/handlebars-springmvc/src/main/java/com/github/jknack/handlebars/springmvc/HandlebarsViewResolver.java b/handlebars-springmvc/src/main/java/com/github/jknack/handlebars/springmvc/HandlebarsViewResolver.java
+index 0998225a..8d9c4fae 100644
+--- a/handlebars-springmvc/src/main/java/com/github/jknack/handlebars/springmvc/HandlebarsViewResolver.java
++++ b/handlebars-springmvc/src/main/java/com/github/jknack/handlebars/springmvc/HandlebarsViewResolver.java
+@@ -163,16 +163,23 @@ protected AbstractUrlBasedView buildView(final String viewName) throws Exception
+   protected AbstractUrlBasedView configure(final HandlebarsView view) throws IOException {
+     String url = view.getUrl();
+     // Remove prefix & suffix.
+-    url = url.substring(getPrefix().length(), url.length() - getSuffix().length());
++    String strippedUrl = url.substring(getPrefix().length(), url.length() - getSuffix().length());
++
++    // Strict web-layer rejection: View names from controllers should never contain
++    // protocols, fragments, or traversal sequences.
++    if (strippedUrl.contains(":") || strippedUrl.contains("#") || strippedUrl.contains("..")) {
++      throw new IllegalArgumentException("Unsafe Spring MVC view name detected: " + strippedUrl);
++    }
++
+     // Compile the template.
+     try {
+-      view.setTemplate(handlebars.compile(url));
++      view.setTemplate(handlebars.compile(strippedUrl));
+       view.setValueResolver(valueResolvers.toArray(new ValueResolver[0]));
+     } catch (IOException ex) {
+       if (failOnMissingFile) {
+         throw ex;
+       }
+-      logger.debug("File not found: " + url);
++      logger.debug("File not found: " + strippedUrl);
+     }
+     return view;
+   }
+diff --git a/handlebars-springmvc/src/main/java/com/github/jknack/handlebars/springmvc/SpringTemplateLoader.java b/handlebars-springmvc/src/main/java/com/github/jknack/handlebars/springmvc/SpringTemplateLoader.java
+index c2d92b94..da04f137 100644
+--- a/handlebars-springmvc/src/main/java/com/github/jknack/handlebars/springmvc/SpringTemplateLoader.java
++++ b/handlebars-springmvc/src/main/java/com/github/jknack/handlebars/springmvc/SpringTemplateLoader.java
+@@ -13,7 +13,6 @@
+ import org.springframework.context.ApplicationContext;
+ import org.springframework.core.io.Resource;
+ import org.springframework.core.io.ResourceLoader;
+-import org.springframework.util.ResourceUtils;
+ 
+ import com.github.jknack.handlebars.io.URLTemplateLoader;
+ 
+@@ -55,24 +54,61 @@ public SpringTemplateLoader(final ApplicationContext applicationContext) {
+ 
+   @Override
+   protected URL getResource(final String location) throws IOException {
++    // 1. Logical Bounds Check (Parity with d177cdee)
++    // Spring locations often contain protocols (classpath:). We must strip it to normalize the
++    // path.
++    String pathPart = location;
++    int protocolIndex = location.indexOf(":");
++    if (protocolIndex != -1) {
++      pathPart = location.substring(protocolIndex + 1);
++    }
++
++    String resolvedPath =
++        java.nio.file.Paths.get(pathPart)
++            .normalize()
++            .toString()
++            .replace(java.io.File.separatorChar, '/');
++    if (pathPart.startsWith("/") && !resolvedPath.startsWith("/")) {
++      resolvedPath = "/" + resolvedPath;
++    }
++
++    // Extract the raw path from the configured prefix
++    String prefixPath = getPrefix();
++    int prefixProtocolIndex = prefixPath.indexOf(":");
++    if (prefixProtocolIndex != -1) {
++      prefixPath = prefixPath.substring(prefixProtocolIndex + 1);
++    }
++
++    // Enforce the boundary
++    if (!prefixPath.equals("/") && !resolvedPath.startsWith(prefixPath)) {
++      throw new IllegalArgumentException(
++          "Path traversal attempt detected. Resolved path escapes Spring base prefix: " + location);
++    }
++
++    // 2. Delegate to Spring
+     Resource resource = loader.getResource(location);
+     if (!resource.exists()) {
+       return null;
+     }
+-    return resource.getURL();
++
++    // 3. Post-resolution URL Component Validation (Fragment/Query injection)
++    URL url = resource.getURL();
++    validateNoUnsafeUrlComponents(url);
++
++    return url;
+   }
+ 
+-  @Override
+-  public String resolve(final String location) {
+-    String protocol = null;
+-    if (location.startsWith(ResourceUtils.CLASSPATH_URL_PREFIX)) {
+-      protocol = ResourceUtils.CLASSPATH_URL_PREFIX;
+-    } else if (location.startsWith(ResourceUtils.FILE_URL_PREFIX)) {
+-      protocol = ResourceUtils.FILE_URL_PREFIX;
++  /**
++   * Verifies that the resolved URL does not contain components that can bypass suffix validation.
++   *
++   * @param url The resolved URL.
++   */
++  private void validateNoUnsafeUrlComponents(final URL url) {
++    if (url.getRef() != null) {
++      throw new IllegalArgumentException("Template URL must not contain a fragment: " + url);
+     }
+-    if (protocol == null) {
+-      return super.resolve(location);
++    if (url.getQuery() != null) {
++      throw new IllegalArgumentException("Template URL must not contain a query: " + url);
+     }
+-    return protocol + super.resolve(location.substring(protocol.length()));
+   }
+ }
+diff --git a/handlebars-springmvc/src/test/java/com/github/jknack/handlebars/springmvc/HandlebarsViewResolverTest.java b/handlebars-springmvc/src/test/java/com/github/jknack/handlebars/springmvc/HandlebarsViewResolverTest.java
+new file mode 100644
+index 00000000..130f26f4
+--- /dev/null
++++ b/handlebars-springmvc/src/test/java/com/github/jknack/handlebars/springmvc/HandlebarsViewResolverTest.java
+@@ -0,0 +1,90 @@
++/*
++ * Handlebars.java: https://github.com/jknack/handlebars.java
++ * Apache License Version 2.0 http://www.apache.org/licenses/LICENSE-2.0
++ * Copyright (c) 2012 Edgar Espina
++ */
++package com.github.jknack.handlebars.springmvc;
++
++import static org.junit.jupiter.api.Assertions.assertThrows;
++import static org.junit.jupiter.api.Assertions.assertTrue;
++import static org.mockito.Mockito.mock;
++import static org.mockito.Mockito.when;
++
++import org.junit.jupiter.api.BeforeEach;
++import org.junit.jupiter.api.Test;
++
++import com.github.jknack.handlebars.Handlebars;
++import com.github.jknack.handlebars.Template;
++
++public class HandlebarsViewResolverTest {
++
++  private HandlebarsViewResolver viewResolver;
++  private Handlebars handlebars;
++
++  @BeforeEach
++  public void setUp() {
++    handlebars = mock(Handlebars.class);
++    viewResolver = new HandlebarsViewResolver(handlebars);
++    viewResolver.setPrefix("/WEB-INF/views/");
++    viewResolver.setSuffix(".hbs");
++  }
++
++  @Test
++  public void shouldRejectViewNameWithProtocolInjection() {
++    HandlebarsView view = new HandlebarsView();
++    // Simulate a view name resolving to a file protocol
++    view.setUrl("/WEB-INF/views/file:/etc/passwd.hbs");
++
++    IllegalArgumentException exception =
++        assertThrows(
++            IllegalArgumentException.class,
++            () -> {
++              viewResolver.buildView("file:/etc/passwd"); // Triggers configure()
++            });
++
++    assertTrue(exception.getMessage().contains("Unsafe Spring MVC view name detected"));
++  }
++
++  @Test
++  public void shouldRejectViewNameWithDirectoryTraversal() {
++    HandlebarsView view = new HandlebarsView();
++    view.setUrl("/WEB-INF/views/../../etc/passwd.hbs");
++
++    IllegalArgumentException exception =
++        assertThrows(
++            IllegalArgumentException.class,
++            () -> {
++              viewResolver.buildView("../../etc/passwd");
++            });
++
++    assertTrue(exception.getMessage().contains("Unsafe Spring MVC view name detected"));
++  }
++
++  @Test
++  public void shouldRejectViewNameWithUrlFragment() {
++    HandlebarsView view = new HandlebarsView();
++    view.setUrl("/WEB-INF/views/secret.hbs#bypass.hbs");
++
++    IllegalArgumentException exception =
++        assertThrows(
++            IllegalArgumentException.class,
++            () -> {
++              viewResolver.buildView("secret.hbs#bypass");
++            });
++
++    assertTrue(exception.getMessage().contains("Unsafe Spring MVC view name detected"));
++  }
++
++  @Test
++  public void shouldAcceptValidViewName() throws Exception {
++    Template template = mock(Template.class);
++    HandlebarsView view = new HandlebarsView();
++    view.setUrl("/WEB-INF/views/home/index.hbs");
++
++    // Mock the compiler to prevent actual file I/O during this test
++    when(handlebars.compile("home/index")).thenReturn(template);
++
++    // This should execute successfully without throwing an IllegalArgumentException
++    viewResolver.buildView("home/index");
++  }
++}
+diff --git a/handlebars-springmvc/src/test/java/com/github/jknack/handlebars/springmvc/SpringTemplateLoaderTest.java b/handlebars-springmvc/src/test/java/com/github/jknack/handlebars/springmvc/SpringTemplateLoaderTest.java
+index 23009029..35e9934d 100644
+--- a/handlebars-springmvc/src/test/java/com/github/jknack/handlebars/springmvc/SpringTemplateLoaderTest.java
++++ b/handlebars-springmvc/src/test/java/com/github/jknack/handlebars/springmvc/SpringTemplateLoaderTest.java
+@@ -5,18 +5,35 @@
+  */
+ package com.github.jknack.handlebars.springmvc;
+ 
+-import static org.junit.jupiter.api.Assertions.assertNotNull;
+-import static org.junit.jupiter.api.Assertions.assertThrows;
++import static org.junit.jupiter.api.Assertions.*;
++import static org.mockito.ArgumentMatchers.anyString;
++import static org.mockito.Mockito.mock;
++import static org.mockito.Mockito.when;
+ 
+ import java.io.IOException;
++import java.net.URL;
+ 
++import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.core.io.DefaultResourceLoader;
++import org.springframework.core.io.Resource;
++import org.springframework.core.io.ResourceLoader;
+ 
+ import com.github.jknack.handlebars.io.TemplateSource;
+ 
+ public class SpringTemplateLoaderTest {
+ 
++  private ResourceLoader resourceLoader;
++  private SpringTemplateLoader templateLoader;
++
++  @BeforeEach
++  public void setUp() {
++    resourceLoader = mock(ResourceLoader.class);
++    templateLoader = new SpringTemplateLoader(resourceLoader);
++    templateLoader.setPrefix("classpath:/templates/");
++    templateLoader.setSuffix(".hbs");
++  }
++
+   @Test
+   public void sourceAt() throws IOException {
+     SpringTemplateLoader loader = new SpringTemplateLoader(new DefaultResourceLoader());
+@@ -32,4 +49,73 @@ public void fileNotFound() throws IOException {
+         IOException.class,
+         () -> new SpringTemplateLoader(new DefaultResourceLoader()).sourceAt("missingFile"));
+   }
++
++  @Test
++  public void shouldEnforceLogicalBoundaryAgainstTraversal() throws IOException {
++    // The attacker only injects the traversal sequence, not the prefix.
++    String maliciousPath = "../../application.properties";
++
++    IllegalArgumentException exception =
++        assertThrows(
++            IllegalArgumentException.class,
++            () -> {
++              // sourceAt triggers resolve() and then getResource()
++              templateLoader.sourceAt(maliciousPath);
++            });
++
++    assertTrue(exception.getMessage().contains("escapes Spring base prefix"));
++  }
++
++  @Test
++  public void shouldBlockUrlFragmentInjection() throws IOException {
++    Resource mockResource = mock(Resource.class);
++    when(mockResource.exists()).thenReturn(true);
++
++    // Simulate Spring returning a URL that contains a fragment (#)
++    URL maliciousUrl = new URL("file:///etc/passwd#.hbs");
++    when(mockResource.getURL()).thenReturn(maliciousUrl);
++
++    // We must mock the exact string that the template loader will ask Spring for
++    when(resourceLoader.getResource(anyString())).thenReturn(mockResource);
++
++    IllegalArgumentException exception =
++        assertThrows(
++            IllegalArgumentException.class,
++            () -> {
++              templateLoader.sourceAt("classpath:/templates/hack#.hbs");
++            });
++
++    assertTrue(exception.getMessage().contains("Template URL must not contain a fragment"));
++  }
++
++  @Test
++  public void shouldBlockUrlQueryInjection() throws IOException {
++    Resource mockResource = mock(Resource.class);
++    when(mockResource.exists()).thenReturn(true);
++
++    // Simulate Spring returning a URL that contains a query (?)
++    URL maliciousUrl = new URL("file:///etc/passwd?.hbs");
++    when(mockResource.getURL()).thenReturn(maliciousUrl);
++
++    when(resourceLoader.getResource(anyString())).thenReturn(mockResource);
++
++    IllegalArgumentException exception =
++        assertThrows(
++            IllegalArgumentException.class,
++            () -> {
++              templateLoader.sourceAt("classpath:/templates/hack?.hbs");
++            });
++
++    assertTrue(exception.getMessage().contains("Template URL must not contain a query"));
++  }
++
++  @Test
++  public void resolveShouldNotPreserveDynamicProtocols() {
++    // The resolve method should simply append the prefix and suffix,
++    // it should NOT extract "file:" and place it at the front of the string anymore.
++    String resolved = templateLoader.resolve("file:/etc/passwd");
++
++    // Prefix + Input + Suffix
++    assertEquals("classpath:/templates/file:/etc/passwd.hbs", resolved);
++  }
+ }

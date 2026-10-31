@@ -1,0 +1,99 @@
+From 1bb399090764623f6e000970765000e69b3061f1 Mon Sep 17 00:00:00 2001
+From: Vithursa <vithu30@hotmail.com>
+Date: Thu, 13 Feb 2020 13:09:28 +0530
+Subject: [PATCH] Fix improper restriction of XXE
+
+---
+ .../ds/InputEventAdapterServiceDS.java        | 16 ++++++++++++--
+ .../internal/util/TemplateManagerHelper.java  | 21 +++++++++++++++----
+ 2 files changed, 31 insertions(+), 6 deletions(-)
+
+diff --git a/components/event-receiver/org.wso2.carbon.event.input.adapter.core/src/main/java/org/wso2/carbon/event/input/adapter/core/internal/ds/InputEventAdapterServiceDS.java b/components/event-receiver/org.wso2.carbon.event.input.adapter.core/src/main/java/org/wso2/carbon/event/input/adapter/core/internal/ds/InputEventAdapterServiceDS.java
+index 2b22cb8d3a..d8cc6bcee1 100644
+--- a/components/event-receiver/org.wso2.carbon.event.input.adapter.core/src/main/java/org/wso2/carbon/event/input/adapter/core/internal/ds/InputEventAdapterServiceDS.java
++++ b/components/event-receiver/org.wso2.carbon.event.input.adapter.core/src/main/java/org/wso2/carbon/event/input/adapter/core/internal/ds/InputEventAdapterServiceDS.java
+@@ -36,6 +36,10 @@
+ import javax.xml.bind.JAXBContext;
+ import javax.xml.bind.JAXBException;
+ import javax.xml.bind.Unmarshaller;
++import javax.xml.stream.XMLInputFactory;
++import javax.xml.stream.XMLStreamException;
++import javax.xml.stream.XMLStreamReader;
++import javax.xml.transform.stream.StreamSource;
+ 
+ @Component(
+         name = "event.input.adapter.service",
+@@ -137,11 +141,19 @@ private AdapterConfigs loadGlobalConfigs() {
+                 log.warn(EventAdapterConstants.GLOBAL_CONFIG_FILE_NAME + " can not found in " + path + ", hence Input" +
+                         " Event Adapters will be running with default global configs.");
+             }
+-            return (AdapterConfigs) unmarshaller.unmarshal(configFile);
+-        } catch (JAXBException e) {
++            return (AdapterConfigs) unmarshaller.unmarshal(getXMLStreamReader(path));
++        } catch (JAXBException | XMLStreamException e) {
+             log.error("Error in loading " + EventAdapterConstants.GLOBAL_CONFIG_FILE_NAME + " from " + path + ", " +
+                     "hence Input Event Adapters will be running with default global configs.");
+         }
+         return new AdapterConfigs();
+     }
++
++    private XMLStreamReader getXMLStreamReader(String filePath) throws XMLStreamException {
++        XMLInputFactory xmlInputFactory = XMLInputFactory.newFactory();
++        xmlInputFactory.setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false);
++        xmlInputFactory.setProperty(XMLInputFactory.SUPPORT_DTD, false);
++        XMLStreamReader xmlStreamReader = xmlInputFactory.createXMLStreamReader(new StreamSource(filePath));
++        return xmlStreamReader;
++    }
+ }
+diff --git a/components/template-manager/org.wso2.carbon.event.template.manager.core/src/main/java/org/wso2/carbon/event/template/manager/core/internal/util/TemplateManagerHelper.java b/components/template-manager/org.wso2.carbon.event.template.manager.core/src/main/java/org/wso2/carbon/event/template/manager/core/internal/util/TemplateManagerHelper.java
+index 26868d908a..ea7ee45c9e 100644
+--- a/components/template-manager/org.wso2.carbon.event.template.manager.core/src/main/java/org/wso2/carbon/event/template/manager/core/internal/util/TemplateManagerHelper.java
++++ b/components/template-manager/org.wso2.carbon.event.template.manager.core/src/main/java/org/wso2/carbon/event/template/manager/core/internal/util/TemplateManagerHelper.java
+@@ -47,6 +47,10 @@
+ import javax.xml.bind.JAXBException;
+ import javax.xml.bind.Marshaller;
+ import javax.xml.bind.Unmarshaller;
++import javax.xml.stream.XMLInputFactory;
++import javax.xml.stream.XMLStreamException;
++import javax.xml.stream.XMLStreamReader;
++import javax.xml.transform.stream.StreamSource;
+ import java.io.File;
+ import java.io.IOException;
+ import java.io.StringReader;
+@@ -133,9 +137,10 @@ private static Domain unmarshalDomain(File fileEntry) {
+         try {
+             JAXBContext jaxbContext = JAXBContext.newInstance(Domain.class);
+             Unmarshaller jaxbUnmarshaller = jaxbContext.createUnmarshaller();
+-            domain = (Domain) jaxbUnmarshaller.unmarshal(fileEntry);
++            XMLStreamReader xmlStreamReader = getXMLInputFactory().createXMLStreamReader(new StreamSource(fileEntry));
++            domain = (Domain) jaxbUnmarshaller.unmarshal(xmlStreamReader);
+ 
+-        } catch (JAXBException e) {
++        } catch (JAXBException | XMLStreamException e) {
+             log.error("JAXB Exception when unmarshalling domain template file at "
+                     + fileEntry.getPath(), e);
+         }
+@@ -157,8 +162,9 @@ private static ScenarioConfiguration unmarshalConfiguration(Object configFileCon
+             StringReader reader = new StringReader(new String((byte[]) configFileContent));
+             JAXBContext jaxbContext = JAXBContext.newInstance(ScenarioConfiguration.class);
+             Unmarshaller jaxbUnmarshaller = jaxbContext.createUnmarshaller();
+-            scenarioConfiguration = (ScenarioConfiguration) jaxbUnmarshaller.unmarshal(reader);
+-        } catch (JAXBException e) {
++            XMLStreamReader xmlStreamReader = getXMLInputFactory().createXMLStreamReader(new StreamSource(reader));
++            scenarioConfiguration = (ScenarioConfiguration) jaxbUnmarshaller.unmarshal(xmlStreamReader);
++        } catch (JAXBException | XMLStreamException e) {
+             log.error("JAXB Exception occurred when unmarshalling configuration ", e);
+         }
+ 
+@@ -642,4 +648,11 @@ public static String getCommonArtifactId(String domainName, String artifactType,
+                                              int sequenceNumber) {
+         return domainName + TemplateManagerConstants.CONFIG_NAME_SEPARATOR + artifactType + sequenceNumber;
+     }
++
++    private static XMLInputFactory getXMLInputFactory() {
++        XMLInputFactory xmlInputFactory = XMLInputFactory.newFactory();
++        xmlInputFactory.setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false);
++        xmlInputFactory.setProperty(XMLInputFactory.SUPPORT_DTD, false);
++        return xmlInputFactory;
++    }
+ }

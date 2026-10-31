@@ -1,0 +1,245 @@
+From 20cd9625d23f99b71fefc83b8db96c14092a9950 Mon Sep 17 00:00:00 2001
+From: funkye <jianbin@apache.org>
+Date: Sat, 27 Jul 2024 23:27:03 +0800
+Subject: [PATCH] security: fix REC security vulnerability during Raft
+ deserialization (#6702)
+
+---
+ changes/en-us/2.x.md                          |  2 +-
+ changes/zh-cn/2.x.md                          |  1 +
+ .../seata/common/exception/ErrorCode.java     | 13 ++++++-
+ .../resources/error/ErrorCode_en.properties   |  3 +-
+ .../raft/sync/RaftSyncMessageSerializer.java  | 38 ++++++++++++++++---
+ .../server/raft/RaftSyncMessageTest.java      | 16 ++++++++
+ .../seata/server/raft/TestSecurity.java       | 32 ++++++++++++++++
+ 7 files changed, 95 insertions(+), 10 deletions(-)
+ create mode 100644 server/src/test/java/org/apache/seata/server/raft/TestSecurity.java
+
+diff --git a/changes/en-us/2.x.md b/changes/en-us/2.x.md
+index c1d0c67f672..8deec047e5f 100644
+--- a/changes/en-us/2.x.md
++++ b/changes/en-us/2.x.md
+@@ -36,7 +36,7 @@ Add changes here for all PR submitted to the 2.x branch.
+ ### refactor:
+ 
+ ### security:
+-
++- [[#6702](https://github.com/apache/incubator-seata/pull/6702)]  fix REC security vulnerability during Raft deserialization
+ 
+ ### test:
+ - [[#6608](https://github.com/apache/incubator-seata/pull/6608)] add unit test for sql-parser-core
+diff --git a/changes/zh-cn/2.x.md b/changes/zh-cn/2.x.md
+index bf9324fed46..d1118bb3d46 100644
+--- a/changes/zh-cn/2.x.md
++++ b/changes/zh-cn/2.x.md
+@@ -38,6 +38,7 @@
+ 
+ 
+ ### security:
++- [[#6702](https://github.com/apache/incubator-seata/pull/6702)]  修复Raft反序列化时存在RCE安全漏洞
+ 
+ ### test:
+ - [[#6608](https://github.com/apache/incubator-seata/pull/6608)] 添加sql-parser-core模块测试用例
+diff --git a/common/src/main/java/org/apache/seata/common/exception/ErrorCode.java b/common/src/main/java/org/apache/seata/common/exception/ErrorCode.java
+index 72d454d0783..fb69cd328f9 100644
+--- a/common/src/main/java/org/apache/seata/common/exception/ErrorCode.java
++++ b/common/src/main/java/org/apache/seata/common/exception/ErrorCode.java
+@@ -24,11 +24,16 @@ public enum ErrorCode {
+     /**
+      * 0001 ~ 0099  Configuration related errors
+      */
+-    ERR_CONFIG(ErrorType.Config, 0001);
++    ERR_CONFIG(ErrorType.Config, 0001),
++
+     /**
+-     * The error code of the transaction exception.
++     * 0100 ~ 0199 Security related errors
+      */
++    ERR_DESERIALIZATION_SECURITY(ErrorType.Security, 0156);
+ 
++    /**
++     * The error code of the transaction exception.
++     */
+     private int code;
+     private ErrorType type;
+ 
+@@ -77,6 +82,10 @@ enum ErrorType {
+          * Network error type.
+          */
+         Network,
++        /**
++         * Security related error type.
++         */
++        Security,
+         /**
+          * Tm error type.
+          */
+diff --git a/common/src/main/resources/error/ErrorCode_en.properties b/common/src/main/resources/error/ErrorCode_en.properties
+index fd59148996f..424ac23455c 100644
+--- a/common/src/main/resources/error/ErrorCode_en.properties
++++ b/common/src/main/resources/error/ErrorCode_en.properties
+@@ -16,4 +16,5 @@
+ #
+ ERR_PREFIX=ERR-CODE: [Seata-{code}][{key}]
+ ERR_POSTFIX=More: [https://seata.apache.org/docs/next/overview/faq#{code}]
+-ERR_CONFIG=config error, {0}
+\ No newline at end of file
++ERR_CONFIG=config error, {0}
++ERR_DESERIALIZATION_SECURITY=deserialization security error, {0}
+\ No newline at end of file
+diff --git a/server/src/main/java/org/apache/seata/server/cluster/raft/sync/RaftSyncMessageSerializer.java b/server/src/main/java/org/apache/seata/server/cluster/raft/sync/RaftSyncMessageSerializer.java
+index 5251d55f981..cd3a7eb4af2 100644
+--- a/server/src/main/java/org/apache/seata/server/cluster/raft/sync/RaftSyncMessageSerializer.java
++++ b/server/src/main/java/org/apache/seata/server/cluster/raft/sync/RaftSyncMessageSerializer.java
+@@ -21,7 +21,12 @@
+ import java.io.IOException;
+ import java.io.ObjectInputStream;
+ import java.io.ObjectOutputStream;
++import java.io.ObjectStreamClass;
++import java.util.ArrayList;
++import java.util.List;
+ import java.util.Optional;
++import org.apache.seata.common.exception.ErrorCode;
++import org.apache.seata.common.exception.SeataRuntimeException;
+ import org.apache.seata.common.loader.EnhancedServiceLoader;
+ import org.apache.seata.core.compressor.CompressorFactory;
+ import org.apache.seata.core.serializer.Serializer;
+@@ -36,6 +41,14 @@ public class RaftSyncMessageSerializer {
+ 
+     private static final Logger LOGGER = LoggerFactory.getLogger(RaftSyncMessageSerializer.class);
+ 
++    private static final List<String> PERMITS = new ArrayList<>();
++
++    static {
++        PERMITS.add(RaftSyncMessage.class.getName());
++        PERMITS.add(io.seata.server.cluster.raft.sync.msg.RaftSyncMessage.class.getName());
++        PERMITS.add("[B");
++    }
++
+     public static byte[] encode(RaftSyncMessage raftSyncMessage) throws IOException {
+         try (ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                 ObjectOutputStream oos = new ObjectOutputStream(bos)) {
+@@ -62,12 +75,22 @@ public static byte[] encode(io.seata.server.cluster.raft.sync.msg.RaftSyncMessag
+ 
+     public static RaftSyncMessage decode(byte[] raftSyncMsgByte) {
+         try (ByteArrayInputStream bin = new ByteArrayInputStream(raftSyncMsgByte);
+-                ObjectInputStream ois = new ObjectInputStream(bin)) {
++            ObjectInputStream ois = new ObjectInputStream(bin) {
++                @Override
++                protected Class<?> resolveClass(ObjectStreamClass desc) throws IOException, ClassNotFoundException {
++                    if (!PERMITS.contains(desc.getName())) {
++                        throw new SeataRuntimeException(ErrorCode.ERR_DESERIALIZATION_SECURITY,
++                            "Failed to deserialize object: " + desc.getName() + " is not permitted");
++                    }
++
++                    return super.resolveClass(desc);
++                }
++            }) {
+             Object object = ois.readObject();
+             RaftSyncMessage raftSyncMessage;
+             if (object instanceof io.seata.server.cluster.raft.sync.msg.RaftSyncMessage) {
+                 io.seata.server.cluster.raft.sync.msg.RaftSyncMessage oldRaftSyncMessage =
+-                        (io.seata.server.cluster.raft.sync.msg.RaftSyncMessage)object;
++                    (io.seata.server.cluster.raft.sync.msg.RaftSyncMessage)object;
+                 raftSyncMessage = new RaftSyncMessage();
+                 raftSyncMessage.setCodec(oldRaftSyncMessage.getCodec());
+                 raftSyncMessage.setCompressor(oldRaftSyncMessage.getCompressor());
+@@ -77,13 +100,16 @@ public static RaftSyncMessage decode(byte[] raftSyncMsgByte) {
+                 raftSyncMessage = (RaftSyncMessage)object;
+             }
+             Serializer serializer = EnhancedServiceLoader.load(Serializer.class,
+-                    SerializerType.getByCode(raftSyncMessage.getCodec()).name());
++                SerializerType.getByCode(raftSyncMessage.getCodec()).name());
+             Optional.ofNullable(raftSyncMessage.getBody())
+-                    .ifPresent(value -> raftSyncMessage.setBody(serializer.deserialize(CompressorFactory
+-                            .getCompressor(raftSyncMessage.getCompressor()).decompress((byte[])raftSyncMessage.getBody()))));
++                .ifPresent(value -> raftSyncMessage.setBody(serializer.deserialize(CompressorFactory
++                    .getCompressor(raftSyncMessage.getCompressor()).decompress((byte[])raftSyncMessage.getBody()))));
+             return raftSyncMessage;
+-        } catch (ClassNotFoundException | IOException e) {
++        } catch (Exception e) {
+             LOGGER.info("Failed to read raft synchronization log: {}", e.getMessage(), e);
++            if (e instanceof SeataRuntimeException) {
++                throw (SeataRuntimeException)e;
++            }
+             throw new RuntimeException(e);
+         }
+     }
+diff --git a/server/src/test/java/org/apache/seata/server/raft/RaftSyncMessageTest.java b/server/src/test/java/org/apache/seata/server/raft/RaftSyncMessageTest.java
+index 5510a190662..97b919516e1 100644
+--- a/server/src/test/java/org/apache/seata/server/raft/RaftSyncMessageTest.java
++++ b/server/src/test/java/org/apache/seata/server/raft/RaftSyncMessageTest.java
+@@ -16,12 +16,15 @@
+  */
+ package org.apache.seata.server.raft;
+ 
++import java.io.ByteArrayOutputStream;
+ import java.io.IOException;
++import java.io.ObjectOutputStream;
+ import java.util.ArrayList;
+ import java.util.HashMap;
+ import java.util.List;
+ import java.util.Map;
+ 
++import org.apache.seata.common.exception.SeataRuntimeException;
+ import org.apache.seata.common.metadata.ClusterRole;
+ import org.apache.seata.common.metadata.Node;
+ import org.apache.seata.core.exception.TransactionException;
+@@ -62,6 +65,19 @@ public static void setUp(ApplicationContext context){
+     public static void destroy(){
+         SessionHolder.destroy();
+     }
++
++    @Test
++    public void testSecurityMsgSerialize() throws IOException {
++        TestSecurity testSecurity = new TestSecurity();
++        byte[] bytes;
++        try (ByteArrayOutputStream bos = new ByteArrayOutputStream();
++            ObjectOutputStream oos = new ObjectOutputStream(bos)) {
++            oos.writeObject(testSecurity);
++            bytes =  bos.toByteArray();
++        }
++        Assertions.assertThrows(SeataRuntimeException.class,()->RaftSyncMessageSerializer.decode(bytes));
++    }
++
+     @Test
+     public void testMsgSerialize() throws IOException {
+         RaftSyncMessage raftSyncMessage = new RaftSyncMessage();
+diff --git a/server/src/test/java/org/apache/seata/server/raft/TestSecurity.java b/server/src/test/java/org/apache/seata/server/raft/TestSecurity.java
+new file mode 100644
+index 00000000000..c8bd97c87ca
+--- /dev/null
++++ b/server/src/test/java/org/apache/seata/server/raft/TestSecurity.java
+@@ -0,0 +1,32 @@
++/*
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++package org.apache.seata.server.raft;
++
++public class TestSecurity implements java.io.Serializable {
++
++	private static final long serialVersionUID = 543214259201495900L;
++
++	String a = "test";
++
++	public String getA() {
++		return a;
++	}
++
++	public void setA(String a) {
++		this.a = a;
++	}
++}

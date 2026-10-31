@@ -1,0 +1,28 @@
+From d59125930e542dd6ae281af2cf4a2b17789991f7 Mon Sep 17 00:00:00 2001
+From: Arjan Tijms <arjan.tijms@omnifish.ee>
+Date: Wed, 25 Oct 2023 20:41:37 +0200
+Subject: [PATCH] Avoid protocol relative redirects
+
+See: https://github.com/apache/tomcat/commit/e3703c9abb8fe0d5602f6ba8a8f11d4b6940815a
+
+Signed-off-by: Arjan Tijms <arjan.tijms@omnifish.ee>
+---
+ .../org/apache/catalina/authenticator/FormAuthenticator.java | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/appserver/web/web-core/src/main/java/org/apache/catalina/authenticator/FormAuthenticator.java b/appserver/web/web-core/src/main/java/org/apache/catalina/authenticator/FormAuthenticator.java
+index 156a7af1be7..d8ce327834b 100644
+--- a/appserver/web/web-core/src/main/java/org/apache/catalina/authenticator/FormAuthenticator.java
++++ b/appserver/web/web-core/src/main/java/org/apache/catalina/authenticator/FormAuthenticator.java
+@@ -532,6 +532,11 @@ protected String savedRequestURL(Session session) {
+             sb.append(saved.getQueryString());
+         }
+ 
++        // Avoid protocol relative redirects
++        while (sb.length() > 1 && sb.charAt(1) == '/') {
++            sb.deleteCharAt(0);
++        }
++
+         return sb.toString();
+     }
+ 

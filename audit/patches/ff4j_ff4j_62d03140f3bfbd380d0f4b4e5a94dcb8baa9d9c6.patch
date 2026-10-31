@@ -1,0 +1,1169 @@
+From 481ca723a57f87eca931196ec9a772967ab70b3b Mon Sep 17 00:00:00 2001
+From: Shuqian Hon <honsq90+github@protonmail.com>
+Date: Mon, 5 Dec 2022 16:54:29 +1100
+Subject: [PATCH 1/5] fix: CVE-2022-44262 (#624)
+
+---
+ .../ff4j/property/util/PropertyFactory.java   |  6 +++++-
+ .../test/property/PropertyFactoryTest.java    | 20 ++++++++++++++++++-
+ 2 files changed, 24 insertions(+), 2 deletions(-)
+
+diff --git a/ff4j-core/src/main/java/org/ff4j/property/util/PropertyFactory.java b/ff4j-core/src/main/java/org/ff4j/property/util/PropertyFactory.java
+index aa3c675c9..345f80d00 100644
+--- a/ff4j-core/src/main/java/org/ff4j/property/util/PropertyFactory.java
++++ b/ff4j-core/src/main/java/org/ff4j/property/util/PropertyFactory.java
+@@ -160,7 +160,11 @@ public static Property<?> createProperty(String pName, String pType, String pVal
+         Util.assertNotNull(pType);
+         Property<?> ap = null;
+         try {
+-            Constructor<?> constr = Class.forName(pType).getConstructor(String.class, String.class);
++            Class<?> typeClass = Class.forName(pType);
++            if (!Property.class.isAssignableFrom(typeClass)) {
++                throw new IllegalArgumentException("Cannot create property <" + pName + "> invalid type <" + pType + ">");
++            }
++            Constructor<?> constr = typeClass.getConstructor(String.class, String.class);
+             ap = (Property<?>) constr.newInstance(pName, pValue);
+             ap.setDescription(desc);
+             // Is there any fixed Value ?
+diff --git a/ff4j-core/src/test/java/org/ff4j/test/property/PropertyFactoryTest.java b/ff4j-core/src/test/java/org/ff4j/test/property/PropertyFactoryTest.java
+index 34878af55..5f1bc40cf 100644
+--- a/ff4j-core/src/test/java/org/ff4j/test/property/PropertyFactoryTest.java
++++ b/ff4j-core/src/test/java/org/ff4j/test/property/PropertyFactoryTest.java
+@@ -35,6 +35,9 @@
+ import org.junit.Assert;
+ import org.junit.Test;
+ 
++import static org.hamcrest.CoreMatchers.containsString;
++import static org.hamcrest.MatcherAssert.assertThat;
++
+ 
+ public class PropertyFactoryTest {
+ 
+@@ -99,7 +102,16 @@ public void testPropertyFactory8() {
+     public void testPropertyFactory9() {
+         PropertyFactory.createProperty("p1", PropertyString.class.getName(), "s1", "desc", Util.set("s3", "s2"));
+     }
+-    
++
++    @Test
++    public void testPropertyFactory10() {
++        try {
++            PropertyFactory.createProperty("p1", UnsafeProperty.class.getName(), "s1", "desc", Util.set("s3", "s2"));
++        } catch (IllegalArgumentException e) {
++            assertThat(e.getMessage(), containsString("Cannot create property <p1> invalid type <org.ff4j.test.property.PropertyFactoryTest$UnsafeProperty>"));
++        }
++    }
++
+     @Test
+     public void testCreateProperty() {
+         Assert.assertNull(PropertyFactory.createProperty(null));
+@@ -111,4 +123,10 @@ public void testCreatePropertyOK() {
+         PropertyJsonBean jsonBean = new PropertyJsonBean(new PropertyString("p1", "v1"));
+         Assert.assertNotNull(PropertyFactory.createProperty(jsonBean));
+     }
++
++    class UnsafeProperty {
++
++        public UnsafeProperty(String name, String value) {
++        }
++    }
+ }
+
+From 77fd4deb705991cba7c8e133f38dd3aaf30a50bb Mon Sep 17 00:00:00 2001
+From: Shuqian Hon <honsq90+github@protonmail.com>
+Date: Mon, 5 Dec 2022 20:22:46 +1100
+Subject: [PATCH 2/5] fix: Update UnsafeProperty to have a side effect that can
+ be validated (#624)
+
+---
+ .../org/ff4j/test/property/PropertyFactoryTest.java   | 11 ++---------
+ .../java/org/ff4j/test/property/UnsafeProperty.java   | 11 +++++++++++
+ 2 files changed, 13 insertions(+), 9 deletions(-)
+ create mode 100644 ff4j-core/src/test/java/org/ff4j/test/property/UnsafeProperty.java
+
+diff --git a/ff4j-core/src/test/java/org/ff4j/test/property/PropertyFactoryTest.java b/ff4j-core/src/test/java/org/ff4j/test/property/PropertyFactoryTest.java
+index 5f1bc40cf..94d4f45e6 100644
+--- a/ff4j-core/src/test/java/org/ff4j/test/property/PropertyFactoryTest.java
++++ b/ff4j-core/src/test/java/org/ff4j/test/property/PropertyFactoryTest.java
+@@ -35,9 +35,6 @@
+ import org.junit.Assert;
+ import org.junit.Test;
+ 
+-import static org.hamcrest.CoreMatchers.containsString;
+-import static org.hamcrest.MatcherAssert.assertThat;
+-
+ 
+ public class PropertyFactoryTest {
+ 
+@@ -108,7 +105,8 @@ public void testPropertyFactory10() {
+         try {
+             PropertyFactory.createProperty("p1", UnsafeProperty.class.getName(), "s1", "desc", Util.set("s3", "s2"));
+         } catch (IllegalArgumentException e) {
+-            assertThat(e.getMessage(), containsString("Cannot create property <p1> invalid type <org.ff4j.test.property.PropertyFactoryTest$UnsafeProperty>"));
++            Assert.assertEquals(0, UnsafeProperty.count);
++            Assert.assertEquals("Cannot create property <p1> invalid type <org.ff4j.test.property.UnsafeProperty>", e.getCause().getMessage());
+         }
+     }
+ 
+@@ -124,9 +122,4 @@ public void testCreatePropertyOK() {
+         Assert.assertNotNull(PropertyFactory.createProperty(jsonBean));
+     }
+ 
+-    class UnsafeProperty {
+-
+-        public UnsafeProperty(String name, String value) {
+-        }
+-    }
+ }
+diff --git a/ff4j-core/src/test/java/org/ff4j/test/property/UnsafeProperty.java b/ff4j-core/src/test/java/org/ff4j/test/property/UnsafeProperty.java
+new file mode 100644
+index 000000000..8c4ff1b8b
+--- /dev/null
++++ b/ff4j-core/src/test/java/org/ff4j/test/property/UnsafeProperty.java
+@@ -0,0 +1,11 @@
++package org.ff4j.test.property;
++
++class UnsafeProperty {
++    static int count = 0;
++    private String name;
++    private String value;
++
++    public UnsafeProperty(String name, String value) {
++        count++;
++    }
++}
+
+From e915c026aef46b502934cb05a825ea2ea15eb9e6 Mon Sep 17 00:00:00 2001
+From: Shuqian Hon <honsq90+github@protonmail.com>
+Date: Tue, 6 Dec 2022 07:35:23 +1100
+Subject: [PATCH 3/5] fix: Add assignable check to PropertiesParser, YamlParser
+ and XmlParser (#624)
+
+---
+ .../parser/properties/PropertiesParser.java   |  6 +++-
+ .../properties/PropertiesParserTest.java      | 10 +++++-
+ .../java/org/ff4j/parser/yaml/YamlParser.java |  6 +++-
+ .../org/ff4j/parser/yaml/YamlParserTest.java  |  8 +++++
+ .../main/java/org/ff4j/conf/XmlParser.java    |  6 +++-
+ .../org/ff4j/test/parser/XmlParserTest.java   |  7 ++++-
+ .../ff4j/test/property/UnsafeProperty.java    | 20 ++++++++++++
+ .../src/test/resources/test-property6.xml     | 30 ++++++++++++++++++
+ .../ff4j/test/property/UnsafeProperty.java    | 31 +++++++++++++++++++
+ .../resources/unsafe/test-ff4j-features.json  | 13 ++++++++
+ .../unsafe/test-ff4j-features.properties      | 29 +++++++++++++++++
+ .../resources/unsafe/test-ff4j-features.xml   | 29 +++++++++++++++++
+ .../resources/unsafe/test-ff4j-features.yml   | 16 ++++++++++
+ 13 files changed, 206 insertions(+), 5 deletions(-)
+ create mode 100644 ff4j-core/src/test/resources/test-property6.xml
+ create mode 100644 ff4j-test/src/main/java/org/ff4j/test/property/UnsafeProperty.java
+ create mode 100644 ff4j-test/src/main/resources/unsafe/test-ff4j-features.json
+ create mode 100644 ff4j-test/src/main/resources/unsafe/test-ff4j-features.properties
+ create mode 100644 ff4j-test/src/main/resources/unsafe/test-ff4j-features.xml
+ create mode 100644 ff4j-test/src/main/resources/unsafe/test-ff4j-features.yml
+
+diff --git a/ff4j-config-properties/src/main/java/org/ff4j/parser/properties/PropertiesParser.java b/ff4j-config-properties/src/main/java/org/ff4j/parser/properties/PropertiesParser.java
+index b257c1099..2475e7c0b 100644
+--- a/ff4j-config-properties/src/main/java/org/ff4j/parser/properties/PropertiesParser.java
++++ b/ff4j-config-properties/src/main/java/org/ff4j/parser/properties/PropertiesParser.java
+@@ -230,7 +230,11 @@ private Map < String, Property<?>> parseProperties(String prefix, Map<String, St
+                 optionalType = MappingUtil.mapPropertyType(optionalType);
+                 try {
+                     // Constructor (String, String) is mandatory in Property interface
+-                    Constructor<?> constr = Class.forName(optionalType).getConstructor(String.class, String.class);
++                    Class<?> typeClass = Class.forName(optionalType);
++                    if (!Property.class.isAssignableFrom(typeClass)) {
++                        throw new IllegalArgumentException("Cannot create property <" + name + "> invalid type <" + optionalType + ">");
++                    }
++                    Constructor<?> constr = typeClass.getConstructor(String.class, String.class);
+                     ap = (Property<?>) constr.newInstance(name, strValue);
+                 } catch (Exception e) {
+                     throw new IllegalArgumentException("Cannot instantiate '" + optionalType + "' check default constructor", e);
+diff --git a/ff4j-config-properties/src/test/java/org/ff4j/parser/properties/PropertiesParserTest.java b/ff4j-config-properties/src/test/java/org/ff4j/parser/properties/PropertiesParserTest.java
+index 47678402d..6e1137fea 100644
+--- a/ff4j-config-properties/src/test/java/org/ff4j/parser/properties/PropertiesParserTest.java
++++ b/ff4j-config-properties/src/test/java/org/ff4j/parser/properties/PropertiesParserTest.java
+@@ -36,7 +36,7 @@ public class PropertiesParserTest {
+     public void propertiesFile_shouldExist() {
+         new PropertiesParser().parseConfigurationFile(null);
+     }
+-    
++
+     @Test
+     public void should_export_anyConfig_asProperties() {
+         // Given an XML file
+@@ -46,6 +46,14 @@ public void should_export_anyConfig_asProperties() {
+         // Then it possible to export as YAML
+         new PropertiesParser().export(xmlConfig);
+     }
++
++    @Test(expected = IllegalArgumentException.class)
++    public void should_fail_for_unsafe_property() {
++        // Given a properties file
++        InputStream propsFile = getClass().getClassLoader().getResourceAsStream("unsafe/test-ff4j-features.properties");
++        // When loading config
++        new PropertiesParser().parseConfigurationFile(propsFile);
++    }
+     
+     @Test
+     public void importProperties_should_be_same_asXMLImport() {
+diff --git a/ff4j-config-yaml/src/main/java/org/ff4j/parser/yaml/YamlParser.java b/ff4j-config-yaml/src/main/java/org/ff4j/parser/yaml/YamlParser.java
+index 11bafa52d..c804d59d3 100644
+--- a/ff4j-config-yaml/src/main/java/org/ff4j/parser/yaml/YamlParser.java
++++ b/ff4j-config-yaml/src/main/java/org/ff4j/parser/yaml/YamlParser.java
+@@ -172,7 +172,11 @@ private Map < String, Property<?>> parseProperties(List<Map<String, Object>> pro
+                     optionalType = MappingUtil.mapPropertyType(optionalType);
+                     try {
+                         // Constructor (String, String) is mandatory in Property interface
+-                        Constructor<?> constr = Class.forName(optionalType).getConstructor(String.class, String.class);
++                        Class<?> typeClass = Class.forName(optionalType);
++                        if (!Property.class.isAssignableFrom(typeClass)) {
++                            throw new IllegalArgumentException("Cannot create property <" + name + "> invalid type <" + optionalType + ">");
++                        }
++                        Constructor<?> constr = typeClass.getConstructor(String.class, String.class);
+                         ap = (Property<?>) constr.newInstance(name, strValue);
+                     } catch (Exception e) {
+                         throw new IllegalArgumentException("Cannot instantiate '" + optionalType + "' check default constructor", e);
+diff --git a/ff4j-config-yaml/src/test/java/org/ff4j/parser/yaml/YamlParserTest.java b/ff4j-config-yaml/src/test/java/org/ff4j/parser/yaml/YamlParserTest.java
+index 59f38c4e0..7595ec551 100644
+--- a/ff4j-config-yaml/src/test/java/org/ff4j/parser/yaml/YamlParserTest.java
++++ b/ff4j-config-yaml/src/test/java/org/ff4j/parser/yaml/YamlParserTest.java
+@@ -46,6 +46,14 @@ public void should_export_anyConfig_asYaml() {
+         // Then it possible to export as YAML
+         new YamlParser().export(xmlConfig);
+     }
++
++    @Test(expected = IllegalArgumentException.class)
++    public void should_fail_for_unsafe_property() {
++        // Given a YAML file
++        InputStream ymlFile = getClass().getClassLoader().getResourceAsStream("unsafe/test-ff4j-features.yml");
++        // When loading config
++        new YamlParser().parseConfigurationFile(ymlFile);
++    }
+     
+     @Test
+     public void importYaml_should_be_same_asXMLImport() {
+diff --git a/ff4j-core/src/main/java/org/ff4j/conf/XmlParser.java b/ff4j-core/src/main/java/org/ff4j/conf/XmlParser.java
+index 8eb2bf744..e9b31dc37 100644
+--- a/ff4j-core/src/main/java/org/ff4j/conf/XmlParser.java
++++ b/ff4j-core/src/main/java/org/ff4j/conf/XmlParser.java
+@@ -384,7 +384,11 @@ private Feature parseFeatureTag(Element featXmlTag) {
+                 
+                 try {
+                     // Constructor (String, String) is mandatory in Property interface
+-                    Constructor<?> constr = Class.forName(optionalType).getConstructor(String.class, String.class);
++                    Class<?> typeClass = Class.forName(optionalType);
++                    if (!Property.class.isAssignableFrom(typeClass)) {
++                        throw new IllegalArgumentException("Cannot create property <" + name + "> invalid type <" + optionalType + ">");
++                    }
++                    Constructor<?> constr = typeClass.getConstructor(String.class, String.class);
+                     ap = (Property<?>) constr.newInstance(name, value);
+                 } catch (Exception e) {
+                     throw new IllegalArgumentException("Cannot instantiate '" + optionalType + "' check default constructor", e);
+diff --git a/ff4j-core/src/test/java/org/ff4j/test/parser/XmlParserTest.java b/ff4j-core/src/test/java/org/ff4j/test/parser/XmlParserTest.java
+index 989422bec..937a0702f 100644
+--- a/ff4j-core/src/test/java/org/ff4j/test/parser/XmlParserTest.java
++++ b/ff4j-core/src/test/java/org/ff4j/test/parser/XmlParserTest.java
+@@ -68,7 +68,12 @@ public void testParsingPropertiesInvalidType() throws IOException {
+     public void testParsingPropertiesMoreTag() throws IOException {
+         parseFile("test-property5.xml");
+     }
+-    
++
++    @Test(expected = IllegalArgumentException.class)
++    public void testParsingPropertiesUnsafe() throws IOException {
++        parseFile("test-property6.xml");
++    }
++
+     @Test(expected = IllegalArgumentException.class)
+     public void testParsingFeatureNoClass() throws IOException {
+         parseFile("test-feature-ko1.xml");
+diff --git a/ff4j-core/src/test/java/org/ff4j/test/property/UnsafeProperty.java b/ff4j-core/src/test/java/org/ff4j/test/property/UnsafeProperty.java
+index 8c4ff1b8b..49537ab4f 100644
+--- a/ff4j-core/src/test/java/org/ff4j/test/property/UnsafeProperty.java
++++ b/ff4j-core/src/test/java/org/ff4j/test/property/UnsafeProperty.java
+@@ -1,5 +1,25 @@
+ package org.ff4j.test.property;
+ 
++/*
++ * #%L
++ * ff4j-core
++ * %%
++ * Copyright (C) 2013 - 2022 FF4J
++ * %%
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ * 
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ * 
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ * #L%
++ */
++
+ class UnsafeProperty {
+     static int count = 0;
+     private String name;
+diff --git a/ff4j-core/src/test/resources/test-property6.xml b/ff4j-core/src/test/resources/test-property6.xml
+new file mode 100644
+index 000000000..015633843
+--- /dev/null
++++ b/ff4j-core/src/test/resources/test-property6.xml
+@@ -0,0 +1,30 @@
++<?xml version="1.0" encoding="UTF-8" ?>
++<!--
++  #%L
++  ff4j-core
++  %%
++  Copyright (C) 2013 Ff4J
++  %%
++  Licensed under the Apache License, Version 2.0 (the "License");
++  you may not use this file except in compliance with the License.
++  You may obtain a copy of the License at
++  
++       http://www.apache.org/licenses/LICENSE-2.0
++  
++  Unless required by applicable law or agreed to in writing, software
++  distributed under the License is distributed on an "AS IS" BASIS,
++  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++  See the License for the specific language governing permissions and
++  limitations under the License.
++  #L%
++  -->
++<ff4j xmlns="http://www.ff4j.org/schema/ff4j" 
++     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
++	 xsi:schemaLocation="http://www.ff4j.org/schema/ff4j ../../main/resources/ff4j-1.4.0.xsd">
++	
++	<properties>
++		 <property name="a" type="org.ff4j.test.property.UnsafeProperty" value="UNSAFE" />
++	</properties>
++
++</ff4j>
++
+diff --git a/ff4j-test/src/main/java/org/ff4j/test/property/UnsafeProperty.java b/ff4j-test/src/main/java/org/ff4j/test/property/UnsafeProperty.java
+new file mode 100644
+index 000000000..49537ab4f
+--- /dev/null
++++ b/ff4j-test/src/main/java/org/ff4j/test/property/UnsafeProperty.java
+@@ -0,0 +1,31 @@
++package org.ff4j.test.property;
++
++/*
++ * #%L
++ * ff4j-core
++ * %%
++ * Copyright (C) 2013 - 2022 FF4J
++ * %%
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ * 
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ * 
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ * #L%
++ */
++
++class UnsafeProperty {
++    static int count = 0;
++    private String name;
++    private String value;
++
++    public UnsafeProperty(String name, String value) {
++        count++;
++    }
++}
+diff --git a/ff4j-test/src/main/resources/unsafe/test-ff4j-features.json b/ff4j-test/src/main/resources/unsafe/test-ff4j-features.json
+new file mode 100644
+index 000000000..a36170829
+--- /dev/null
++++ b/ff4j-test/src/main/resources/unsafe/test-ff4j-features.json
+@@ -0,0 +1,13 @@
++{
++  "ff4j": {
++    "autocreate": false,
++    "audit": false,
++    "properties": [
++      {
++        "name": "a",
++        "type": "org.ff4j.test.property.UnsafeProperty",
++        "value": "UNSAFE"
++      }
++    ]
++  }
++}
+\ No newline at end of file
+diff --git a/ff4j-test/src/main/resources/unsafe/test-ff4j-features.properties b/ff4j-test/src/main/resources/unsafe/test-ff4j-features.properties
+new file mode 100644
+index 000000000..d80edffa0
+--- /dev/null
++++ b/ff4j-test/src/main/resources/unsafe/test-ff4j-features.properties
+@@ -0,0 +1,29 @@
++## -------------------------
++## --         Format      --
++## -------------------------
++# -- FEATURE --
++#ff4j.features.1.uid=
++#ff4j.features.1.enable=
++#ff4j.features.1.description=
++#ff4j.features.1.groupName=
++#ff4j.features.1.permissions=
++#ff4j.features.1.custom-properties.0.name=
++#ff4j.features.1.custom-properties.0.type=
++#ff4j.features.1.custom-properties.0.value=
++#ff4j.features.1.custom-properties.0.fixedValues=
++# -- PROPERTIES --
++#ff4j.properties.0.name=
++#ff4j.properties.0.type=
++#ff4j.properties.0.value=
++#ff4j.properties.0.fixedValues=
++
++# Core
++ff4j.autocreate=false
++ff4j.audit=false
++
++# -- PROPERTIES --
++
++# a
++ff4j.properties.0.name=a
++ff4j.properties.0.type=org.ff4j.test.property.UnsafeProperty
++ff4j.properties.0.value=UNSAFE
+diff --git a/ff4j-test/src/main/resources/unsafe/test-ff4j-features.xml b/ff4j-test/src/main/resources/unsafe/test-ff4j-features.xml
+new file mode 100644
+index 000000000..8c4fa93af
+--- /dev/null
++++ b/ff4j-test/src/main/resources/unsafe/test-ff4j-features.xml
+@@ -0,0 +1,29 @@
++<?xml version="1.0" encoding="UTF-8" ?>
++<!--
++  #%L
++  ff4j-core
++  %%
++  Copyright (C) 2013 Ff4J
++  %%
++  Licensed under the Apache License, Version 2.0 (the "License");
++  you may not use this file except in compliance with the License.
++  You may obtain a copy of the License at
++  
++       http://www.apache.org/licenses/LICENSE-2.0
++  
++  Unless required by applicable law or agreed to in writing, software
++  distributed under the License is distributed on an "AS IS" BASIS,
++  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++  See the License for the specific language governing permissions and
++  limitations under the License.
++  #L%
++  -->
++<ff4j xmlns="http://www.ff4j.org/schema/ff4j" 
++     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
++	 xsi:schemaLocation="http://www.ff4j.org/schema/ff4j http://ff4j.org/schema/ff4j-1.4.0.xsd">
++	
++	<properties>
++	 <property name="a"  type="org.ff4j.test.property.UnsafeProperty" value="UNSAFE" />
++	</properties>
++
++</ff4j>
+\ No newline at end of file
+diff --git a/ff4j-test/src/main/resources/unsafe/test-ff4j-features.yml b/ff4j-test/src/main/resources/unsafe/test-ff4j-features.yml
+new file mode 100644
+index 000000000..7730cf789
+--- /dev/null
++++ b/ff4j-test/src/main/resources/unsafe/test-ff4j-features.yml
+@@ -0,0 +1,16 @@
++# -----------------------------
++# Core FF4J
++# -----------------------------
++ff4j: 
++  autocreate: false
++  audit: false
++  
++  # -----------------------------
++  # Bloc Properties
++  # -----------------------------
++
++  properties:
++    - name: a
++      type: org.ff4j.test.property.UnsafeProperty
++      value: UNSAFE
++
+
+From 991df72725f78adbc413d9b0fbb676201f1882e0 Mon Sep 17 00:00:00 2001
+From: Shuqian Hon <honsq90+github@protonmail.com>
+Date: Tue, 6 Dec 2022 08:03:23 +1100
+Subject: [PATCH 4/5] fix: Validate FlippingStrategy in various parsers (#624)
+
+---
+ .../parser/properties/PropertiesParser.java   |  6 +++-
+ .../properties/PropertiesParserTest.java      | 23 ++++++++++++--
+ .../java/org/ff4j/parser/yaml/YamlParser.java |  6 +++-
+ .../org/ff4j/parser/yaml/YamlParserTest.java  | 21 +++++++++++--
+ .../main/java/org/ff4j/conf/XmlParser.java    |  6 +++-
+ .../main/java/org/ff4j/utils/MappingUtil.java |  3 ++
+ .../org/ff4j/test/parser/XmlParserTest.java   | 21 ++++++++++---
+ .../test/property/PropertyFactoryTest.java    |  3 +-
+ .../test/unsafe/UnsafeFlippingStrategy.java   | 28 +++++++++++++++++
+ .../org/ff4j/test/unsafe}/UnsafeProperty.java |  9 ++----
+ .../org/ff4j/test/utils/MappingUtilsTest.java | 11 ++++++-
+ .../src/test/resources/test-feature-ko8.xml   | 25 +++++++++++++++
+ .../src/test/resources/test-property6.xml     |  2 +-
+ .../test/unsafe/UnsafeFlippingStrategy.java   | 29 +++++++++++++++++
+ .../org/ff4j/test/unsafe}/UnsafeProperty.java |  8 ++---
+ .../resources/unsafe/test-ff4j-features.json  |  2 +-
+ .../resources/unsafe/test-ff4j-features.xml   |  4 +--
+ .../resources/unsafe/test-ff4j-features.yml   |  2 +-
+ .../resources/unsafe/test-ff4j-strategy.json  | 16 ++++++++++
+ .../unsafe/test-ff4j-strategy.properties      | 29 +++++++++++++++++
+ .../resources/unsafe/test-ff4j-strategy.xml   | 31 +++++++++++++++++++
+ .../resources/unsafe/test-ff4j-strategy.yml   | 17 ++++++++++
+ .../ff4j/web/embedded/ConsoleOperations.java  |  6 ++++
+ 23 files changed, 278 insertions(+), 30 deletions(-)
+ create mode 100644 ff4j-core/src/test/java/org/ff4j/test/unsafe/UnsafeFlippingStrategy.java
+ rename {ff4j-test/src/main/java/org/ff4j/test/property => ff4j-core/src/test/java/org/ff4j/test/unsafe}/UnsafeProperty.java (84%)
+ create mode 100644 ff4j-core/src/test/resources/test-feature-ko8.xml
+ create mode 100644 ff4j-test/src/main/java/org/ff4j/test/unsafe/UnsafeFlippingStrategy.java
+ rename {ff4j-core/src/test/java/org/ff4j/test/property => ff4j-test/src/main/java/org/ff4j/test/unsafe}/UnsafeProperty.java (84%)
+ create mode 100644 ff4j-test/src/main/resources/unsafe/test-ff4j-strategy.json
+ create mode 100644 ff4j-test/src/main/resources/unsafe/test-ff4j-strategy.properties
+ create mode 100644 ff4j-test/src/main/resources/unsafe/test-ff4j-strategy.xml
+ create mode 100644 ff4j-test/src/main/resources/unsafe/test-ff4j-strategy.yml
+
+diff --git a/ff4j-config-properties/src/main/java/org/ff4j/parser/properties/PropertiesParser.java b/ff4j-config-properties/src/main/java/org/ff4j/parser/properties/PropertiesParser.java
+index 2475e7c0b..1a930835d 100644
+--- a/ff4j-config-properties/src/main/java/org/ff4j/parser/properties/PropertiesParser.java
++++ b/ff4j-config-properties/src/main/java/org/ff4j/parser/properties/PropertiesParser.java
+@@ -312,7 +312,11 @@ private void parseFeatures(FF4jConfiguration ff4jConfig, Map<String, String> map
+             if (null != flipStrategyClass && !"".equals(flipStrategyClass)) {
+                 FlippingStrategy flipStrategy = null;
+                 try {
+-                    flipStrategy = (FlippingStrategy) Class.forName(flipStrategyClass).newInstance();
++                    Class<?> typeClass = Class.forName(flipStrategyClass);
++                    if (!FlippingStrategy.class.isAssignableFrom(typeClass)) {
++                        throw new IllegalArgumentException("Cannot create flipstrategy <" + flipStrategyClass + "> invalid type");
++                    }
++                    flipStrategy = (FlippingStrategy) typeClass.newInstance();
+                 } catch (Exception e) {
+                     throw new IllegalArgumentException("Cannot parse flipStrategy for feature '" + f.getUid() + 
+                             "' -> check key [" + currentFeatureKey +  "." + TOGGLE_STRATEGY_TAG + "." + TOGGLE_STRATEGY_ATTCLASS + "]", e);
+diff --git a/ff4j-config-properties/src/test/java/org/ff4j/parser/properties/PropertiesParserTest.java b/ff4j-config-properties/src/test/java/org/ff4j/parser/properties/PropertiesParserTest.java
+index 6e1137fea..fb63faefe 100644
+--- a/ff4j-config-properties/src/test/java/org/ff4j/parser/properties/PropertiesParserTest.java
++++ b/ff4j-config-properties/src/test/java/org/ff4j/parser/properties/PropertiesParserTest.java
+@@ -28,6 +28,9 @@
+ import org.ff4j.conf.XmlConfig;
+ import org.ff4j.conf.XmlParser;
+ import org.ff4j.core.Feature;
++import org.ff4j.test.unsafe.UnsafeFlippingStrategy;
++import org.ff4j.test.unsafe.UnsafeProperty;
++import org.junit.Assert;
+ import org.junit.Test;
+ 
+ public class PropertiesParserTest {
+@@ -46,13 +49,27 @@ public void should_export_anyConfig_asProperties() {
+         // Then it possible to export as YAML
+         new PropertiesParser().export(xmlConfig);
+     }
+-
+-    @Test(expected = IllegalArgumentException.class)
++    
++    @Test
+     public void should_fail_for_unsafe_property() {
+         // Given a properties file
+         InputStream propsFile = getClass().getClassLoader().getResourceAsStream("unsafe/test-ff4j-features.properties");
+         // When loading config
+-        new PropertiesParser().parseConfigurationFile(propsFile);
++        Assert.assertThrows(IllegalArgumentException.class, () -> {
++            new PropertiesParser().parseConfigurationFile(propsFile);
++        });
++        Assert.assertEquals(0, UnsafeProperty.count);
++    }
++    
++    @Test
++    public void should_fail_for_unsafe_strategy() {
++        // Given a properties file
++        InputStream propsFile = getClass().getClassLoader().getResourceAsStream("unsafe/test-ff4j-strategy.properties");
++        // When loading config
++        Assert.assertThrows(IllegalArgumentException.class, () -> {
++            new PropertiesParser().parseConfigurationFile(propsFile);
++        });
++        Assert.assertEquals(0, UnsafeFlippingStrategy.count);
+     }
+     
+     @Test
+diff --git a/ff4j-config-yaml/src/main/java/org/ff4j/parser/yaml/YamlParser.java b/ff4j-config-yaml/src/main/java/org/ff4j/parser/yaml/YamlParser.java
+index c804d59d3..12e9e8d0e 100644
+--- a/ff4j-config-yaml/src/main/java/org/ff4j/parser/yaml/YamlParser.java
++++ b/ff4j-config-yaml/src/main/java/org/ff4j/parser/yaml/YamlParser.java
+@@ -255,7 +255,11 @@ private FlippingStrategy parseFlipStrategy(Feature feature, Map<String, Object>
+         try {
+             // Parse class
+             String clazzName = (String) toggleStrategy.get(TOGGLE_STRATEGY_ATTCLASS);
+-            FlippingStrategy flipStrategy = (FlippingStrategy) Class.forName(clazzName).newInstance();
++            Class<?> typeClass = Class.forName(clazzName);
++            if (!FlippingStrategy.class.isAssignableFrom(typeClass)) {
++                throw new IllegalArgumentException("Cannot create flipstrategy <" + clazzName + "> invalid type");
++            }
++            FlippingStrategy flipStrategy = (FlippingStrategy) typeClass.newInstance();
+             // Parse Params
+             List<Map<String, Object>> mapYamlParam = (List<Map<String, Object>>) toggleStrategy.get(TOGGLE_STRATEGY_PARAMTAG);
+             Map<String,String> params = new HashMap<>();
+diff --git a/ff4j-config-yaml/src/test/java/org/ff4j/parser/yaml/YamlParserTest.java b/ff4j-config-yaml/src/test/java/org/ff4j/parser/yaml/YamlParserTest.java
+index 7595ec551..11848bd04 100644
+--- a/ff4j-config-yaml/src/test/java/org/ff4j/parser/yaml/YamlParserTest.java
++++ b/ff4j-config-yaml/src/test/java/org/ff4j/parser/yaml/YamlParserTest.java
+@@ -28,6 +28,9 @@
+ import org.ff4j.conf.XmlConfig;
+ import org.ff4j.conf.XmlParser;
+ import org.ff4j.core.Feature;
++import org.ff4j.test.unsafe.UnsafeProperty;
++import org.ff4j.test.unsafe.UnsafeFlippingStrategy;
++import org.junit.Assert;
+ import org.junit.Test;
+ 
+ public class YamlParserTest {
+@@ -47,12 +50,26 @@ public void should_export_anyConfig_asYaml() {
+         new YamlParser().export(xmlConfig);
+     }
+ 
+-    @Test(expected = IllegalArgumentException.class)
++    @Test
+     public void should_fail_for_unsafe_property() {
+         // Given a YAML file
+         InputStream ymlFile = getClass().getClassLoader().getResourceAsStream("unsafe/test-ff4j-features.yml");
+         // When loading config
+-        new YamlParser().parseConfigurationFile(ymlFile);
++        Assert.assertThrows(IllegalArgumentException.class, () -> {
++            new YamlParser().parseConfigurationFile(ymlFile);
++        });
++        Assert.assertEquals(0, UnsafeProperty.count);
++    }
++
++    @Test
++    public void should_fail_for_unsafe_strategy() {
++        // Given a YAML file
++        InputStream ymlFile = getClass().getClassLoader().getResourceAsStream("unsafe/test-ff4j-strategy.yml");
++        // When loading config
++        Assert.assertThrows(IllegalArgumentException.class, () -> {
++            new YamlParser().parseConfigurationFile(ymlFile);
++        });
++        Assert.assertEquals(0, UnsafeFlippingStrategy.count);
+     }
+     
+     @Test
+diff --git a/ff4j-core/src/main/java/org/ff4j/conf/XmlParser.java b/ff4j-core/src/main/java/org/ff4j/conf/XmlParser.java
+index e9b31dc37..25e1c1d5e 100644
+--- a/ff4j-core/src/main/java/org/ff4j/conf/XmlParser.java
++++ b/ff4j-core/src/main/java/org/ff4j/conf/XmlParser.java
+@@ -444,7 +444,11 @@ private FlippingStrategy parseFlipStrategy(Element flipStrategyTag, String uid)
+         try {
+             // Attribute CLASS
+             String clazzName = nnm.getNamedItem(FLIPSTRATEGY_ATTCLASS).getNodeValue();
+-            flipStrategy = (FlippingStrategy) Class.forName(clazzName).newInstance();
++            Class<?> typeClass = Class.forName(clazzName);
++            if (!FlippingStrategy.class.isAssignableFrom(typeClass)) {
++                throw new IllegalArgumentException("Cannot create flipstrategy <" + clazzName + "> invalid type");
++            }
++            flipStrategy = (FlippingStrategy) typeClass.newInstance();
+ 
+             // LIST OF PARAMS
+             Map<String, String> parameters = new LinkedHashMap<String, String>();
+diff --git a/ff4j-core/src/main/java/org/ff4j/utils/MappingUtil.java b/ff4j-core/src/main/java/org/ff4j/utils/MappingUtil.java
+index f952d8e44..708d01d9e 100644
+--- a/ff4j-core/src/main/java/org/ff4j/utils/MappingUtil.java
++++ b/ff4j-core/src/main/java/org/ff4j/utils/MappingUtil.java
+@@ -181,6 +181,9 @@ public static final Map<String, String> toMap(String strParam) {
+ 	public static FlippingStrategy instanceFlippingStrategy(String uid, String className,  Map<String, String> initparams) {
+         try {
+             Class<FlippingStrategy> clazz = (Class<FlippingStrategy>) (classLoader == null ? Class.forName(className) : classLoader.loadClass(className));
++            if (!FlippingStrategy.class.isAssignableFrom(clazz)) {
++                throw new IllegalArgumentException("Invalid type " + className );
++            }
+             FlippingStrategy flipStrategy = clazz.newInstance();
+             flipStrategy.init(uid, initparams);
+             return flipStrategy;
+diff --git a/ff4j-core/src/test/java/org/ff4j/test/parser/XmlParserTest.java b/ff4j-core/src/test/java/org/ff4j/test/parser/XmlParserTest.java
+index 937a0702f..a9b576eff 100644
+--- a/ff4j-core/src/test/java/org/ff4j/test/parser/XmlParserTest.java
++++ b/ff4j-core/src/test/java/org/ff4j/test/parser/XmlParserTest.java
+@@ -31,6 +31,8 @@
+ import org.ff4j.conf.XmlConfig;
+ import org.ff4j.conf.XmlParser;
+ import org.ff4j.property.Property;
++import org.ff4j.test.unsafe.UnsafeFlippingStrategy;
++import org.ff4j.test.unsafe.UnsafeProperty;
+ import org.junit.Assert;
+ import org.junit.Test;
+ 
+@@ -68,12 +70,15 @@ public void testParsingPropertiesInvalidType() throws IOException {
+     public void testParsingPropertiesMoreTag() throws IOException {
+         parseFile("test-property5.xml");
+     }
+-
+-    @Test(expected = IllegalArgumentException.class)
++    
++    @Test
+     public void testParsingPropertiesUnsafe() throws IOException {
+-        parseFile("test-property6.xml");
++        Assert.assertThrows(IllegalArgumentException.class, () -> {
++            parseFile("test-property6.xml");
++        });
++        Assert.assertEquals(0, UnsafeProperty.count);
+     }
+-
++    
+     @Test(expected = IllegalArgumentException.class)
+     public void testParsingFeatureNoClass() throws IOException {
+         parseFile("test-feature-ko1.xml");
+@@ -109,6 +114,14 @@ public void testParsingFeatureInvalidTag5() throws IOException {
+         parseFile("test-feature-ko7.xml");
+     }
+     
++    @Test
++    public void testParsingFeatureInvalidStrategy() throws IOException {
++        Assert.assertThrows(IllegalArgumentException.class, () -> {
++            parseFile("test-feature-ko8.xml");
++        });
++        Assert.assertEquals(0, UnsafeFlippingStrategy.count);
++    }
++    
+     @Test
+     public void testParseXMLWithSpecialCharacters() throws IOException {
+         // Given a config file with Special Characters in XML
+diff --git a/ff4j-core/src/test/java/org/ff4j/test/property/PropertyFactoryTest.java b/ff4j-core/src/test/java/org/ff4j/test/property/PropertyFactoryTest.java
+index 94d4f45e6..96f27b2cf 100644
+--- a/ff4j-core/src/test/java/org/ff4j/test/property/PropertyFactoryTest.java
++++ b/ff4j-core/src/test/java/org/ff4j/test/property/PropertyFactoryTest.java
+@@ -31,6 +31,7 @@
+ import org.ff4j.property.PropertyString;
+ import org.ff4j.property.util.PropertyFactory;
+ import org.ff4j.property.util.PropertyJsonBean;
++import org.ff4j.test.unsafe.UnsafeProperty;
+ import org.ff4j.utils.Util;
+ import org.junit.Assert;
+ import org.junit.Test;
+@@ -106,7 +107,7 @@ public void testPropertyFactory10() {
+             PropertyFactory.createProperty("p1", UnsafeProperty.class.getName(), "s1", "desc", Util.set("s3", "s2"));
+         } catch (IllegalArgumentException e) {
+             Assert.assertEquals(0, UnsafeProperty.count);
+-            Assert.assertEquals("Cannot create property <p1> invalid type <org.ff4j.test.property.UnsafeProperty>", e.getCause().getMessage());
++            Assert.assertEquals("Cannot create property <p1> invalid type <org.ff4j.test.unsafe.UnsafeProperty>", e.getCause().getMessage());
+         }
+     }
+ 
+diff --git a/ff4j-core/src/test/java/org/ff4j/test/unsafe/UnsafeFlippingStrategy.java b/ff4j-core/src/test/java/org/ff4j/test/unsafe/UnsafeFlippingStrategy.java
+new file mode 100644
+index 000000000..65ebfb7e9
+--- /dev/null
++++ b/ff4j-core/src/test/java/org/ff4j/test/unsafe/UnsafeFlippingStrategy.java
+@@ -0,0 +1,28 @@
++package org.ff4j.test.unsafe;
++
++/*
++ * #%L
++ * ff4j-core
++ * %%
++ * Copyright (C) 2013 - 2022 FF4J
++ * %%
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ * 
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ * 
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ * #L%
++ */
++
++public class UnsafeFlippingStrategy {
++    public static int count = 0;
++    public UnsafeFlippingStrategy() {
++        count++;
++    }
++}
+diff --git a/ff4j-test/src/main/java/org/ff4j/test/property/UnsafeProperty.java b/ff4j-core/src/test/java/org/ff4j/test/unsafe/UnsafeProperty.java
+similarity index 84%
+rename from ff4j-test/src/main/java/org/ff4j/test/property/UnsafeProperty.java
+rename to ff4j-core/src/test/java/org/ff4j/test/unsafe/UnsafeProperty.java
+index 49537ab4f..62f92c352 100644
+--- a/ff4j-test/src/main/java/org/ff4j/test/property/UnsafeProperty.java
++++ b/ff4j-core/src/test/java/org/ff4j/test/unsafe/UnsafeProperty.java
+@@ -1,4 +1,4 @@
+-package org.ff4j.test.property;
++package org.ff4j.test.unsafe;
+ 
+ /*
+  * #%L
+@@ -20,11 +20,8 @@
+  * #L%
+  */
+ 
+-class UnsafeProperty {
+-    static int count = 0;
+-    private String name;
+-    private String value;
+-
++public class UnsafeProperty {
++    public static int count = 0;
+     public UnsafeProperty(String name, String value) {
+         count++;
+     }
+diff --git a/ff4j-core/src/test/java/org/ff4j/test/utils/MappingUtilsTest.java b/ff4j-core/src/test/java/org/ff4j/test/utils/MappingUtilsTest.java
+index ca016125a..3e7fe9f76 100644
+--- a/ff4j-core/src/test/java/org/ff4j/test/utils/MappingUtilsTest.java
++++ b/ff4j-core/src/test/java/org/ff4j/test/utils/MappingUtilsTest.java
+@@ -34,6 +34,7 @@
+ import org.ff4j.property.PropertyInt;
+ import org.ff4j.property.PropertyLong;
+ import org.ff4j.property.PropertyString;
++import org.ff4j.test.unsafe.UnsafeProperty;
+ import org.ff4j.store.InMemoryFeatureStore;
+ import org.ff4j.utils.JdbcUtils;
+ import org.ff4j.utils.JsonUtils;
+@@ -81,7 +82,15 @@ public void testUtil() {
+     public void testIntanciateInvalidFlippingStrategy() {
+        MappingUtil.instanceFlippingStrategy("f1", "com.class.invalid", new HashMap<String, String>());
+     }
+-    
++
++    @Test
++    public void testInstantiateUnsafeProperty() {
++        Assert.assertThrows(FeatureAccessException.class, () -> {
++            MappingUtil.instanceFlippingStrategy("f1", "org.ff4j.test.unsafe.UnsafeProperty", new HashMap<String, String>());
++        });
++        Assert.assertEquals(0, UnsafeProperty.count);
++    }
++
+     @Test(expected = IllegalArgumentException.class)
+     public void testAssert1() {
+         Util.assertTrue(false);
+diff --git a/ff4j-core/src/test/resources/test-feature-ko8.xml b/ff4j-core/src/test/resources/test-feature-ko8.xml
+new file mode 100644
+index 000000000..4dc30a1da
+--- /dev/null
++++ b/ff4j-core/src/test/resources/test-feature-ko8.xml
+@@ -0,0 +1,25 @@
++<?xml version="1.0" encoding="UTF-8" ?>
++<!--
++  #%L
++  ff4j-core
++  %%
++  Copyright (C) 2013 Ff4J
++  %%
++  Licensed under the Apache License, Version 2.0 (the "License");
++  you may not use this file except in compliance with the License.
++  You may obtain a copy of the License at
++  
++       http://www.apache.org/licenses/LICENSE-2.0
++  
++  Unless required by applicable law or agreed to in writing, software
++  distributed under the License is distributed on an "AS IS" BASIS,
++  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++  See the License for the specific language governing permissions and
++  limitations under the License.
++  #L%
++  -->
++<features>
++	<feature uid="sample" enable="true" description="description" >
++		<flipstrategy class="org.ff4j.test.unsafe.UnsafeFlippingStrategy"/>
++	</feature>
++</features>
+diff --git a/ff4j-core/src/test/resources/test-property6.xml b/ff4j-core/src/test/resources/test-property6.xml
+index 015633843..e4427f511 100644
+--- a/ff4j-core/src/test/resources/test-property6.xml
++++ b/ff4j-core/src/test/resources/test-property6.xml
+@@ -23,7 +23,7 @@
+ 	 xsi:schemaLocation="http://www.ff4j.org/schema/ff4j ../../main/resources/ff4j-1.4.0.xsd">
+ 	
+ 	<properties>
+-		 <property name="a" type="org.ff4j.test.property.UnsafeProperty" value="UNSAFE" />
++		 <property name="a" type="org.ff4j.test.unsafe.UnsafeProperty" value="UNSAFE" />
+ 	</properties>
+ 
+ </ff4j>
+diff --git a/ff4j-test/src/main/java/org/ff4j/test/unsafe/UnsafeFlippingStrategy.java b/ff4j-test/src/main/java/org/ff4j/test/unsafe/UnsafeFlippingStrategy.java
+new file mode 100644
+index 000000000..a2c53acc9
+--- /dev/null
++++ b/ff4j-test/src/main/java/org/ff4j/test/unsafe/UnsafeFlippingStrategy.java
+@@ -0,0 +1,29 @@
++package org.ff4j.test.unsafe;
++
++/*
++ * #%L
++ * ff4j-core
++ * %%
++ * Copyright (C) 2013 - 2022 FF4J
++ * %%
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ * 
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ * 
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ * #L%
++ */
++
++public class UnsafeFlippingStrategy {
++    public static int count = 0;
++
++    public UnsafeFlippingStrategy() {
++        count++;
++    }
++}
+diff --git a/ff4j-core/src/test/java/org/ff4j/test/property/UnsafeProperty.java b/ff4j-test/src/main/java/org/ff4j/test/unsafe/UnsafeProperty.java
+similarity index 84%
+rename from ff4j-core/src/test/java/org/ff4j/test/property/UnsafeProperty.java
+rename to ff4j-test/src/main/java/org/ff4j/test/unsafe/UnsafeProperty.java
+index 49537ab4f..c4dbeec09 100644
+--- a/ff4j-core/src/test/java/org/ff4j/test/property/UnsafeProperty.java
++++ b/ff4j-test/src/main/java/org/ff4j/test/unsafe/UnsafeProperty.java
+@@ -1,4 +1,4 @@
+-package org.ff4j.test.property;
++package org.ff4j.test.unsafe;
+ 
+ /*
+  * #%L
+@@ -20,10 +20,8 @@
+  * #L%
+  */
+ 
+-class UnsafeProperty {
+-    static int count = 0;
+-    private String name;
+-    private String value;
++public class UnsafeProperty {
++    public static int count = 0;
+ 
+     public UnsafeProperty(String name, String value) {
+         count++;
+diff --git a/ff4j-test/src/main/resources/unsafe/test-ff4j-features.json b/ff4j-test/src/main/resources/unsafe/test-ff4j-features.json
+index a36170829..2e84525e8 100644
+--- a/ff4j-test/src/main/resources/unsafe/test-ff4j-features.json
++++ b/ff4j-test/src/main/resources/unsafe/test-ff4j-features.json
+@@ -5,7 +5,7 @@
+     "properties": [
+       {
+         "name": "a",
+-        "type": "org.ff4j.test.property.UnsafeProperty",
++        "type": "org.ff4j.test.unsafe.UnsafeProperty",
+         "value": "UNSAFE"
+       }
+     ]
+diff --git a/ff4j-test/src/main/resources/unsafe/test-ff4j-features.xml b/ff4j-test/src/main/resources/unsafe/test-ff4j-features.xml
+index 8c4fa93af..c86b8ccf9 100644
+--- a/ff4j-test/src/main/resources/unsafe/test-ff4j-features.xml
++++ b/ff4j-test/src/main/resources/unsafe/test-ff4j-features.xml
+@@ -21,9 +21,9 @@
+ <ff4j xmlns="http://www.ff4j.org/schema/ff4j" 
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ 	 xsi:schemaLocation="http://www.ff4j.org/schema/ff4j http://ff4j.org/schema/ff4j-1.4.0.xsd">
+-	
++
+ 	<properties>
+-	 <property name="a"  type="org.ff4j.test.property.UnsafeProperty" value="UNSAFE" />
++	 <property name="a" type="org.ff4j.test.unsafe.UnsafeProperty" value="UNSAFE" />
+ 	</properties>
+ 
+ </ff4j>
+\ No newline at end of file
+diff --git a/ff4j-test/src/main/resources/unsafe/test-ff4j-features.yml b/ff4j-test/src/main/resources/unsafe/test-ff4j-features.yml
+index 7730cf789..23211d4ea 100644
+--- a/ff4j-test/src/main/resources/unsafe/test-ff4j-features.yml
++++ b/ff4j-test/src/main/resources/unsafe/test-ff4j-features.yml
+@@ -11,6 +11,6 @@ ff4j:
+ 
+   properties:
+     - name: a
+-      type: org.ff4j.test.property.UnsafeProperty
++      type: org.ff4j.test.unsafe.UnsafeProperty
+       value: UNSAFE
+ 
+diff --git a/ff4j-test/src/main/resources/unsafe/test-ff4j-strategy.json b/ff4j-test/src/main/resources/unsafe/test-ff4j-strategy.json
+new file mode 100644
+index 000000000..36fea37c6
+--- /dev/null
++++ b/ff4j-test/src/main/resources/unsafe/test-ff4j-strategy.json
+@@ -0,0 +1,16 @@
++{
++  "ff4j": {
++    "autocreate": false,
++    "audit": false,
++    "features": [
++      {
++        "uid": "first",
++        "enable": true,
++        "description": "description",
++        "flipstrategy": {
++          "class": "org.ff4j.test.unsafe.UnsafeFlippingStrategy"
++        }
++      }
++    ]
++  }
++}
+\ No newline at end of file
+diff --git a/ff4j-test/src/main/resources/unsafe/test-ff4j-strategy.properties b/ff4j-test/src/main/resources/unsafe/test-ff4j-strategy.properties
+new file mode 100644
+index 000000000..530ba6c5b
+--- /dev/null
++++ b/ff4j-test/src/main/resources/unsafe/test-ff4j-strategy.properties
+@@ -0,0 +1,29 @@
++## -------------------------
++## --         Format      --
++## -------------------------
++# -- FEATURE --
++#ff4j.features.1.uid=
++#ff4j.features.1.enable=
++#ff4j.features.1.description=
++#ff4j.features.1.groupName=
++#ff4j.features.1.permissions=
++#ff4j.features.1.custom-properties.0.name=
++#ff4j.features.1.custom-properties.0.type=
++#ff4j.features.1.custom-properties.0.value=
++#ff4j.features.1.custom-properties.0.fixedValues=
++# -- PROPERTIES --
++#ff4j.properties.0.name=
++#ff4j.properties.0.type=
++#ff4j.properties.0.value=
++#ff4j.properties.0.fixedValues=
++
++# Core
++ff4j.autocreate=false
++ff4j.audit=false
++
++
++# -- FEATURE --
++ff4j.features.0.uid=first
++ff4j.features.0.enable=true
++ff4j.features.0.description=description
++ff4j.features.0.flipstrategy.class=org.ff4j.strategy.el.ExpressionFlipStrategy
+diff --git a/ff4j-test/src/main/resources/unsafe/test-ff4j-strategy.xml b/ff4j-test/src/main/resources/unsafe/test-ff4j-strategy.xml
+new file mode 100644
+index 000000000..a063d6fe6
+--- /dev/null
++++ b/ff4j-test/src/main/resources/unsafe/test-ff4j-strategy.xml
+@@ -0,0 +1,31 @@
++<?xml version="1.0" encoding="UTF-8" ?>
++<!--
++  #%L
++  ff4j-core
++  %%
++  Copyright (C) 2013 Ff4J
++  %%
++  Licensed under the Apache License, Version 2.0 (the "License");
++  you may not use this file except in compliance with the License.
++  You may obtain a copy of the License at
++  
++       http://www.apache.org/licenses/LICENSE-2.0
++  
++  Unless required by applicable law or agreed to in writing, software
++  distributed under the License is distributed on an "AS IS" BASIS,
++  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++  See the License for the specific language governing permissions and
++  limitations under the License.
++  #L%
++  -->
++<ff4j xmlns="http://www.ff4j.org/schema/ff4j" 
++     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
++	 xsi:schemaLocation="http://www.ff4j.org/schema/ff4j http://ff4j.org/schema/ff4j-1.4.0.xsd">
++
++	<features>
++		<feature uid="first" enable="true" description="description" >
++			<flipstrategy class="org.ff4j.test.unsafe.UnsafeProperty"/>
++		</feature>
++	</features>
++
++</ff4j>
+\ No newline at end of file
+diff --git a/ff4j-test/src/main/resources/unsafe/test-ff4j-strategy.yml b/ff4j-test/src/main/resources/unsafe/test-ff4j-strategy.yml
+new file mode 100644
+index 000000000..5c9b7b994
+--- /dev/null
++++ b/ff4j-test/src/main/resources/unsafe/test-ff4j-strategy.yml
+@@ -0,0 +1,17 @@
++# -----------------------------
++# Core FF4J
++# -----------------------------
++ff4j: 
++  autocreate: false
++  audit: false
++  
++  # -----------------------------
++  # Bloc features
++  # -----------------------------
++
++  features:
++    - uid: first
++      enable: true
++      description: description
++      flipstrategy:
++        class: org.ff4j.test.unsafe.UnsafeFlipStrategy
+diff --git a/ff4j-web/src/main/java/org/ff4j/web/embedded/ConsoleOperations.java b/ff4j-web/src/main/java/org/ff4j/web/embedded/ConsoleOperations.java
+index 0720a8b43..e32149a04 100644
+--- a/ff4j-web/src/main/java/org/ff4j/web/embedded/ConsoleOperations.java
++++ b/ff4j-web/src/main/java/org/ff4j/web/embedded/ConsoleOperations.java
+@@ -105,6 +105,9 @@ public static void createFeature(FF4j ff4j, HttpServletRequest req) {
+             if (null != strategy && !strategy.isEmpty()) {
+                 try {
+                     Class<?> strategyClass = Class.forName(strategy);
++                    if (!FlippingStrategy.class.isAssignableFrom(strategyClass)) {
++                        throw new IllegalArgumentException("Cannot create flipstrategy: <" + strategy + "> invalid type");
++                    }
+                     FlippingStrategy fstrategy = (FlippingStrategy) strategyClass.newInstance();
+ 
+                     final String strategyParams = req.getParameter(STRATEGY_INIT);
+@@ -246,6 +249,9 @@ private static void updateFlippingStrategy(Feature fp, String strategy, String s
+         if (null != strategy && !strategy.isEmpty()) {
+             try {
+                 Class<?> strategyClass = Class.forName(strategy);
++                if (!FlippingStrategy.class.isAssignableFrom(strategyClass)) {
++                    throw new IllegalArgumentException("Cannot create flipstrategy <" + strategy + "> invalid type");
++                }
+                 FlippingStrategy fstrategy = (FlippingStrategy) strategyClass.newInstance();
+                
+                 if (null != strategyParams && !strategyParams.isEmpty()) {
+
+From 2bab407bdd86d2c923d4025479e12716834592d2 Mon Sep 17 00:00:00 2001
+From: Shuqian Hon <honsq90+github@protonmail.com>
+Date: Tue, 6 Dec 2022 09:14:11 +1100
+Subject: [PATCH 5/5] fix: Use assertThrows in PropertyFactoryTest (#624)
+
+---
+ .../java/org/ff4j/test/property/PropertyFactoryTest.java | 9 ++++-----
+ 1 file changed, 4 insertions(+), 5 deletions(-)
+
+diff --git a/ff4j-core/src/test/java/org/ff4j/test/property/PropertyFactoryTest.java b/ff4j-core/src/test/java/org/ff4j/test/property/PropertyFactoryTest.java
+index 96f27b2cf..a1a82773a 100644
+--- a/ff4j-core/src/test/java/org/ff4j/test/property/PropertyFactoryTest.java
++++ b/ff4j-core/src/test/java/org/ff4j/test/property/PropertyFactoryTest.java
+@@ -103,12 +103,11 @@ public void testPropertyFactory9() {
+ 
+     @Test
+     public void testPropertyFactory10() {
+-        try {
++        IllegalArgumentException exception = Assert.assertThrows(IllegalArgumentException.class, () -> {
+             PropertyFactory.createProperty("p1", UnsafeProperty.class.getName(), "s1", "desc", Util.set("s3", "s2"));
+-        } catch (IllegalArgumentException e) {
+-            Assert.assertEquals(0, UnsafeProperty.count);
+-            Assert.assertEquals("Cannot create property <p1> invalid type <org.ff4j.test.unsafe.UnsafeProperty>", e.getCause().getMessage());
+-        }
++        });
++        Assert.assertEquals(0, UnsafeProperty.count);
++        Assert.assertEquals("Cannot create property <p1> invalid type <org.ff4j.test.unsafe.UnsafeProperty>", exception.getCause().getMessage());
+     }
+ 
+     @Test

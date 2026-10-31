@@ -1,0 +1,98 @@
+From 3a46c7dd00e4adc17a132b9438149bde94da244f Mon Sep 17 00:00:00 2001
+From: Ilayaperumal Gopinathan <ilayaperumal.gopinathan@broadcom.com>
+Date: Thu, 19 Mar 2026 21:07:16 +0000
+Subject: [PATCH] fix: Neo4jVectorFilterExpressionConverter key handling
+
+Fix doKey() to escape backticks
+
+Use Neo4j SchemaNames.sanitize
+
+ - The SchemaNames.sanitize("metadata." + key.key(), true) call (from the already-present neo4j-cypher-dsl-schema-name-support dependency) replaces the manual backtick-only escaping. It handles backticks as well as control characters (\b, \f, \n, \r, \t), and always wraps the result in backticks (true = force quoting).
+
+Neo4j filter expression converter error handling
+
+Signed-off-by: Ilayaperumal Gopinathan <ilayaperumal.gopinathan@broadcom.com>
+---
+ .../Neo4jVectorFilterExpressionConverter.java |  8 ++++-
+ ...jVectorFilterExpressionConverterTests.java | 30 ++++++++++++++++++-
+ 2 files changed, 36 insertions(+), 2 deletions(-)
+
+diff --git a/vector-stores/spring-ai-neo4j-store/src/main/java/org/springframework/ai/vectorstore/neo4j/filter/Neo4jVectorFilterExpressionConverter.java b/vector-stores/spring-ai-neo4j-store/src/main/java/org/springframework/ai/vectorstore/neo4j/filter/Neo4jVectorFilterExpressionConverter.java
+index daacf10f37..4d518f89ed 100644
+--- a/vector-stores/spring-ai-neo4j-store/src/main/java/org/springframework/ai/vectorstore/neo4j/filter/Neo4jVectorFilterExpressionConverter.java
++++ b/vector-stores/spring-ai-neo4j-store/src/main/java/org/springframework/ai/vectorstore/neo4j/filter/Neo4jVectorFilterExpressionConverter.java
+@@ -16,6 +16,8 @@
+ 
+ package org.springframework.ai.vectorstore.neo4j.filter;
+ 
++import org.neo4j.cypherdsl.support.schema_name.SchemaNames;
++
+ import org.springframework.ai.vectorstore.filter.Filter;
+ import org.springframework.ai.vectorstore.filter.Filter.Expression;
+ import org.springframework.ai.vectorstore.filter.Filter.Group;
+@@ -76,7 +78,11 @@ protected void doNot(Expression expression, StringBuilder context) {
+ 
+ 	@Override
+ 	protected void doKey(Key key, StringBuilder context) {
+-		context.append("node.").append("`metadata.").append(key.key().replace("\"", "")).append("`");
++		String sanitized = SchemaNames.sanitize("metadata." + key.key(), true)
++			.orElseThrow(() -> new IllegalArgumentException(
++					"Invalid or empty metadata key cannot be used in a Neo4j filter expression: '%s'"
++						.formatted(key.key())));
++		context.append("node.").append(sanitized);
+ 	}
+ 
+ 	@Override
+diff --git a/vector-stores/spring-ai-neo4j-store/src/test/java/org/springframework/ai/vectorstore/neo4j/filter/Neo4jVectorFilterExpressionConverterTests.java b/vector-stores/spring-ai-neo4j-store/src/test/java/org/springframework/ai/vectorstore/neo4j/filter/Neo4jVectorFilterExpressionConverterTests.java
+index 58679333cf..d7d3b073f5 100644
+--- a/vector-stores/spring-ai-neo4j-store/src/test/java/org/springframework/ai/vectorstore/neo4j/filter/Neo4jVectorFilterExpressionConverterTests.java
++++ b/vector-stores/spring-ai-neo4j-store/src/test/java/org/springframework/ai/vectorstore/neo4j/filter/Neo4jVectorFilterExpressionConverterTests.java
+@@ -126,7 +126,7 @@ public void testDecimal() {
+ 	@Test
+ 	public void testComplexIdentifiers() {
+ 		String vectorExpr = this.converter
+-			.convertExpression(new Expression(EQ, new Key("\"country 1 2 3\""), new Value("BG")));
++			.convertExpression(new Expression(EQ, new Key("country 1 2 3"), new Value("BG")));
+ 		assertThat(vectorExpr).isEqualTo("node.`metadata.country 1 2 3` = \"BG\"");
+ 	}
+ 
+@@ -139,6 +139,13 @@ public void testComplexIdentifiers2() {
+ 			.isEqualTo("node.`metadata.author` IN [\"john\",\"jill\"] AND node.`metadata.article_type` = \"blog\"");
+ 	}
+ 
++	@Test
++	public void testComplexIdentifiers3() {
++		String vectorExpr = this.converter
++			.convertExpression(new Expression(EQ, new Key("\"country 1 2 3\""), new Value("BG")));
++		assertThat(vectorExpr).isEqualTo("node.`metadata.\"country 1 2 3\"` = \"BG\"");
++	}
++
+ 	@Test
+ 	public void testEmptyList() {
+ 		// category IN []
+@@ -250,4 +257,25 @@ public void testNegativeNumbers() {
+ 		assertThat(vectorExpr).isEqualTo("node.`metadata.valueA` <= -5 AND node.`metadata.valueB` >= -10");
+ 	}
+ 
++	@Test
++	public void testKeyWithBacktick() {
++		String vectorExpr = this.converter
++			.convertExpression(new Expression(EQ, new Key("a` IS NOT NULL WITH node, score //"), new Value("v")));
++		assertThat(vectorExpr).isEqualTo("node.`metadata.a`` IS NOT NULL WITH node, score //` = \"v\"");
++	}
++
++	@Test
++	public void testKeyFromTextParser() {
++		Expression expr = new FilterExpressionTextParser().parse("\"safe_key\" == 'value'");
++		String vectorExpr = this.converter.convertExpression(expr);
++		assertThat(vectorExpr).isEqualTo("node.`metadata.safe_key` = \"value\"");
++	}
++
++	@Test
++	public void testKeyWithControlCharacters() {
++		String vectorExpr = this.converter
++			.convertExpression(new Expression(EQ, new Key("key\nwith\nnewline"), new Value("v")));
++		assertThat(vectorExpr).isEqualTo("node.`metadata.key\nwith\nnewline` = \"v\"");
++	}
++
+ }

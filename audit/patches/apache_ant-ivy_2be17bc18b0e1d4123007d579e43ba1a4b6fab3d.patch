@@ -1,0 +1,1070 @@
+From 2be17bc18b0e1d4123007d579e43ba1a4b6fab3d Mon Sep 17 00:00:00 2001
+From: Stefan Bodewig <bodewig@apache.org>
+Date: Sun, 22 Jan 2023 17:30:23 +0100
+Subject: [PATCH] CVE-2022-46751 don't parse doctypes and access external
+ entities by default
+
+---
+ asciidoc/settings.adoc                        |   2 +
+ asciidoc/systemproperties.adoc                |  67 +++
+ asciidoc/toc.json                             |   5 +
+ .../org/apache/ivy/ant/IvyArtifactReport.java |   9 +-
+ src/java/org/apache/ivy/ant/IvyReport.java    |   5 +-
+ .../ivy/core/settings/XmlSettingsParser.java  |   9 +-
+ .../apache/ivy/osgi/obr/xml/OBRXMLWriter.java |  11 +-
+ .../ivy/plugins/parser/m2/PomReader.java      |   3 +-
+ .../parser/xml/XmlModuleDescriptorParser.java |  69 ++-
+ .../ivy/plugins/report/XmlReportParser.java   |   7 +-
+ src/java/org/apache/ivy/util/XMLHelper.java   | 446 ++++++++++++++++--
+ .../apache/ivy/core/resolve/ResolveTest.java  |  39 ++
+ 12 files changed, 605 insertions(+), 67 deletions(-)
+ create mode 100644 asciidoc/systemproperties.adoc
+
+diff --git a/asciidoc/settings.adoc b/asciidoc/settings.adoc
+index c18c9a27e..770794fce 100644
+--- a/asciidoc/settings.adoc
++++ b/asciidoc/settings.adoc
+@@ -23,6 +23,8 @@ In order to work as you want, Ivy sometimes needs some settings. Actually, Ivy c
+ 
+ Settings are specified through an XML file, usually called `ivysettings.xml`. To configure Ivy from Ant, you just have to use the link:use/settings{outfilesuffix}[settings] datatype with the path of your settings file.
+ 
++In addition certain link:systemproperties{outfilesuffix}[Java system properties] affect the XML parsing behavior of Ivy.
++
+ Here is an example of the settings file:
+ 
+ [source, xml]
+diff --git a/asciidoc/systemproperties.adoc b/asciidoc/systemproperties.adoc
+new file mode 100644
+index 000000000..475924369
+--- /dev/null
++++ b/asciidoc/systemproperties.adoc
+@@ -0,0 +1,67 @@
++////
++   Licensed to the Apache Software Foundation (ASF) under one
++   or more contributor license agreements.  See the NOTICE file
++   distributed with this work for additional information
++   regarding copyright ownership.  The ASF licenses this file
++   to you under the Apache License, Version 2.0 (the
++   "License"); you may not use this file except in compliance
++   with the License.  You may obtain a copy of the License at
++
++     https://www.apache.org/licenses/LICENSE-2.0
++
++   Unless required by applicable law or agreed to in writing,
++   software distributed under the License is distributed on an
++   "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++   KIND, either express or implied.  See the License for the
++   specific language governing permissions and limitations
++   under the License.
++////
++
++= Java System Properties Affecting Ivy
++
++== XML Parser Settings
++
++Starting with Ivy 2.5.2 Ivy's XML parser can be controlled via the use
++of two newly introduced system properties.
++
++If you want to restore the default behavior of Ivy 2.5.1 and earlier
++you need to set `ivy.xml.allow-doctype-processing` to `true` and
++`ivy.xml.external-resources` to `ALL`.
++
++=== `ivy.xml.allow-doctype-processing`
++
++This system property accepts `true` or `false` as values. When set to
++`false` Ivy will not allow any processing of doctype declarations at
++all, while setting it to `true` enables it.
++
++The default is to allow doctype processing if and only if Ivy is
++parsing a Maven POM file.
++
++=== `ivy.xml.external-resources`
++
++This system property controls if external resources are read during
++doctype processing - and if so, where they can be loadad from. The
++value of this system property is only ever used if
++`ivy.xml.allow-doctype-processing` is not `false`.
++
++The accepted values are
++
++* `PROHIBIT` makes Ivy fail if any doctype tries to load an external
++  resource.
++* `IGNORE` makes Ivy ignore any external resource that the doctype
++  declaration wants to load.
++* `LOCAL_ONLY` allows external resources to be loaded via `file:` or
++  `jar:file` URIs only.
++* `ALL` allows external resources to be loaded from any URI.
++
++The default behavior is to not allow doctype processing at all, but if
++it is enabled the value `PROHIBIT` is assumed unless the property has
++been set explicitly.
++
++When reading Maven POMs a specific internal system id is recognized as
++resource and will be loaded from a resource shipping with the Ivy
++distribution in order to deal with invalid POM files accepted by
++Apache Maven - and the default value for this property is
++`IGNORE`in that case. See
++link:https://issues.apache.org/jira/browse/IVY-921[IVY-921] for
++details.
+diff --git a/asciidoc/toc.json b/asciidoc/toc.json
+index 2c8f1908d..c6f6ec443 100644
+--- a/asciidoc/toc.json
++++ b/asciidoc/toc.json
+@@ -150,6 +150,11 @@
+                         }
+                       ]
+                   },
++                  {
++                      "id": "systemproperties",
++                      "title": "System Properties",
++                      "children": []
++                  },
+                   {
+                     "id":"settings",
+                     "title":"Settings Files",
+diff --git a/src/java/org/apache/ivy/ant/IvyArtifactReport.java b/src/java/org/apache/ivy/ant/IvyArtifactReport.java
+index 7e56348e6..2e662658a 100644
+--- a/src/java/org/apache/ivy/ant/IvyArtifactReport.java
++++ b/src/java/org/apache/ivy/ant/IvyArtifactReport.java
+@@ -28,8 +28,6 @@
+ 
+ import javax.xml.transform.OutputKeys;
+ import javax.xml.transform.TransformerConfigurationException;
+-import javax.xml.transform.TransformerFactoryConfigurationError;
+-import javax.xml.transform.sax.SAXTransformerFactory;
+ import javax.xml.transform.sax.TransformerHandler;
+ import javax.xml.transform.stream.StreamResult;
+ 
+@@ -43,6 +41,7 @@
+ import org.apache.ivy.core.resolve.ResolveOptions;
+ import org.apache.ivy.core.resolve.ResolvedModuleRevision;
+ import org.apache.ivy.core.retrieve.RetrieveOptions;
++import org.apache.ivy.util.XMLHelper;
+ import org.apache.tools.ant.BuildException;
+ import org.apache.tools.ant.Project;
+ import org.xml.sax.SAXException;
+@@ -170,10 +169,8 @@ private void generateXml(IvyNode[] dependencies,
+     }
+ 
+     private TransformerHandler createTransformerHandler(FileOutputStream fileOutputStream)
+-            throws TransformerFactoryConfigurationError, TransformerConfigurationException {
+-        SAXTransformerFactory transformerFact = (SAXTransformerFactory) SAXTransformerFactory
+-                .newInstance();
+-        TransformerHandler saxHandler = transformerFact.newTransformerHandler();
++            throws TransformerConfigurationException {
++        TransformerHandler saxHandler = XMLHelper.getTransformerHandler();
+         saxHandler.getTransformer().setOutputProperty(OutputKeys.ENCODING, "UTF-8");
+         saxHandler.getTransformer().setOutputProperty(OutputKeys.INDENT, "yes");
+         saxHandler.setResult(new StreamResult(fileOutputStream));
+diff --git a/src/java/org/apache/ivy/ant/IvyReport.java b/src/java/org/apache/ivy/ant/IvyReport.java
+index 662fd325a..c3ba3836c 100644
+--- a/src/java/org/apache/ivy/ant/IvyReport.java
++++ b/src/java/org/apache/ivy/ant/IvyReport.java
+@@ -33,7 +33,6 @@
+ import javax.xml.transform.Transformer;
+ import javax.xml.transform.TransformerConfigurationException;
+ import javax.xml.transform.TransformerException;
+-import javax.xml.transform.TransformerFactory;
+ import javax.xml.transform.stream.StreamResult;
+ import javax.xml.transform.stream.StreamSource;
+ 
+@@ -48,6 +47,7 @@
+ import org.apache.ivy.plugins.report.XmlReportParser;
+ import org.apache.ivy.util.FileUtil;
+ import org.apache.ivy.util.Message;
++import org.apache.ivy.util.XMLHelper;
+ import org.apache.tools.ant.BuildException;
+ import org.apache.tools.ant.taskdefs.XSLTProcess;
+ import org.apache.tools.ant.util.JAXPUtils;
+@@ -313,8 +313,7 @@ private void genStyled(String[] confs, File style, String ext) throws IOExceptio
+             Source xsltSource = new StreamSource(xsltStream, JAXPUtils.getSystemId(style));
+ 
+             // create transformer
+-            TransformerFactory tFactory = TransformerFactory.newInstance();
+-            Transformer transformer = tFactory.newTransformer(xsltSource);
++            Transformer transformer = XMLHelper.getTransformer(xsltSource);
+ 
+             // add standard parameters
+             transformer.setParameter("confs", conf);
+diff --git a/src/java/org/apache/ivy/core/settings/XmlSettingsParser.java b/src/java/org/apache/ivy/core/settings/XmlSettingsParser.java
+index 0c743c9aa..f791e699c 100644
+--- a/src/java/org/apache/ivy/core/settings/XmlSettingsParser.java
++++ b/src/java/org/apache/ivy/core/settings/XmlSettingsParser.java
+@@ -32,8 +32,6 @@
+ import java.util.List;
+ import java.util.Map;
+ 
+-import javax.xml.parsers.SAXParserFactory;
+-
+ import org.apache.ivy.core.IvyPatternHelper;
+ import org.apache.ivy.core.cache.RepositoryCacheManager;
+ import org.apache.ivy.core.module.status.StatusManager;
+@@ -46,6 +44,7 @@
+ import org.apache.ivy.util.Configurator;
+ import org.apache.ivy.util.FileResolver;
+ import org.apache.ivy.util.Message;
++import org.apache.ivy.util.XMLHelper;
+ import org.apache.ivy.util.url.CredentialsStore;
+ import org.apache.ivy.util.url.TimeoutConstrainedURLHandler;
+ import org.apache.ivy.util.url.URLHandlerRegistry;
+@@ -151,10 +150,8 @@ public File resolveFile(String path, String filename) {
+     @SuppressWarnings("deprecation")
+     private void doParse(URL settingsUrl) throws IOException, ParseException {
+         this.settings = settingsUrl;
+-        try (InputStream stream = URLHandlerRegistry.getDefault().openStream(settingsUrl)) {
+-            InputSource inSrc = new InputSource(stream);
+-            inSrc.setSystemId(settingsUrl.toExternalForm());
+-            SAXParserFactory.newInstance().newSAXParser().parse(settingsUrl.toExternalForm(), this);
++        try {
++            XMLHelper.parse(settingsUrl, null, this);
+             ivy.validate();
+         } catch (IOException e) {
+             throw e;
+diff --git a/src/java/org/apache/ivy/osgi/obr/xml/OBRXMLWriter.java b/src/java/org/apache/ivy/osgi/obr/xml/OBRXMLWriter.java
+index 41bf07604..fc5557f58 100644
+--- a/src/java/org/apache/ivy/osgi/obr/xml/OBRXMLWriter.java
++++ b/src/java/org/apache/ivy/osgi/obr/xml/OBRXMLWriter.java
+@@ -22,9 +22,7 @@
+ import java.util.Set;
+ 
+ import javax.xml.transform.OutputKeys;
+-import javax.xml.transform.Transformer;
+ import javax.xml.transform.TransformerConfigurationException;
+-import javax.xml.transform.sax.SAXTransformerFactory;
+ import javax.xml.transform.sax.TransformerHandler;
+ import javax.xml.transform.stream.StreamResult;
+ 
+@@ -45,6 +43,7 @@
+ import org.apache.ivy.osgi.util.Version;
+ import org.apache.ivy.osgi.util.VersionRange;
+ import org.apache.ivy.util.Message;
++import org.apache.ivy.util.XMLHelper;
+ import org.xml.sax.ContentHandler;
+ import org.xml.sax.SAXException;
+ import org.xml.sax.helpers.AttributesImpl;
+@@ -53,12 +52,10 @@ public class OBRXMLWriter {
+ 
+     public static ContentHandler newHandler(OutputStream out, String encoding, boolean indent)
+             throws TransformerConfigurationException {
+-        SAXTransformerFactory tf = (SAXTransformerFactory) SAXTransformerFactory.newInstance();
+-        TransformerHandler hd = tf.newTransformerHandler();
+-        Transformer serializer = tf.newTransformer();
++        TransformerHandler hd = XMLHelper.getTransformerHandler();
++        hd.getTransformer().setOutputProperty(OutputKeys.ENCODING, encoding);
++        hd.getTransformer().setOutputProperty(OutputKeys.INDENT, indent ? "yes" : "no");
+         StreamResult stream = new StreamResult(out);
+-        serializer.setOutputProperty(OutputKeys.ENCODING, encoding);
+-        serializer.setOutputProperty(OutputKeys.INDENT, indent ? "yes" : "no");
+         hd.setResult(stream);
+         return hd;
+     }
+diff --git a/src/java/org/apache/ivy/plugins/parser/m2/PomReader.java b/src/java/org/apache/ivy/plugins/parser/m2/PomReader.java
+index 88c9d70e5..2bafc9b2b 100644
+--- a/src/java/org/apache/ivy/plugins/parser/m2/PomReader.java
++++ b/src/java/org/apache/ivy/plugins/parser/m2/PomReader.java
+@@ -130,12 +130,13 @@ public PomReader(final URL descriptorURL, final Resource res) throws IOException
+                 public InputSource resolveEntity(String publicId, String systemId)
+                         throws SAXException, IOException {
+                     if (systemId != null && systemId.endsWith("m2-entities.ent")) {
++                        // IVY-921: return an InputSource for our local packaged m2-entities.ent file
+                         return new InputSource(
+                                 PomReader.class.getResourceAsStream("m2-entities.ent"));
+                     }
+                     return null;
+                 }
+-            });
++            }, true, XMLHelper.ExternalResources.IGNORE);
+             projectElement = pomDomDoc.getDocumentElement();
+             if (!PROJECT.equals(projectElement.getNodeName())
+                     && !MODEL.equals(projectElement.getNodeName())) {
+diff --git a/src/java/org/apache/ivy/plugins/parser/xml/XmlModuleDescriptorParser.java b/src/java/org/apache/ivy/plugins/parser/xml/XmlModuleDescriptorParser.java
+index 352cd7f3b..532bcd2c9 100644
+--- a/src/java/org/apache/ivy/plugins/parser/xml/XmlModuleDescriptorParser.java
++++ b/src/java/org/apache/ivy/plugins/parser/xml/XmlModuleDescriptorParser.java
+@@ -17,9 +17,13 @@
+  */
+ package org.apache.ivy.plugins.parser.xml;
+ 
++import java.io.BufferedReader;
+ import java.io.File;
+ import java.io.IOException;
+ import java.io.InputStream;
++import java.io.InputStreamReader;
++import java.io.StringReader;
++import java.io.UnsupportedEncodingException;
+ import java.net.MalformedURLException;
+ import java.net.URI;
+ import java.net.URISyntaxException;
+@@ -80,6 +84,7 @@
+ import org.apache.ivy.util.XMLHelper;
+ import org.apache.ivy.util.extendable.ExtendableItemHelper;
+ import org.xml.sax.Attributes;
++import org.xml.sax.InputSource;
+ import org.xml.sax.SAXException;
+ 
+ import static org.apache.ivy.core.module.descriptor.Configuration.Visibility.getVisibility;
+@@ -216,6 +221,8 @@ private State() {
+         protected static final List<String> ALLOWED_VERSIONS = Arrays.asList("1.0",
+                 "1.1", "1.2", "1.3", "1.4", "2.0", "2.1", "2.2", "2.3", "2.4");
+ 
++        private static final String IVY_XSD_CONTENT;
++
+         /* how and what do we have to parse */
+         private ParserSettings settings;
+ 
+@@ -248,6 +255,40 @@ private State() {
+ 
+         private Stack<ExtraInfoHolder> extraInfoStack = new Stack<>();
+ 
++        static {
++            String ivyXSDContent = null;
++            final InputStream is = Parser.class.getResourceAsStream("ivy.xsd");
++            if (is != null) {
++                final StringBuilder sb = new StringBuilder();
++                try {
++                    try {
++                        final BufferedReader reader = new BufferedReader(new InputStreamReader(is, "UTF-8"));
++                        String line = null;
++                        while ((line = reader.readLine()) != null) {
++                            if (sb.length() != 0) {
++                                sb.append("\n");
++                            }
++                            sb.append(line);
++                        }
++                    } catch (UnsupportedEncodingException e) {
++                        // ignore
++                        ivyXSDContent = null;
++                    } catch (IOException e) {
++                        // ignore
++                        ivyXSDContent = null;
++                    }
++                } finally {
++                    try {
++                        is.close();
++                    } catch (Exception e) {
++                        // ignore
++                    }
++                }
++                ivyXSDContent = sb.length() == 0 ? null : sb.toString();
++            }
++            IVY_XSD_CONTENT = ivyXSDContent;
++        }
++
+         public Parser(ModuleDescriptorParser parser, ParserSettings ivySettings) {
+             super(parser);
+             settings = ivySettings;
+@@ -268,10 +309,14 @@ public void setValidate(boolean validate) {
+         public void parse() throws ParseException {
+             try {
+                 URL schemaURL = validate ? getSchemaURL() : null;
++                XMLHelper.ExternalResources e =
++                    validate && System.getProperty(XMLHelper.EXTERNAL_RESOURCES) == null
++                    ? XMLHelper.ExternalResources.IGNORE
++                    : XMLHelper.ExternalResources.fromSystemProperty();
+                 if (descriptorURL != null) {
+-                    XMLHelper.parse(descriptorURL, schemaURL, this);
++                    XMLHelper.parse(descriptorURL, schemaURL, this, null, e);
+                 } else {
+-                    XMLHelper.parse(descriptorInput, schemaURL, this, null);
++                    XMLHelper.parse(descriptorInput, schemaURL, this, null, e);
+                 }
+                 checkConfigurations();
+                 replaceConfigurationWildcards();
+@@ -296,6 +341,26 @@ public void parse() throws ParseException {
+             }
+         }
+ 
++        @Override
++        public InputSource resolveEntity(final String publicId, final String systemId)
++                throws IOException, SAXException {
++            if (isApacheOrgIvyXSDSystemId(systemId) && IVY_XSD_CONTENT != null) {
++                // redirect the schema location to local file based ivy.xsd whose content
++                // we have already read and is available in-memory.
++                final InputSource source = new InputSource(new StringReader(IVY_XSD_CONTENT));
++                return source;
++            }
++            return super.resolveEntity(publicId, systemId);
++        }
++
++        private static boolean isApacheOrgIvyXSDSystemId(final String systemId) {
++            if (systemId == null) {
++                return false;
++            }
++            return systemId.equals("http://ant.apache.org/ivy/schemas/ivy.xsd")
++                    || systemId.equals("https://ant.apache.org/ivy/schemas/ivy.xsd");
++        }
++
+         @Override
+         public void startElement(String uri, String localName, String qName, Attributes attributes)
+                 throws SAXException {
+diff --git a/src/java/org/apache/ivy/plugins/report/XmlReportParser.java b/src/java/org/apache/ivy/plugins/report/XmlReportParser.java
+index b35c48339..e791cf094 100644
+--- a/src/java/org/apache/ivy/plugins/report/XmlReportParser.java
++++ b/src/java/org/apache/ivy/plugins/report/XmlReportParser.java
+@@ -27,9 +27,6 @@
+ import java.util.SortedMap;
+ import java.util.TreeMap;
+ 
+-import javax.xml.parsers.SAXParser;
+-import javax.xml.parsers.SAXParserFactory;
+-
+ import org.apache.ivy.core.cache.ArtifactOrigin;
+ import org.apache.ivy.core.module.descriptor.Artifact;
+ import org.apache.ivy.core.module.descriptor.DefaultArtifact;
+@@ -38,6 +35,7 @@
+ import org.apache.ivy.core.report.DownloadStatus;
+ import org.apache.ivy.core.report.MetadataArtifactDownloadReport;
+ import org.apache.ivy.util.DateUtil;
++import org.apache.ivy.util.XMLHelper;
+ import org.apache.ivy.util.extendable.ExtendableItemHelper;
+ import org.xml.sax.Attributes;
+ import org.xml.sax.SAXException;
+@@ -242,8 +240,7 @@ private int getMaxPos() {
+         }
+ 
+         public void parse() throws Exception {
+-            SAXParser saxParser = SAXParserFactory.newInstance().newSAXParser();
+-            saxParser.parse(report, new XmlReportParserHandler());
++            XMLHelper.parse(report.toURI().toURL(), null, new XmlReportParserHandler());
+         }
+ 
+         private static boolean parseBoolean(String str) {
+diff --git a/src/java/org/apache/ivy/util/XMLHelper.java b/src/java/org/apache/ivy/util/XMLHelper.java
+index 57373687d..e5bfa7bed 100644
+--- a/src/java/org/apache/ivy/util/XMLHelper.java
++++ b/src/java/org/apache/ivy/util/XMLHelper.java
+@@ -19,6 +19,7 @@
+ 
+ import java.io.IOException;
+ import java.io.InputStream;
++import java.io.StringReader;
+ import java.net.URI;
+ import java.net.URISyntaxException;
+ import java.net.URL;
+@@ -28,13 +29,24 @@
+ import javax.xml.parsers.ParserConfigurationException;
+ import javax.xml.parsers.SAXParser;
+ import javax.xml.parsers.SAXParserFactory;
++import javax.xml.transform.Source;
++import javax.xml.transform.Transformer;
++import javax.xml.transform.TransformerConfigurationException;
++import javax.xml.transform.TransformerFactory;
++import javax.xml.transform.sax.SAXTransformerFactory;
++import javax.xml.transform.sax.TransformerHandler;
+ 
+ import org.apache.ivy.util.url.URLHandlerRegistry;
+ import org.w3c.dom.Document;
++import org.xml.sax.Attributes;
+ import org.xml.sax.EntityResolver;
+ import org.xml.sax.InputSource;
++import org.xml.sax.Locator;
+ import org.xml.sax.SAXException;
+ import org.xml.sax.SAXNotRecognizedException;
++import org.xml.sax.SAXNotSupportedException;
++import org.xml.sax.SAXParseException;
++import org.xml.sax.XMLReader;
+ import org.xml.sax.ext.LexicalHandler;
+ import org.xml.sax.helpers.DefaultHandler;
+ 
+@@ -50,49 +62,38 @@ public abstract class XMLHelper {
+ 
+     static final String W3C_XML_SCHEMA = "http://www.w3.org/2001/XMLSchema";
+ 
+-    private static boolean canUseSchemaValidation = true;
++    private static final String XML_ACCESS_EXTERNAL_SCHEMA = "http://javax.xml.XMLConstants/property/accessExternalSchema";
++    private static final String XML_ACCESS_EXTERNAL_DTD = "http://javax.xml.XMLConstants/property/accessExternalDTD";
++    public static final String ALLOW_DOCTYPE_PROCESSING = "ivy.xml.allow-doctype-processing";
++    public static final String EXTERNAL_RESOURCES = "ivy.xml.external-resources";
+ 
+-    private static Boolean canDisableExternalDtds = null;
+-
+-    private static SAXParser newSAXParser(URL schema, InputStream schemaStream,
+-            boolean loadExternalDtds) throws ParserConfigurationException, SAXException {
+-        SAXParserFactory parserFactory = SAXParserFactory.newInstance();
++    private static SAXParser newSAXParser(final URL schema, final InputStream schemaStream,
++        final boolean allowXmlDoctypeProcessing, final ExternalResources externalResources)
++        throws ParserConfigurationException, SAXException {
++        final SAXParserFactory parserFactory = SAXParserFactory.newInstance();
+         parserFactory.setNamespaceAware(true);
+-        parserFactory.setValidating(canUseSchemaValidation && (schema != null));
+-        if (!loadExternalDtds && canDisableExternalDtds(parserFactory)) {
+-            parserFactory.setFeature(XERCES_LOAD_EXTERNAL_DTD, false);
+-        }
+-        SAXParser parser = parserFactory.newSAXParser();
++        parserFactory.setValidating(schema != null);
++        configureSafeFeatures(parserFactory, allowXmlDoctypeProcessing, externalResources);
+ 
+-        if (canUseSchemaValidation && schema != null) {
++        SAXParser parser = parserFactory.newSAXParser();
++        if (schema != null) {
+             try {
+                 parser.setProperty(JAXP_SCHEMA_LANGUAGE, W3C_XML_SCHEMA);
+                 parser.setProperty(JAXP_SCHEMA_SOURCE, schemaStream);
+             } catch (SAXNotRecognizedException ex) {
+                 Message.warn("problem while setting JAXP validating property on SAXParser... "
+                         + "XML validation will not be done", ex);
+-                canUseSchemaValidation = false;
+                 parserFactory.setValidating(false);
+                 parser = parserFactory.newSAXParser();
+             }
+         }
+-
+-        parser.getXMLReader().setFeature(XML_NAMESPACE_PREFIXES, true);
++        final XMLReader reader = parser.getXMLReader();
++        reader.setFeature(XML_NAMESPACE_PREFIXES, true);
++        reader.setProperty(XML_ACCESS_EXTERNAL_SCHEMA, externalResources.getAllowedProtocols());
++        reader.setProperty(XML_ACCESS_EXTERNAL_DTD, externalResources.getAllowedProtocols());
+         return parser;
+     }
+ 
+-    private static boolean canDisableExternalDtds(SAXParserFactory parserFactory) {
+-        if (canDisableExternalDtds == null) {
+-            try {
+-                parserFactory.getFeature(XERCES_LOAD_EXTERNAL_DTD);
+-                canDisableExternalDtds = Boolean.TRUE;
+-            } catch (Exception ex) {
+-                canDisableExternalDtds = Boolean.FALSE;
+-            }
+-        }
+-        return canDisableExternalDtds;
+-    }
+-
+     /**
+      * Convert an URL to a valid systemId according to RFC 2396.
+      *
+@@ -116,36 +117,58 @@ public static void parse(URL xmlURL, URL schema, DefaultHandler handler) throws
+         parse(xmlURL, schema, handler, null);
+     }
+ 
+-    @SuppressWarnings("deprecation")
+     public static void parse(URL xmlURL, URL schema, DefaultHandler handler, LexicalHandler lHandler)
+             throws SAXException, IOException, ParserConfigurationException {
++        parse(xmlURL, schema, handler, lHandler, ExternalResources.fromSystemProperty());
++    }
++
++    @SuppressWarnings("deprecation")
++    public static void parse(URL xmlURL, URL schema, DefaultHandler handler, LexicalHandler lHandler,
++            final ExternalResources externalResources)
++            throws SAXException, IOException, ParserConfigurationException {
+         try (InputStream xmlStream = URLHandlerRegistry.getDefault().openStream(xmlURL)) {
+             InputSource inSrc = new InputSource(xmlStream);
+             inSrc.setSystemId(toSystemId(xmlURL));
+-            parse(inSrc, schema, handler, lHandler);
++            parse(inSrc, schema, handler, lHandler, externalResources);
+         }
+     }
+ 
+     public static void parse(InputStream xmlStream, URL schema, DefaultHandler handler,
+             LexicalHandler lHandler) throws SAXException, IOException, ParserConfigurationException {
++        parse(xmlStream, schema, handler, lHandler, ExternalResources.fromSystemProperty());
++    }
++
++    public static void parse(InputStream xmlStream, URL schema, DefaultHandler handler,
++            LexicalHandler lHandler, final ExternalResources externalResources)
++            throws SAXException, IOException, ParserConfigurationException {
+         parse(new InputSource(xmlStream), schema, handler, lHandler);
+     }
+ 
+     public static void parse(InputSource xmlStream, URL schema, DefaultHandler handler,
+             LexicalHandler lHandler) throws SAXException, IOException, ParserConfigurationException {
+-        parse(xmlStream, schema, handler, lHandler, true);
++        parse(xmlStream, schema, handler, lHandler, ExternalResources.fromSystemProperty());
++    }
++
++    public static void parse(final InputSource xmlStream, final URL schema,
++                             final DefaultHandler handler, final LexicalHandler lHandler,
++                             final boolean loadExternalDtds) throws SAXException, IOException,
++            ParserConfigurationException {
++        parse(xmlStream, schema, handler, lHandler,
++            loadExternalDtds ? ExternalResources.LOCAL_ONLY : ExternalResources.PROHIBIT);
+     }
+ 
+     @SuppressWarnings("deprecation")
+-    public static void parse(InputSource xmlStream, URL schema, DefaultHandler handler,
+-            LexicalHandler lHandler, boolean loadExternalDtds) throws SAXException, IOException,
++    public static void parse(final InputSource xmlStream, final URL schema,
++                             final DefaultHandler handler, final LexicalHandler lHandler,
++                             final ExternalResources externalResources) throws SAXException, IOException,
+             ParserConfigurationException {
+         InputStream schemaStream = null;
+         try {
+             if (schema != null) {
+                 schemaStream = URLHandlerRegistry.getDefault().openStream(schema);
+             }
+-            SAXParser parser = XMLHelper.newSAXParser(schema, schemaStream, loadExternalDtds);
++            SAXParser parser = XMLHelper.newSAXParser(schema, schemaStream,
++                    isXmlDoctypeProcessingAllowed(), externalResources);
+ 
+             if (lHandler != null) {
+                 try {
+@@ -157,7 +180,10 @@ public static void parse(InputSource xmlStream, URL schema, DefaultHandler handl
+                 }
+             }
+ 
+-            parser.parse(xmlStream, handler);
++            DefaultHandler h = externalResources == ExternalResources.IGNORE
++                ? new NoopEntityResolverDefaultHandler(handler)
++                : handler;
++            parser.parse(xmlStream, h);
+         } finally {
+             if (schemaStream != null) {
+                 try {
+@@ -170,7 +196,7 @@ public static void parse(InputSource xmlStream, URL schema, DefaultHandler handl
+     }
+ 
+     public static boolean canUseSchemaValidation() {
+-        return canUseSchemaValidation;
++        return true;
+     }
+ 
+     /**
+@@ -216,15 +242,33 @@ public static String escape(String text) {
+ 
+     public static Document parseToDom(InputSource source, EntityResolver entityResolver)
+             throws IOException, SAXException {
+-        DocumentBuilder docBuilder = getDocBuilder(entityResolver);
++        return parseToDom(source, entityResolver, isXmlDoctypeProcessingAllowed(),
++            ExternalResources.fromSystemProperty());
++    }
++
++    public static Document parseToDom(InputSource source, EntityResolver entityResolver,
++            boolean allowXmlDoctypeProcessing, ExternalResources externalResources)
++            throws IOException, SAXException {
++        DocumentBuilder docBuilder = getDocBuilder(entityResolver, allowXmlDoctypeProcessing,
++            externalResources);
+         return docBuilder.parse(source);
+     }
+ 
+     public static DocumentBuilder getDocBuilder(EntityResolver entityResolver) {
++        return getDocBuilder(entityResolver, isXmlDoctypeProcessingAllowed(),
++            ExternalResources.fromSystemProperty());
++    }
++
++    public static DocumentBuilder getDocBuilder(EntityResolver entityResolver,
++            boolean allowXmlDoctypeProcessing, ExternalResources externalResources) {
+         try {
+-            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
++            final DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+             factory.setValidating(false);
++            configureSafeFeatures(factory, allowXmlDoctypeProcessing, externalResources);
+             DocumentBuilder docBuilder = factory.newDocumentBuilder();
++            if (externalResources == ExternalResources.IGNORE) {
++                entityResolver = new NoopEntityResolver(entityResolver);
++            }
+             if (entityResolver != null) {
+                 docBuilder.setEntityResolver(entityResolver);
+             }
+@@ -234,7 +278,335 @@ public static DocumentBuilder getDocBuilder(EntityResolver entityResolver) {
+         }
+     }
+ 
++    public static Transformer getTransformer(Source source) throws TransformerConfigurationException {
++        TransformerFactory factory = getTransformerFactory();
++        return factory.newTransformer(source);
++    }
++
++    public static TransformerHandler getTransformerHandler() throws TransformerConfigurationException {
++        SAXTransformerFactory factory = getTransformerFactory();
++        return factory.newTransformerHandler();
++    }
++
++    public enum ExternalResources {
++        PROHIBIT(""),
++        // technically the URIs for IGNORE will never get resolved at all.
++        // "all" pacifies some version of Java that check the property before delegating to the EntityResolver (which is
++        // going to return an empty content anyway)
++        IGNORE("all"),
++        LOCAL_ONLY("file, jar:file"),
++        ALL("all");
++
++        private final String allowedProtocols;
++
++        private ExternalResources(String allowedProtocols) {
++            this.allowedProtocols = allowedProtocols;
++        }
++
++        private String getAllowedProtocols() {
++            return allowedProtocols;
++        }
++
++        public static ExternalResources fromSystemProperty() {
++            final String val = System.getProperty(EXTERNAL_RESOURCES);
++            if (val != null) {
++                if (val.equalsIgnoreCase("ignore")) {
++                    return IGNORE;
++                }
++                if (val.equalsIgnoreCase("all")) {
++                    return ALL;
++                }
++                if (val.equalsIgnoreCase("local-only") || val.equalsIgnoreCase("local_only")) {
++                    return LOCAL_ONLY;
++                }
++            }
++            return PROHIBIT;
++        }
++    }
++
++    public static boolean isXmlDoctypeProcessingAllowed() {
++        return "true".equals(System.getProperty(ALLOW_DOCTYPE_PROCESSING));
++    }
++
+     private XMLHelper() {
+     }
+ 
++    private static SAXTransformerFactory getTransformerFactory() {
++        TransformerFactory factory = SAXTransformerFactory.newInstance();
++        configureSafeFeatures(factory);
++        return (SAXTransformerFactory) factory;
++    }
++
++    private static void configureSafeFeatures(final DocumentBuilderFactory factory,
++            final boolean allowXmlDoctypeProcessing, final ExternalResources externalResources) {
++        final String DISALLOW_DOCTYPE_DECL = "http://apache.org/xml/features/disallow-doctype-decl";
++        trySetFeature(factory, DISALLOW_DOCTYPE_DECL, !allowXmlDoctypeProcessing);
++
++        // available since Java 6, as XMLConstants.FEATURE_SECURE_PROCESSING. We can't use Java 6
++        // at compile time, in current version, so inline the constant here
++        final String FEATURE_SECURE_PROCESSING = "http://javax.xml.XMLConstants/feature/secure-processing";
++        trySetFeature(factory, FEATURE_SECURE_PROCESSING, true);
++
++        final String ALLOW_EXTERNAL_GENERAL_ENTITIES = "http://xml.org/sax/features/external-general-entities";
++        trySetFeature(factory, ALLOW_EXTERNAL_GENERAL_ENTITIES, false);
++
++        final String ALLOW_EXTERNAL_PARAM_ENTITIES = "http://xml.org/sax/features/external-parameter-entities";
++        trySetFeature(factory, ALLOW_EXTERNAL_PARAM_ENTITIES, false);
++
++        final String LOAD_EXTERNAL_DTD = "http://apache.org/xml/features/nonvalidating/load-external-dtd";
++        trySetFeature(factory, LOAD_EXTERNAL_DTD, externalResources != ExternalResources.PROHIBIT);
++
++        try {
++            factory.setXIncludeAware(false);
++        } catch (Exception e) {
++            // ignore
++        }
++        try {
++            factory.setExpandEntityReferences(false);
++        } catch (Exception e) {
++            // ignore
++        }
++    }
++
++    private static void configureSafeFeatures(final SAXParserFactory factory,
++            final boolean allowXmlDoctypeProcessing, final ExternalResources externalResources) {
++        final String DISALLOW_DOCTYPE_DECL = "http://apache.org/xml/features/disallow-doctype-decl";
++        trySetFeature(factory, DISALLOW_DOCTYPE_DECL, !allowXmlDoctypeProcessing);
++
++        // available since Java 6, as XMLConstants.FEATURE_SECURE_PROCESSING. We can't use Java 6
++        // at compile time, in current version, so inline the constant here
++        final String FEATURE_SECURE_PROCESSING = "http://javax.xml.XMLConstants/feature/secure-processing";
++        trySetFeature(factory, FEATURE_SECURE_PROCESSING, true);
++
++        final boolean allowEntities = externalResources == ExternalResources.LOCAL_ONLY
++            || externalResources == ExternalResources.ALL;
++        final String ALLOW_EXTERNAL_GENERAL_ENTITIES = "http://xml.org/sax/features/external-general-entities";
++        trySetFeature(factory, ALLOW_EXTERNAL_GENERAL_ENTITIES, allowEntities);
++
++        final String ALLOW_EXTERNAL_PARAM_ENTITIES = "http://xml.org/sax/features/external-parameter-entities";
++        trySetFeature(factory, ALLOW_EXTERNAL_PARAM_ENTITIES, allowEntities);
++        final String LOAD_EXTERNAL_DTD = "http://apache.org/xml/features/nonvalidating/load-external-dtd";
++        trySetFeature(factory, LOAD_EXTERNAL_DTD, externalResources != ExternalResources.PROHIBIT);
++        try {
++            factory.setXIncludeAware(false);
++        } catch (Exception e) {
++            // ignore
++        }
++    }
++
++    private static void configureSafeFeatures(final TransformerFactory factory) {
++        // available since Java 7, as XMLConstants.ACCESS_EXTERNAL_DTD, ACCESS_EXTERNAL_SCHEMA and
++        // ACCESS_EXTERNAL_STYLESHEET respectively.
++        // We can't use Java 7 at compile time, in current version, so inline the constants here
++        trySetAttribute(factory, XML_ACCESS_EXTERNAL_DTD, "");
++        trySetAttribute(factory, XML_ACCESS_EXTERNAL_SCHEMA, "");
++        trySetAttribute(factory, "http://javax.xml.XMLConstants/property/accessExternalStylesheet", "");
++    }
++
++    private static boolean isFeatureSupported(final SAXParserFactory factory, final String feature) {
++        try {
++            factory.getFeature(feature);
++            return true;
++        } catch (ParserConfigurationException e) {
++            return false;
++        } catch (SAXNotRecognizedException e) {
++            return false;
++        } catch (SAXNotSupportedException e) {
++            return false;
++        }
++    }
++
++    private static boolean isFeatureSupported(final DocumentBuilderFactory factory, final String feature) {
++        try {
++            factory.getFeature(feature);
++            return true;
++        } catch (ParserConfigurationException e) {
++            return false;
++        }
++    }
++
++    private static boolean isAttributeSupported(final TransformerFactory factory, final String attribute) {
++        try {
++            factory.getAttribute(attribute);
++            return true;
++        } catch (IllegalArgumentException e) {
++            return false;
++        }
++    }
++
++    private static boolean trySetFeature(final DocumentBuilderFactory factory,
++                                               final String feature, final boolean val) {
++        if (!isFeatureSupported(factory, feature)) {
++            return false;
++        }
++        try {
++            factory.setFeature(feature, val);
++            return true;
++        } catch (ParserConfigurationException e) {
++            // log and continue
++            Message.warn("Failed to set feature " + feature + " on DocumentBuilderFactory", e);
++            return false;
++        }
++    }
++
++    private static boolean trySetFeature(final SAXParserFactory factory,
++                                         final String feature, final boolean val) {
++        if (!isFeatureSupported(factory, feature)) {
++            return false;
++        }
++        try {
++            factory.setFeature(feature, val);
++            return true;
++        } catch (ParserConfigurationException e) {
++            // log and continue
++            Message.warn("Failed to set feature " + feature + " on SAXParserFactory", e);
++            return false;
++        } catch (SAXNotRecognizedException e) {
++            // log and continue
++            Message.warn("Failed to set feature " + feature + " on SAXParserFactory", e);
++            return false;
++        } catch (SAXNotSupportedException e) {
++            // log and continue
++            Message.warn("Failed to set feature " + feature + " on SAXParserFactory", e);
++            return false;
++        }
++    }
++
++    private static boolean trySetAttribute(final TransformerFactory factory,
++                                         final String attribute, final String val) {
++        if (!isAttributeSupported(factory, attribute)) {
++            return false;
++        }
++        try {
++            factory.setAttribute(attribute, val);
++            return true;
++        } catch (IllegalArgumentException e) {
++            // log and continue
++            Message.warn("Failed to set attribute " + attribute + " on TransformerFactory", e);
++            return false;
++        }
++    }
++
++    private static final InputSource EMPTY_INPUT_SOURCE = new InputSource(new StringReader(""));
++
++    private static class NoopEntityResolver implements EntityResolver {
++        private EntityResolver wrapped;
++
++        private NoopEntityResolver(EntityResolver wrapped) {
++            this.wrapped = wrapped;
++        }
++
++        @Override
++        public InputSource resolveEntity(String publicId, String systemId) throws SAXException, IOException {
++            if (wrapped != null) {
++                InputSource s = wrapped.resolveEntity(publicId, systemId);
++                if (s != null) {
++                    return s;
++                }
++            }
++            return EMPTY_INPUT_SOURCE;
++        }
++    }
++
++    private static class NoopEntityResolverDefaultHandler extends DefaultHandler {
++
++        private DefaultHandler wrapped;
++
++        private NoopEntityResolverDefaultHandler(DefaultHandler wrapped) {
++            this.wrapped = wrapped;
++        }
++
++        @Override
++        public InputSource resolveEntity(String publicId, String systemId) throws SAXException, IOException {
++            if (wrapped != null) {
++                InputSource s = wrapped.resolveEntity(publicId, systemId);
++                if (s != null) {
++                    return s;
++                }
++            }
++            return EMPTY_INPUT_SOURCE;
++        }
++
++        @Override
++        public void notationDecl(String name, String publicId, String systemId) throws SAXException {
++            wrapped.notationDecl(name, publicId, systemId);
++        }
++
++        @Override
++        public void unparsedEntityDecl(String name, String publicId, String systemId, String notationName)
++            throws SAXException {
++            wrapped.unparsedEntityDecl(name, publicId, systemId, notationName);
++        }
++
++        @Override
++        public void setDocumentLocator(Locator locator) {
++            wrapped.setDocumentLocator(locator);
++        }
++
++        @Override
++        public void startDocument() throws SAXException {
++            wrapped.startDocument();
++        }
++
++        @Override
++        public void endDocument() throws SAXException {
++            wrapped.endDocument();
++        }
++
++        @Override
++        public void startPrefixMapping(String prefix, String uri) throws SAXException {
++            wrapped.startPrefixMapping(prefix, uri);
++        }
++
++        @Override
++        public void endPrefixMapping(String prefix) throws SAXException {
++            wrapped.endPrefixMapping(prefix);
++        }
++
++        @Override
++        public void startElement(String uri, String localName, String qName, Attributes attributes)
++            throws SAXException {
++            wrapped.startElement(uri, localName, qName, attributes);
++        }
++
++        @Override
++        public void endElement(String uri, String localName, String qName) throws SAXException {
++            wrapped.endElement(uri, localName, qName);
++        }
++
++        @Override
++        public void characters(char[] ch, int start, int length) throws SAXException {
++            wrapped.characters(ch, start, length);
++        }
++
++        @Override
++        public void ignorableWhitespace(char[] ch, int start, int length) throws SAXException {
++            wrapped.ignorableWhitespace(ch, start, length);
++        }
++
++        @Override
++        public void processingInstruction(String target, String data) throws SAXException {
++            wrapped.processingInstruction(target, data);
++        }
++
++        @Override
++        public void skippedEntity(String name) throws SAXException {
++            wrapped.skippedEntity(name);
++        }
++
++        @Override
++        public void warning(SAXParseException e) throws SAXException {
++            wrapped.warning(e);
++        }
++
++        @Override
++        public void error(SAXParseException e) throws SAXException {
++            wrapped.error(e);
++        }
++
++        @Override
++        public void fatalError(SAXParseException e) throws SAXException {
++            wrapped.fatalError(e);
++        }
++    }
+ }
+diff --git a/test/java/org/apache/ivy/core/resolve/ResolveTest.java b/test/java/org/apache/ivy/core/resolve/ResolveTest.java
+index 633ca6460..5c611420f 100644
+--- a/test/java/org/apache/ivy/core/resolve/ResolveTest.java
++++ b/test/java/org/apache/ivy/core/resolve/ResolveTest.java
+@@ -51,6 +51,7 @@
+ import org.apache.ivy.util.CacheCleaner;
+ import org.apache.ivy.util.FileUtil;
+ import org.apache.ivy.util.MockMessageLogger;
++import org.apache.ivy.util.XMLHelper;
+ import org.junit.After;
+ import org.junit.Assert;
+ import org.junit.Before;
+@@ -74,6 +75,7 @@
+ import java.util.HashSet;
+ import java.util.List;
+ import java.util.Map;
++import java.util.Properties;
+ import java.util.Set;
+ import java.util.jar.JarEntry;
+ import java.util.jar.JarFile;
+@@ -309,20 +311,57 @@ public void testResolveBadStatus() throws Exception {
+ 
+     @Test
+     public void testResolveWithXmlEntities() {
++        testResolveWithXmlEntities(null, 0);
++        testResolveWithXmlEntities("prohibit", 0);
++        testResolveWithXmlEntities("ignore", 0);
++        testResolveWithXmlEntities("local-only", 2);
++        testResolveWithXmlEntities("LOCAL_ONLY", 2);
++        testResolveWithXmlEntities("all", 2);
++    }
++
++    private void testResolveWithXmlEntities(String externalResourcesSystemProperty,
++            int expectedNumberOfDependencies) {
+         Ivy ivy = new Ivy();
+         Throwable th = null;
++        Properties p = System.getProperties();
+         try {
++            System.setProperties(new Properties());
++            System.setProperty(XMLHelper.ALLOW_DOCTYPE_PROCESSING, "true");
++            if (externalResourcesSystemProperty != null) {
++                System.setProperty(XMLHelper.EXTERNAL_RESOURCES, externalResourcesSystemProperty);
++            }
+             ivy.configure(new File("test/repositories/xml-entities/ivysettings.xml"));
+             ResolveReport report = ivy.resolve(new File("test/repositories/xml-entities/ivy.xml"),
+                 getResolveOptions(new String[] {"*"}));
+             assertNotNull(report);
+             assertFalse(report.hasError());
++            assertNotNull(report.getDependencies());
++            assertEquals("number of dependencies while setting " + externalResourcesSystemProperty,
++                expectedNumberOfDependencies, report.getDependencies().size());
+         } catch (Throwable e) {
+             th = e;
++        } finally {
++            System.setProperties(p);
+         }
+         assertNull(th);
+     }
+ 
++    @Test
++    public void testResolveWithXmlEntitiesButNoSystemProperty() {
++        Ivy ivy = new Ivy();
++        Throwable th = null;
++        try {
++            ivy.configure(new File("test/repositories/xml-entities/ivysettings.xml"));
++            ResolveReport report = ivy.resolve(new File("test/repositories/xml-entities/ivy.xml"),
++                getResolveOptions(new String[] {"*"}));
++            assertNotNull(report);
++            assertFalse(report.hasError());
++        } catch (Throwable e) {
++            th = e;
++        }
++        assertNotNull(th);
++    }
++
+     @Test
+     public void testResolveNoRevisionInPattern() throws Exception {
+         // module1 depends on latest version of module2, for which there is no revision in the

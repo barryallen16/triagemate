@@ -1,0 +1,194 @@
+From 327c6d8a3855b6e6715fb2c3198d1be74a7406aa Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Timon=20F=C3=A4rber?= <timon.faerber@elevait.de>
+Date: Fri, 31 Jan 2025 18:58:31 +0100
+Subject: [PATCH]  feat: unable to perform XML-oriented attacks
+
+---
+ .../ZUGFeRD/ZUGFeRDInvoiceImporter.java       | 12 +++++++---
+ .../ZUGFeRD/ZUGFeRDVisualizer.java            | 22 ++++++++++++++-----
+ .../ZUGFeRD/VisualizationTest.java            |  4 +++-
+ .../validator/XMLValidator.java               |  6 +++++
+ .../validator/ZUGFeRDValidator.java           |  7 ++++++
+ 5 files changed, 41 insertions(+), 10 deletions(-)
+
+diff --git a/library/src/main/java/org/mustangproject/ZUGFeRD/ZUGFeRDInvoiceImporter.java b/library/src/main/java/org/mustangproject/ZUGFeRD/ZUGFeRDInvoiceImporter.java
+index 734f5f0cd..7f38ddcce 100644
+--- a/library/src/main/java/org/mustangproject/ZUGFeRD/ZUGFeRDInvoiceImporter.java
++++ b/library/src/main/java/org/mustangproject/ZUGFeRD/ZUGFeRDInvoiceImporter.java
+@@ -1,5 +1,6 @@
+ package org.mustangproject.ZUGFeRD;
+ 
++import javax.xml.XMLConstants;
+ import org.apache.commons.io.IOUtils;
+ import org.apache.pdfbox.Loader;
+ import org.apache.pdfbox.pdmodel.PDDocument;
+@@ -258,9 +259,14 @@ public void setRawXML(byte[] rawXML) throws IOException {
+ 	}
+ 
+ 	private void setDocument() throws ParserConfigurationException, IOException, SAXException, ParseException {
+-		final DocumentBuilderFactory xmlFact = DocumentBuilderFactory.newInstance();
+-		xmlFact.setNamespaceAware(true);
+-		final DocumentBuilder builder = xmlFact.newDocumentBuilder();
++		final DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
++		dbf.setNamespaceAware(true);
++		dbf.setExpandEntityReferences(false);
++		dbf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
++		dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
++		dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
++		dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
++		final DocumentBuilder builder = dbf.newDocumentBuilder();
+ 		final ByteArrayInputStream is = new ByteArrayInputStream(rawXML);
+ 		///    is.skip(guessBOMSize(is));
+ 		document = builder.parse(is);
+diff --git a/library/src/main/java/org/mustangproject/ZUGFeRD/ZUGFeRDVisualizer.java b/library/src/main/java/org/mustangproject/ZUGFeRD/ZUGFeRDVisualizer.java
+index 8795b478d..e133b028a 100644
+--- a/library/src/main/java/org/mustangproject/ZUGFeRD/ZUGFeRDVisualizer.java
++++ b/library/src/main/java/org/mustangproject/ZUGFeRD/ZUGFeRDVisualizer.java
+@@ -21,6 +21,8 @@
+ package org.mustangproject.ZUGFeRD;
+ 
+ import com.helger.commons.io.stream.StreamHelper;
++import javax.xml.XMLConstants;
++import javax.xml.parsers.ParserConfigurationException;
+ import org.apache.commons.io.IOUtils;
+ import org.apache.fop.apps.*;
+ import org.apache.fop.apps.io.ResourceResolverFactory;
+@@ -90,7 +92,8 @@ public ZUGFeRDVisualizer() {
+ 	 * @param fis inputstream (will be consumed)
+ 	 * @return (facturx = cii)
+ 	 */
+-	private EStandard findOutStandardFromRootNode(InputStream fis) {
++	private EStandard findOutStandardFromRootNode(InputStream fis)
++		throws ParserConfigurationException {
+ 
+ 		String zf1Signature = "CrossIndustryDocument";
+ 		String zf2Signature = "CrossIndustryInvoice";
+@@ -100,6 +103,11 @@ private EStandard findOutStandardFromRootNode(InputStream fis) {
+ 
+ 		DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+ 		dbf.setNamespaceAware(true);
++		dbf.setExpandEntityReferences(false);
++		dbf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
++		dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
++		dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
++		dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+ 		try {
+ 			DocumentBuilder db = dbf.newDocumentBuilder();
+ 			Document doc = db.parse(new InputSource(fis));
+@@ -121,12 +129,14 @@ private EStandard findOutStandardFromRootNode(InputStream fis) {
+ 		return null;
+ 	}
+ 
+-	public String visualize(String xmlFilename, Language lang) throws IOException, TransformerException {
++	public String visualize(String xmlFilename, Language lang)
++		throws IOException, TransformerException, ParserConfigurationException {
+ 		FileInputStream fis = new FileInputStream(xmlFilename);
+ 		return visualize(fis, lang);
+ 	}
+ 
+-	public String visualize(InputStream inputXml, Language lang) throws IOException, TransformerException {
++	public String visualize(InputStream inputXml, Language lang)
++		throws IOException, TransformerException, ParserConfigurationException {
+ 		initTemplates(lang);
+ 
+ 		String fileContent = new String(IOUtils.toByteArray(inputXml), StandardCharsets.UTF_8);
+@@ -211,7 +221,7 @@ private void initTemplates(Language lang) throws TransformerConfigurationExcepti
+ 	}
+ 
+ 	protected String toFOP(String xmlFilename)
+-		throws IOException, TransformerException {
++		throws IOException, TransformerException, ParserConfigurationException {
+ 
+ 		FileInputStream fis = new FileInputStream(xmlFilename);
+ 		EStandard theStandard = findOutStandardFromRootNode(fis);
+@@ -264,7 +274,7 @@ out from git with arbitrary options (which may include CSRF changes)
+ 			 */
+ 		try {
+ 			fopInput = this.toFOP(XMLinputFile.getAbsolutePath());
+-		} catch (TransformerException | IOException e) {
++		} catch (TransformerException | IOException | ParserConfigurationException e) {
+ 			LOGGER.error("Failed to apply FOP", e);
+ 		}
+ 		
+@@ -291,7 +301,7 @@ out from git with arbitrary options (which may include CSRF changes)
+ 			fis = new ByteArrayInputStream(xmlContent.getBytes(StandardCharsets.UTF_8));//rewind :-(
+ 			
+ 			fopInput = toFOP(fis, theStandard);
+-		} catch (TransformerException | IOException e) {
++		} catch (TransformerException | IOException | ParserConfigurationException e) {
+ 			LOGGER.error("Failed to apply FOP", e);
+ 		}
+ 
+diff --git a/library/src/test/java/org/mustangproject/ZUGFeRD/VisualizationTest.java b/library/src/test/java/org/mustangproject/ZUGFeRD/VisualizationTest.java
+index 88c4fccf3..2b63a5da7 100644
+--- a/library/src/test/java/org/mustangproject/ZUGFeRD/VisualizationTest.java
++++ b/library/src/test/java/org/mustangproject/ZUGFeRD/VisualizationTest.java
+@@ -20,6 +20,7 @@
+  */
+ package org.mustangproject.ZUGFeRD;
+ 
++import javax.xml.parsers.ParserConfigurationException;
+ import org.junit.FixMethodOrder;
+ import org.junit.runners.MethodSorters;
+ import org.mustangproject.ZUGFeRD.ZUGFeRDVisualizer.Language;
+@@ -76,9 +77,10 @@ private void runZUGFeRDVisualization(String inputFilename, String resultFileName
+ 			fail("TransformerException should not happen: " + e.getMessage());
+ 		} catch (IOException e) {
+ 			fail("IOException should not happen: " + e.getMessage());
++		} catch (ParserConfigurationException e) {
++			fail("ParserConfigurationException should not happen: " + e.getMessage());
+ 		}
+ 
+-
+ 		assertNotNull(result);
+         /* remove file endings so that tests can also pass after checking
+ 		   out from git with arbitrary options (which may include CSRF changes)
+diff --git a/validator/src/main/java/org/mustangproject/validator/XMLValidator.java b/validator/src/main/java/org/mustangproject/validator/XMLValidator.java
+index c8bd34754..58dba9119 100644
+--- a/validator/src/main/java/org/mustangproject/validator/XMLValidator.java
++++ b/validator/src/main/java/org/mustangproject/validator/XMLValidator.java
+@@ -10,6 +10,7 @@
+ import java.nio.file.Paths;
+ import java.util.Calendar;
+ 
++import javax.xml.XMLConstants;
+ import javax.xml.parsers.DocumentBuilder;
+ import javax.xml.parsers.DocumentBuilderFactory;
+ import javax.xml.transform.stream.StreamSource;
+@@ -151,6 +152,11 @@ public void validate() throws IrrecoverableValidationError {
+ 				final DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+ 				dbf.setNamespaceAware(true); // otherwise we can not act namespace independently, i.e. use
+ 				// document.getElementsByTagNameNS("*",...
++				dbf.setExpandEntityReferences(false);
++				dbf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
++				dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
++				dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
++				dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+ 
+ 				final DocumentBuilder db = dbf.newDocumentBuilder();
+ 				final InputSource is = new InputSource(new StringReader(zfXML));
+diff --git a/validator/src/main/java/org/mustangproject/validator/ZUGFeRDValidator.java b/validator/src/main/java/org/mustangproject/validator/ZUGFeRDValidator.java
+index d21317b19..cdab18744 100644
+--- a/validator/src/main/java/org/mustangproject/validator/ZUGFeRDValidator.java
++++ b/validator/src/main/java/org/mustangproject/validator/ZUGFeRDValidator.java
+@@ -17,6 +17,7 @@
+ import java.util.Calendar;
+ import java.util.Date;
+ 
++import javax.xml.XMLConstants;
+ import javax.xml.parsers.DocumentBuilder;
+ import javax.xml.parsers.DocumentBuilderFactory;
+ 
+@@ -142,6 +143,12 @@ private String internalValidate(String contextFilename, InputStream inputStream,
+ 					String xmlAsString = null;
+ 					try {
+ 						DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
++						dbf.setNamespaceAware(true);
++						dbf.setExpandEntityReferences(false);
++						dbf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
++						dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
++						dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
++						dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+ 						DocumentBuilder db = dbf.newDocumentBuilder();
+ 
+ 						content = XMLTools.removeBOM(content);

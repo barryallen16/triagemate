@@ -1,0 +1,172 @@
+From c8023ba4b3b54204ff3309c9e5c33664ad15ba32 Mon Sep 17 00:00:00 2001
+From: subratadeypappu <subrata@appsmith.com>
+Date: Mon, 23 Mar 2026 20:12:00 +0600
+Subject: [PATCH] fix(interfaces): validate filter temp table name before DROP
+ TABLE (#41642)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+<!-- CURSOR_AGENT_PR_BODY_BEGIN -->
+## Description
+
+`FilterDataServiceCE.dropTable` built `DROP TABLE` by concatenating the
+`tableName` argument. Any caller that forwarded untrusted input could
+execute arbitrary SQL (e.g. chaining `DROP` or other statements).
+
+This change enforces that only names matching the format produced by
+`generateTable` are accepted: `tbl_` plus exactly 16 uppercase
+alphabetic characters (the existing
+`RandomStringUtils.randomAlphabetic(16).toUpperCase()` contract).
+Invalid names fail fast with `AppsmithPluginException` /
+`PLUGIN_EXECUTE_ARGUMENT_ERROR` before any statement runs.
+
+**Tests:** Added coverage for a representative injection payload and for
+drop-after-generate.
+
+Fixes
+https://linear.app/appsmith/issue/APP-15031/sql-injection-in-filterdataservice-via-unsafe-drop-table-execution
+
+## Automation
+
+/ok-to-test tags="@tag.All"
+
+### :mag: Cypress test results
+<!-- This is an auto-generated comment: Cypress test results  -->
+> [!TIP]
+> 🟢 🟢 🟢 All cypress tests have passed! 🎉 🎉 🎉
+> Workflow run:
+<https://github.com/appsmithorg/appsmith/actions/runs/23336277011>
+> Commit: aef471be5545511e7f60d8062cc914302862a512
+> <a
+href="https://internal.appsmith.com/app/cypress-dashboard/rundetails-65890b3c81d7400d08fa9ee5?branch=master&workflowId=23336277011&attempt=1"
+target="_blank">Cypress dashboard</a>.
+> Tags: `@tag.All`
+> Spec:
+> <hr>Fri, 20 Mar 2026 10:24:44 UTC
+<!-- end of auto-generated comment: Cypress test results  -->
+
+
+## Communication
+Should the DevRel and Marketing teams inform users about this change?
+- [ ] Yes
+- [x] No
+<!-- CURSOR_AGENT_PR_BODY_END -->
+
+<div><a
+href="https://cursor.com/agents/bc-a0274fac-6f7a-4b5c-be2e-c623ca5d9cb8"><picture><source
+media="(prefers-color-scheme: dark)"
+srcset="https://cursor.com/assets/images/open-in-web-dark.png"><source
+media="(prefers-color-scheme: light)"
+srcset="https://cursor.com/assets/images/open-in-web-light.png"><img
+alt="Open in Web" width="114" height="28"
+src="https://cursor.com/assets/images/open-in-web-dark.png"></picture></a>&nbsp;<a
+href="https://cursor.com/background-agent?bcId=bc-a0274fac-6f7a-4b5c-be2e-c623ca5d9cb8"><picture><source
+media="(prefers-color-scheme: dark)"
+srcset="https://cursor.com/assets/images/open-in-cursor-dark.png"><source
+media="(prefers-color-scheme: light)"
+srcset="https://cursor.com/assets/images/open-in-cursor-light.png"><img
+alt="Open in Cursor" width="131" height="28"
+src="https://cursor.com/assets/images/open-in-cursor-dark.png"></picture></a>&nbsp;</div>
+
+
+
+<!-- This is an auto-generated comment: release notes by coderabbit.ai
+-->
+
+## Summary by CodeRabbit
+
+* **Bug Fixes**
+* Enhanced validation for temporary table names used in filter
+operations to enforce strict naming standards, preventing invalid or
+malformed identifiers from reaching database operations.
+
+* **Tests**
+* Added test coverage for temporary table name validation and removal
+operations, verifying that improperly formatted table names are rejected
+and valid removal operations execute successfully without errors.
+
+<!-- end of auto-generated comment: release notes by coderabbit.ai -->
+
+---------
+
+Co-authored-by: Cursor Agent <cursoragent@cursor.com>
+Co-authored-by: subratadeypappu <subrata71@users.noreply.github.com>
+---
+ .../services/ce/FilterDataServiceCE.java         | 16 ++++++++++++++++
+ .../external/services/FilterDataServiceTest.java | 15 +++++++++++++++
+ 2 files changed, 31 insertions(+)
+
+diff --git a/app/server/appsmith-interfaces/src/main/java/com/appsmith/external/services/ce/FilterDataServiceCE.java b/app/server/appsmith-interfaces/src/main/java/com/appsmith/external/services/ce/FilterDataServiceCE.java
+index 10cc64fa8579..71af0c9514b4 100644
+--- a/app/server/appsmith-interfaces/src/main/java/com/appsmith/external/services/ce/FilterDataServiceCE.java
++++ b/app/server/appsmith-interfaces/src/main/java/com/appsmith/external/services/ce/FilterDataServiceCE.java
+@@ -36,6 +36,7 @@
+ import java.util.Map;
+ import java.util.Set;
+ import java.util.function.Function;
++import java.util.regex.Pattern;
+ import java.util.stream.Collectors;
+ import java.util.stream.Stream;
+ 
+@@ -56,6 +57,12 @@ public class FilterDataServiceCE implements IFilterDataServiceCE {
+ 
+     private static final String URL = "jdbc:h2:mem:filterDb;DATABASE_TO_UPPER=FALSE";
+ 
++    /**
++     * Names produced by {@link #generateTable(Map)}: {@code tbl_} plus 16 alphabetic characters (see
++     * {@link RandomStringUtils#randomAlphabetic(int)} + uppercase). Used to reject untrusted input in dynamic SQL.
++     */
++    private static final Pattern FILTER_TEMP_TABLE_NAME_PATTERN = Pattern.compile("^tbl_[A-Z]{16}$");
++
+     private static final Map<DataType, String> SQL_DATATYPE_MAP = Map.of(
+             DataType.INTEGER, "INT",
+             DataType.LONG, "BIGINT",
+@@ -623,12 +630,21 @@ public String generateTable(Map<String, DataType> schema) {
+     }
+ 
+     public void dropTable(String tableName) {
++        validateFilterTempTableName(tableName);
+ 
+         String dropTableQuery = "DROP TABLE " + tableName + ";";
+ 
+         executeDbQuery(dropTableQuery);
+     }
+ 
++    private static void validateFilterTempTableName(String tableName) {
++        if (isBlank(tableName)
++                || !FILTER_TEMP_TABLE_NAME_PATTERN.matcher(tableName).matches()) {
++            throw new AppsmithPluginException(
++                    AppsmithPluginError.PLUGIN_EXECUTE_ARGUMENT_ERROR, "Invalid filter temporary table name");
++        }
++    }
++
+     /**
+      * Overloaded Method to handle plugin-based DataType conversion.
+      *
+diff --git a/app/server/appsmith-interfaces/src/test/java/com/appsmith/external/services/FilterDataServiceTest.java b/app/server/appsmith-interfaces/src/test/java/com/appsmith/external/services/FilterDataServiceTest.java
+index 9b63e253fae2..ecc122a3653a 100644
+--- a/app/server/appsmith-interfaces/src/test/java/com/appsmith/external/services/FilterDataServiceTest.java
++++ b/app/server/appsmith-interfaces/src/test/java/com/appsmith/external/services/FilterDataServiceTest.java
+@@ -47,6 +47,21 @@ public void testGenerateTable() {
+         assertThat(table).isNotNull();
+     }
+ 
++    @Test
++    public void testDropTable_rejectsSqlInjectionPayload() {
++        AppsmithPluginException ex = assertThrows(AppsmithPluginException.class, () -> {
++            filterDataService.dropTable("valid_table; DROP TABLE users; --");
++        });
++        assertThat(ex.getMessage()).contains("Invalid filter temporary table name");
++    }
++
++    @Test
++    public void testDropTable_acceptsGeneratedTableName() {
++        Map<String, DataType> schema = Map.of("id", DataType.INTEGER);
++        String tableName = filterDataService.generateTable(schema);
++        filterDataService.dropTable(tableName);
++    }
++
+     @Test
+     public void generateLogicalOperatorTest() {
+ 

@@ -1,0 +1,51 @@
+From d821c4d321dd91c22e31fcd5b1ce676645da5176 Mon Sep 17 00:00:00 2001
+From: Jody Garnett <jody.garnett@gmail.com>
+Date: Thu, 13 Aug 2026 21:52:57 -0700
+Subject: [PATCH] [GEOT-7958] Increase FilterToSqlHelper test coverage
+
+---
+ .../org/geotools/data/postgis/FilterToSqlHelper.java   |  3 ++-
+ .../data/postgis/PostgisJsonPathExistsTest.java        | 10 +++++++++-
+ 2 files changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/FilterToSqlHelper.java b/modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/FilterToSqlHelper.java
+index 809ffc1f82a..46a8f9f9dc1 100644
+--- a/modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/FilterToSqlHelper.java
++++ b/modules/plugin/jdbc/jdbc-postgis/src/main/java/org/geotools/data/postgis/FilterToSqlHelper.java
+@@ -800,7 +800,8 @@ private String constructEquality(String[] jsonPath, Expression expected) {
+         } else if (value instanceof Double double1) {
+             return "(@.%s == %f)".formatted(jsonPath[lastIndex], double1);
+         }
+-        return "(@.%s == \"%s\")".formatted(jsonPath[lastIndex], value);
++        String literal = escapeJsonLiteral(String.valueOf(value));
++        return "(@.%s == \"%s\")".formatted(jsonPath[lastIndex], literal);
+     }
+ 
+     private String constructPath(String[] jsonPath) {
+diff --git a/modules/plugin/jdbc/jdbc-postgis/src/test/java/org/geotools/data/postgis/PostgisJsonPathExistsTest.java b/modules/plugin/jdbc/jdbc-postgis/src/test/java/org/geotools/data/postgis/PostgisJsonPathExistsTest.java
+index 5e6ea31c09d..aed9a4bf948 100644
+--- a/modules/plugin/jdbc/jdbc-postgis/src/test/java/org/geotools/data/postgis/PostgisJsonPathExistsTest.java
++++ b/modules/plugin/jdbc/jdbc-postgis/src/test/java/org/geotools/data/postgis/PostgisJsonPathExistsTest.java
+@@ -60,6 +60,14 @@ public void testFunctionJsonArrayContainsJsonPathExists() throws Exception {
+         filterToSql.encode(pointer);
+         String sql = writer.toString().trim();
+         assertEquals("jsonb_path_exists(OPERATIONS::jsonb, '$ ? (@.operations == \"OP1\")')", sql);
++
++        writer = new StringWriter();
++        filterToSql.setWriter(writer);
++
++        pointer = ff.function("jsonArrayContains", ff.property("WON'T"), ff.literal("/won't"), ff.literal("can't"));
++        filterToSql.encode(pointer);
++        sql = writer.toString().trim();
++        assertEquals("jsonb_path_exists(WON'T::jsonb, '$ ? (@.won''t == \"can''t\")')", sql);
+     }
+ 
+     @Test
+@@ -99,6 +107,6 @@ public void testFunctionJsonArrayContainsEscapingExpectedJsonPathExists() throws
+                 "jsonArrayContains", ff.property("OPERATIONS"), ff.literal("/operations"), ff.literal("\"'FOO"));
+         filterToSql.encode(pointer);
+         String sql = writer.toString().trim();
+-        assertEquals("jsonb_path_exists(OPERATIONS::jsonb, '$ ? (@.operations == \"\"'FOO\")')", sql);
++        assertEquals("jsonb_path_exists(OPERATIONS::jsonb, '$ ? (@.operations == \"\\\"''FOO\")')", sql);
+     }
+ }

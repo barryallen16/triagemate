@@ -1,0 +1,357 @@
+From 2fc7bd9057dd051d7dea0e5fcad89822d0fa5ebd Mon Sep 17 00:00:00 2001
+From: PJ Fanning <pjfanning@users.noreply.github.com>
+Date: Mon, 6 Jul 2026 02:54:21 +0100
+Subject: [PATCH] Do not allow DNS resolution when deserializing `InetAddress`
+ (#6058)
+
+---
+ release-notes/VERSION-2.x                     |   3 +
+ .../deser/std/FromStringDeserializer.java     |   5 +
+ .../deser/std/InetAddressValidator.java       | 218 ++++++++++++++++++
+ .../deser/jdk/JDKStringLikeTypeDeserTest.java |  34 ++-
+ .../ser/jdk/JDKTypeSerializationTest.java     |  23 +-
+ 5 files changed, 271 insertions(+), 12 deletions(-)
+ create mode 100644 src/main/java/com/fasterxml/jackson/databind/deser/std/InetAddressValidator.java
+
+diff --git a/release-notes/VERSION-2.x b/release-notes/VERSION-2.x
+index 1c7cf54a24..461adbf516 100644
+--- a/release-notes/VERSION-2.x
++++ b/release-notes/VERSION-2.x
+@@ -12,6 +12,9 @@ Project: jackson-databind
+ #6054: Honor `@JsonView` for external-type-id (`EXTERNAL_PROPERTY`)
+   properties [GHSA-mhm7-754m-9p8w]
+  (reported by @Sharlong-Wen)
++#6058: Do not allow DNS resolution when deserializing `InetAddress`
++ (reported by @thientd)
++ (fix by @pjfanning)
+ #6060: `@JsonView` by-passed for `@JsonUnwrapped` Field/Setter properties
+ 
+ 2.18.8 (28-May-2026)
+diff --git a/src/main/java/com/fasterxml/jackson/databind/deser/std/FromStringDeserializer.java b/src/main/java/com/fasterxml/jackson/databind/deser/std/FromStringDeserializer.java
+index a6de56eb5b..0aa59232b9 100644
+--- a/src/main/java/com/fasterxml/jackson/databind/deser/std/FromStringDeserializer.java
++++ b/src/main/java/com/fasterxml/jackson/databind/deser/std/FromStringDeserializer.java
+@@ -351,6 +351,11 @@ protected Object _deserialize(String value, DeserializationContext ctxt) throws
+             case STD_TIME_ZONE:
+                 return TimeZone.getTimeZone(value);
+             case STD_INET_ADDRESS:
++                // 05-Jul-2026, tatu: [databind#6058] Prevent DNS lookup: only accept valid IP address literals
++                if (!InetAddressValidator.isInetAddress(value)) {
++                    return ctxt.handleWeirdStringValue(_valueClass, value,
++                            "Not a valid IP address string literal");
++                }
+                 return InetAddress.getByName(value);
+             case STD_INET_SOCKET_ADDRESS:
+                 if (value.startsWith("[")) {
+diff --git a/src/main/java/com/fasterxml/jackson/databind/deser/std/InetAddressValidator.java b/src/main/java/com/fasterxml/jackson/databind/deser/std/InetAddressValidator.java
+new file mode 100644
+index 0000000000..e7728a5815
+--- /dev/null
++++ b/src/main/java/com/fasterxml/jackson/databind/deser/std/InetAddressValidator.java
+@@ -0,0 +1,218 @@
++package com.fasterxml.jackson.databind.deser.std;
++
++import java.nio.ByteBuffer;
++
++/**
++ * Helper that validates whether a string is a valid IP address literal (IPv4 or IPv6)
++ * without performing any DNS lookup.
++ *<p>
++ * Logic is adapted from Google Guava's {@code InetAddresses.isInetAddress()} under the
++ * Apache License 2.0:
++ * https://github.com/google/guava/blob/master/guava/src/com/google/common/net/InetAddresses.java
++ *
++ * @since 2.18.9
++ */
++class InetAddressValidator
++{
++    private static final int IPV4_PART_COUNT = 4;
++    private static final int IPV6_PART_COUNT = 8;
++
++    private InetAddressValidator() { }
++
++    /**
++     * Returns {@code true} if the supplied string is a valid IP string literal
++     * (IPv4 or IPv6), {@code false} otherwise.
++     * This method never causes a DNS lookup.
++     */
++    static boolean isInetAddress(String ipString) {
++        return _ipStringToBytes(ipString) != null;
++    }
++
++    // Returns null if unable to parse into a byte array.
++    private static byte[] _ipStringToBytes(String ipString) {
++        boolean hasColon = false;
++        boolean hasDot = false;
++        int percentIndex = -1;
++        for (int i = 0; i < ipString.length(); i++) {
++            char c = ipString.charAt(i);
++            if (c == '.') {
++                hasDot = true;
++            } else if (c == ':') {
++                if (hasDot) {
++                    return null; // Colons must not appear after dots.
++                }
++                hasColon = true;
++            } else if (c == '%') {
++                percentIndex = i;
++                break; // Scope ID; stop scanning
++            } else if (Character.digit(c, 16) == -1) {
++                return null; // Everything else must be a decimal or hex digit.
++            }
++        }
++
++        if (hasColon) {
++            if (hasDot) {
++                ipString = _convertDottedQuadToHex(ipString);
++                if (ipString == null) {
++                    return null;
++                }
++            }
++            if (percentIndex != -1) {
++                ipString = ipString.substring(0, percentIndex);
++            }
++            return _textToNumericFormatV6(ipString);
++        } else if (hasDot) {
++            if (percentIndex != -1) {
++                return null; // Scope IDs not supported for IPv4
++            }
++            return _textToNumericFormatV4(ipString);
++        }
++        return null;
++    }
++
++    private static byte[] _textToNumericFormatV4(String ipString) {
++        int dotCount = 0;
++        for (int i = 0; i < ipString.length(); i++) {
++            if (ipString.charAt(i) == '.') {
++                dotCount++;
++            }
++        }
++        if (dotCount + 1 != IPV4_PART_COUNT) {
++            return null; // Wrong number of parts
++        }
++
++        byte[] bytes = new byte[IPV4_PART_COUNT];
++        int start = 0;
++        for (int i = 0; i < IPV4_PART_COUNT; i++) {
++            int end = ipString.indexOf('.', start);
++            if (end == -1) {
++                end = ipString.length();
++            }
++            try {
++                bytes[i] = _parseOctet(ipString, start, end);
++            } catch (NumberFormatException ex) {
++                return null;
++            }
++            start = end + 1;
++        }
++        return bytes;
++    }
++
++    private static byte[] _textToNumericFormatV6(String ipString) {
++        int delimiterCount = 0;
++        for (int i = 0; i < ipString.length(); i++) {
++            if (ipString.charAt(i) == ':') {
++                delimiterCount++;
++            }
++        }
++        if (delimiterCount < 2 || delimiterCount > IPV6_PART_COUNT) {
++            return null;
++        }
++        int partsSkipped = IPV6_PART_COUNT - (delimiterCount + 1); // estimate; may be modified
++        boolean hasSkip = false;
++        for (int i = 0; i < ipString.length() - 1; i++) {
++            if (ipString.charAt(i) == ':' && ipString.charAt(i + 1) == ':') {
++                if (hasSkip) {
++                    return null; // Can't have more than one ::
++                }
++                hasSkip = true;
++                partsSkipped++; // :: means we skipped an extra part
++                if (i == 0) {
++                    partsSkipped++; // Begins with ::
++                }
++                if (i == ipString.length() - 2) {
++                    partsSkipped++; // Ends with ::
++                }
++            }
++        }
++        if (ipString.charAt(0) == ':' && ipString.charAt(1) != ':') {
++            return null; // ^: requires ^::
++        }
++        if (ipString.charAt(ipString.length() - 1) == ':'
++                && ipString.charAt(ipString.length() - 2) != ':') {
++            return null; // :$ requires ::$
++        }
++        if (hasSkip && partsSkipped <= 0) {
++            return null; // :: must expand to at least one '0'
++        }
++        if (!hasSkip && delimiterCount + 1 != IPV6_PART_COUNT) {
++            return null; // Incorrect number of parts
++        }
++
++        ByteBuffer rawBytes = ByteBuffer.allocate(2 * IPV6_PART_COUNT);
++        try {
++            int start = 0;
++            if (ipString.charAt(0) == ':') {
++                start = 1;
++            }
++            while (start < ipString.length()) {
++                int end = ipString.indexOf(':', start);
++                if (end == -1) {
++                    end = ipString.length();
++                }
++                if (ipString.charAt(start) == ':') {
++                    // expand zeroes
++                    for (int i = 0; i < partsSkipped; i++) {
++                        rawBytes.putShort((short) 0);
++                    }
++                } else {
++                    rawBytes.putShort(_parseHextet(ipString, start, end));
++                }
++                start = end + 1;
++            }
++        } catch (NumberFormatException ex) {
++            return null;
++        }
++        return rawBytes.array();
++    }
++
++    private static String _convertDottedQuadToHex(String ipString) {
++        int lastColon = ipString.lastIndexOf(':');
++        String initialPart = ipString.substring(0, lastColon + 1);
++        String dottedQuad = ipString.substring(lastColon + 1);
++        byte[] quad = _textToNumericFormatV4(dottedQuad);
++        if (quad == null) {
++            return null;
++        }
++        String penultimate = Integer.toHexString(((quad[0] & 0xff) << 8) | (quad[1] & 0xff));
++        String ultimate = Integer.toHexString(((quad[2] & 0xff) << 8) | (quad[3] & 0xff));
++        return initialPart + penultimate + ":" + ultimate;
++    }
++
++    private static byte _parseOctet(String ipString, int start, int end) {
++        int length = end - start;
++        if (length <= 0 || length > 3) {
++            throw new NumberFormatException();
++        }
++        // Disallow leading zeroes (ambiguous: decimal vs octal)
++        if (length > 1 && ipString.charAt(start) == '0') {
++            throw new NumberFormatException();
++        }
++        int octet = 0;
++        for (int i = start; i < end; i++) {
++            octet *= 10;
++            int digit = Character.digit(ipString.charAt(i), 10);
++            if (digit < 0) {
++                throw new NumberFormatException();
++            }
++            octet += digit;
++        }
++        if (octet > 255) {
++            throw new NumberFormatException();
++        }
++        return (byte) octet;
++    }
++
++    private static short _parseHextet(String ipString, int start, int end) {
++        int length = end - start;
++        if (length <= 0 || length > 4) {
++            throw new NumberFormatException();
++        }
++        int hextet = 0;
++        for (int i = start; i < end; i++) {
++            hextet = hextet << 4;
++            hextet |= Character.digit(ipString.charAt(i), 16);
++        }
++        return (short) hextet;
++    }
++}
+diff --git a/src/test/java/com/fasterxml/jackson/databind/deser/jdk/JDKStringLikeTypeDeserTest.java b/src/test/java/com/fasterxml/jackson/databind/deser/jdk/JDKStringLikeTypeDeserTest.java
+index 480b98becb..9e7956bfd1 100644
+--- a/src/test/java/com/fasterxml/jackson/databind/deser/jdk/JDKStringLikeTypeDeserTest.java
++++ b/src/test/java/com/fasterxml/jackson/databind/deser/jdk/JDKStringLikeTypeDeserTest.java
+@@ -171,13 +171,39 @@ public void testCharSequence() throws IOException
+     @Test
+     public void testInetAddress() throws IOException
+     {
++        // Valid IPv4 address
+         InetAddress address = MAPPER.readValue(q("127.0.0.1"), InetAddress.class);
+         assertEquals("127.0.0.1", address.getHostAddress());
+ 
+-        // should we try resolving host names? That requires connectivity...
+-        final String HOST = "google.com";
+-        address = MAPPER.readValue(q(HOST), InetAddress.class);
+-        assertEquals(HOST, address.getHostName());
++        // Valid IPv6 address
++        InetAddress ip6 = MAPPER.readValue(
++                q("2001:db8:85a3:8d3:1319:8a2e:370:7348"), InetAddress.class);
++        assertEquals("2001:db8:85a3:8d3:1319:8a2e:370:7348", ip6.getHostAddress());
++
++        // IPv6 loopback
++        InetAddress loopback6 = MAPPER.readValue(q("::1"), InetAddress.class);
++        assertEquals("0:0:0:0:0:0:0:1", loopback6.getHostAddress());
++    }
++
++    @Test
++    public void testInetAddressNoDNSLookup() throws Exception
++    {
++        // [databind#6058]: should NOT perform DNS lookup — only IP address literals accepted
++        expectInvalidInetAddress("localhost");
++        expectInvalidInetAddress("google.com");
++        // starts off looking like an IP address (edge case)
++        expectInvalidInetAddress("1.2.3.4.example.com");
++        // punycode
++        expectInvalidInetAddress("xn--bcher-kva.example.com");
++    }
++
++    private void expectInvalidInetAddress(String address) throws Exception {
++        try {
++            MAPPER.readValue(q(address), InetAddress.class);
++            fail("Should not pass");
++        } catch (InvalidFormatException e) {
++            verifyException(e, "Not a valid IP address string literal");
++        }
+     }
+ 
+     @Test
+diff --git a/src/test/java/com/fasterxml/jackson/databind/ser/jdk/JDKTypeSerializationTest.java b/src/test/java/com/fasterxml/jackson/databind/ser/jdk/JDKTypeSerializationTest.java
+index e6e11876d6..732eadb53d 100644
+--- a/src/test/java/com/fasterxml/jackson/databind/ser/jdk/JDKTypeSerializationTest.java
++++ b/src/test/java/com/fasterxml/jackson/databind/ser/jdk/JDKTypeSerializationTest.java
+@@ -104,20 +104,27 @@ public void testLocale() throws IOException
+     }
+ 
+     @Test
+-    public void testInetAddress() throws IOException
++    public void testInetAddress() throws Exception
+     {
+-        assertEquals(q("127.0.0.1"), MAPPER.writeValueAsString(InetAddress.getByName("127.0.0.1")));
+-        InetAddress input = InetAddress.getByName("google.com");
+-        assertEquals(q("google.com"), MAPPER.writeValueAsString(input));
++        // Default shape: textual form (host part of InetAddress.toString())
++        InetAddress input = InetAddress.getByName("127.0.0.1");
++        assertEquals(q("127.0.0.1"), MAPPER.writeValueAsString(input));
+ 
++        // Address carrying a host name (constructed WITHOUT a DNS lookup, via
++        // getByAddress()) still serializes the name in the default shape
++        InetAddress named = InetAddress.getByAddress("myhost.example.com",
++                new byte[] { 1, 2, 3, 4 });
++        assertEquals(q("myhost.example.com"), MAPPER.writeValueAsString(named));
++
++        // NUMBER shape: numeric host address regardless of host name
+         ObjectMapper mapper = newJsonMapper();
+         mapper.configOverride(InetAddress.class)
+             .setFormat(JsonFormat.Value.forShape(JsonFormat.Shape.NUMBER));
+-        String json = mapper.writeValueAsString(input);
+-        assertEquals(q(input.getHostAddress()), json);
++        assertEquals(q(named.getHostAddress()), mapper.writeValueAsString(named));
+ 
+-        assertEquals(String.format("{\"value\":\"%s\"}", input.getHostAddress()),
+-                mapper.writeValueAsString(new InetAddressBean(input)));
++        // ... also as a bean property
++        assertEquals(String.format("{\"value\":\"%s\"}", named.getHostAddress()),
++                mapper.writeValueAsString(new InetAddressBean(named)));
+     }
+ 
+     @Test

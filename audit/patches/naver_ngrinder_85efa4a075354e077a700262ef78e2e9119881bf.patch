@@ -1,0 +1,115 @@
+From 85efa4a075354e077a700262ef78e2e9119881bf Mon Sep 17 00:00:00 2001
+From: Imbyungjun <qudwns2730@naver.com>
+Date: Fri, 23 Feb 2024 14:40:50 +0900
+Subject: [PATCH] Add object input filter on Connector (#1000)
+
+* Add object input filter on Connector
+
+* Fix ambiguous import
+
+* Change setup jdk to 11
+---
+ .../workflows/run-build-with-test-on-pr.yml   |  4 ++--
+ build.gradle                                  |  4 ++--
+ .../net/grinder/communication/Connector.java  | 20 +++++++++++++++++++
+ .../org/ngrinder/dns/LocalManagedDnsImpl.java |  9 ++++++++-
+ 4 files changed, 32 insertions(+), 5 deletions(-)
+
+diff --git a/.github/workflows/run-build-with-test-on-pr.yml b/.github/workflows/run-build-with-test-on-pr.yml
+index cb44a4afb2..e6b06a3397 100644
+--- a/.github/workflows/run-build-with-test-on-pr.yml
++++ b/.github/workflows/run-build-with-test-on-pr.yml
+@@ -21,11 +21,11 @@ jobs:
+       - name: Checkout
+         uses: actions/checkout@v3
+ 
+-      - name: Setup JDK 8
++      - name: Setup JDK 11
+         uses: actions/setup-java@v3
+         with:
+           distribution: 'zulu'
+-          java-version: '8.0.345'
++          java-version: '11.0.22'
+           architecture: x64
+           cache: 'gradle'
+ 
+diff --git a/build.gradle b/build.gradle
+index 61130f8ad7..183c2bf169 100644
+--- a/build.gradle
++++ b/build.gradle
+@@ -28,8 +28,8 @@ subprojects {
+   compileJava.options.encoding = "UTF-8"
+   compileTestJava.options.encoding = "UTF-8"
+ 
+-  sourceCompatibility = 1.8
+-  targetCompatibility = 1.8
++  sourceCompatibility = 11
++  targetCompatibility = 11
+ 
+   ext {
+     profile = project.hasProperty("profile") ? profile : "production"
+diff --git a/ngrinder-core/src/main/java/net/grinder/communication/Connector.java b/ngrinder-core/src/main/java/net/grinder/communication/Connector.java
+index 3a1f2a5d92..8fa883526f 100644
+--- a/ngrinder-core/src/main/java/net/grinder/communication/Connector.java
++++ b/ngrinder-core/src/main/java/net/grinder/communication/Connector.java
+@@ -23,6 +23,7 @@
+ 
+ import java.io.IOException;
+ import java.io.InputStream;
++import java.io.ObjectInputFilter;
+ import java.io.ObjectInputStream;
+ import java.io.ObjectOutputStream;
+ import java.io.OutputStream;
+@@ -31,6 +32,8 @@
+ import java.net.UnknownHostException;
+ 
+ import net.grinder.common.UncheckedInterruptedException;
++import net.grinder.common.processidentity.ProcessIdentity;
++import net.grinder.engine.controller.AbstractAgentControllerIdentityImplementation;
+ 
+ 
+ /**
+@@ -197,6 +200,23 @@ static ConnectDetails read(InputStream in) throws CommunicationException {
+ 
+ 		try {
+ 			final ObjectInputStream objectInputStream = new ObjectInputStream(in);
++			objectInputStream.setObjectInputFilter(filterInfo -> {
++				if (filterInfo.serialClass() == null) {
++					return ObjectInputFilter.Status.UNDECIDED;
++				}
++
++				if (Address.class.isAssignableFrom(filterInfo.serialClass())
++					|| ConnectionType.class.isAssignableFrom(filterInfo.serialClass())
++					|| Enum.class.isAssignableFrom(filterInfo.serialClass())
++					|| filterInfo.serialClass().getCanonicalName().startsWith("net.grinder.engine")
++					|| filterInfo.serialClass().getCanonicalName().startsWith("net.grinder.common")
++				) {
++					return ObjectInputFilter.Status.ALLOWED;
++				}
++
++				return ObjectInputFilter.Status.REJECTED;
++			});
++
+ 			final ConnectionType type =
+ 				(ConnectionType) objectInputStream.readObject();
+ 			final Address address = (Address) objectInputStream.readObject();
+diff --git a/ngrinder-runtime/src/main/java/org/ngrinder/dns/LocalManagedDnsImpl.java b/ngrinder-runtime/src/main/java/org/ngrinder/dns/LocalManagedDnsImpl.java
+index fb3c701dae..96dbe13b0c 100644
+--- a/ngrinder-runtime/src/main/java/org/ngrinder/dns/LocalManagedDnsImpl.java
++++ b/ngrinder-runtime/src/main/java/org/ngrinder/dns/LocalManagedDnsImpl.java
+@@ -13,7 +13,14 @@
+  */
+ package org.ngrinder.dns;
+ 
+-import org.xbill.DNS.*;
++import org.xbill.DNS.ARecord;
++import org.xbill.DNS.Cache;
++import org.xbill.DNS.DClass;
++import org.xbill.DNS.Lookup;
++import org.xbill.DNS.PTRRecord;
++import org.xbill.DNS.Record;
++import org.xbill.DNS.TextParseException;
++import org.xbill.DNS.Type;
+ 
+ import java.net.InetAddress;
+ import java.net.UnknownHostException;

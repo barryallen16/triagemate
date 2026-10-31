@@ -1,0 +1,96 @@
+From 4347315afab1ef5a2907978a754fbc5b0ff58e6f Mon Sep 17 00:00:00 2001
+From: joniles <jon@timephased.com>
+Date: Fri, 3 Jul 2026 13:08:31 +0100
+Subject: [PATCH] PRX/STX: fix path traversal vulnerability
+
+---
+ src/changes/changes.xml                         |  1 +
+ src/main/java/org/mpxj/common/FileHelper.java   | 17 +++++++++++++++++
+ .../java/org/mpxj/common/InputStreamHelper.java |  7 +------
+ .../org/mpxj/primavera/p3/P3PRXFileReader.java  |  1 +
+ .../suretrak/SureTrakSTXFileReader.java         |  3 ++-
+ 5 files changed, 22 insertions(+), 7 deletions(-)
+
+diff --git a/src/changes/changes.xml b/src/changes/changes.xml
+index 6b099cb04a1..297105ad7d8 100644
+--- a/src/changes/changes.xml
++++ b/src/changes/changes.xml
+@@ -6,6 +6,7 @@
+ 	</properties>
+ 	<body>
+         <release date="Unreleased" version="16.5.0">
++            <action dev="joniles" type="update">Fix a vulnerability where reading malicious Primavera P3 PRX files or SureTrak STX files could result in files being written to arbitrary locations (with thanks to czTang).</action>
+             <action dev="joniles" type="update">Improve identification of deleted items when reading certain Asta Powerproject PP files.</action>
+             <action dev="joniles" type="update">Updated `PrimaveraScheduler` to support the Expected Finish attribute.</action>
+             <action dev="joniles" type="update">Improvements to `PrimaveraScheduler` to ensure better alignment with P6.</action>
+diff --git a/src/main/java/org/mpxj/common/FileHelper.java b/src/main/java/org/mpxj/common/FileHelper.java
+index 7279472db67..a134aeccd7c 100644
+--- a/src/main/java/org/mpxj/common/FileHelper.java
++++ b/src/main/java/org/mpxj/common/FileHelper.java
+@@ -129,4 +129,21 @@ public static final void createNewFile(File file) throws IOException
+          throw new IOException("Failed to create new file");
+       }
+    }
++
++   /**
++    * Ensures that the target file is within the parent directory.
++    * Throws an exception if this is not the case.
++    * Used to avoid CWE-22: Improper Limitation of a Pathname to a Restricted Directory
++    * vulnerabilities when expanding file archives.
++    *
++    * @param parentDirectory parent directory
++    * @param targetFile target file
++    */
++   public static void validateTargetFileIsInParentDirectory(File parentDirectory, File targetFile) throws IOException
++   {
++      if (!targetFile.getCanonicalFile().toPath().startsWith(parentDirectory.getCanonicalFile().toPath()))
++      {
++         throw new IOException("Entry is outside of the target dir: " + targetFile.getName());
++      }
++   }
+ }
+diff --git a/src/main/java/org/mpxj/common/InputStreamHelper.java b/src/main/java/org/mpxj/common/InputStreamHelper.java
+index 33bfadfb47c..1420617a77e 100644
+--- a/src/main/java/org/mpxj/common/InputStreamHelper.java
++++ b/src/main/java/org/mpxj/common/InputStreamHelper.java
+@@ -190,12 +190,7 @@ private static void processZipStream(File dir, InputStream inputStream) throws I
+          }
+ 
+          File file = new File(dir, entry.getName());
+-
+-         // https://snyk.io/research/zip-slip-vulnerability
+-         if (!file.getCanonicalFile().toPath().startsWith(dir.getCanonicalFile().toPath()))
+-         {
+-            throw new IOException("Entry is outside of the target dir: " + entry.getName());
+-         }
++         FileHelper.validateTargetFileIsInParentDirectory(dir, file);
+ 
+          if (entry.isDirectory())
+          {
+diff --git a/src/main/java/org/mpxj/primavera/p3/P3PRXFileReader.java b/src/main/java/org/mpxj/primavera/p3/P3PRXFileReader.java
+index 9c60056d5cc..717b50e7cba 100644
+--- a/src/main/java/org/mpxj/primavera/p3/P3PRXFileReader.java
++++ b/src/main/java/org/mpxj/primavera/p3/P3PRXFileReader.java
+@@ -100,6 +100,7 @@ private void extractFile(InputStream stream, File dir) throws IOException
+       int dataSizeValue = getInt(dataSize, 0);
+       String fileNameValue = getString(fileName, 0);
+       File file = new File(dir, fileNameValue);
++      FileHelper.validateTargetFileIsInParentDirectory(dir, file);
+ 
+       if (dataSizeValue == 0)
+       {
+diff --git a/src/main/java/org/mpxj/primavera/suretrak/SureTrakSTXFileReader.java b/src/main/java/org/mpxj/primavera/suretrak/SureTrakSTXFileReader.java
+index 0fc75c8150e..68e464f0fc0 100644
+--- a/src/main/java/org/mpxj/primavera/suretrak/SureTrakSTXFileReader.java
++++ b/src/main/java/org/mpxj/primavera/suretrak/SureTrakSTXFileReader.java
+@@ -86,8 +86,9 @@ private void extractFile(InputStream stream, File dir) throws IOException
+ 
+       int dataSizeValue = getInt(dataSize, 0);
+       String fileNameValue = getString(fileName, 0);
+-
+       File file = new File(dir, fileNameValue);
++      FileHelper.validateTargetFileIsInParentDirectory(dir, file);
++
+       if (dataSizeValue == 0)
+       {
+          FileHelper.createNewFile(file);

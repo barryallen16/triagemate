@@ -1,0 +1,35 @@
+From d9652e4611ea36208d5f748028b3a9cd980e6edb Mon Sep 17 00:00:00 2001
+From: Brahma Reddy Battula <brahma@apache.org>
+Date: Mon, 25 Dec 2023 13:11:46 +0530
+Subject: [PATCH] Validate xml file to remediate vulnerablity. Contributed by
+ Bhavya Hoda <bhavyahoda@microsoft.com>
+
+---
+ .../main/java/org/apache/oozie/ambari/view/Utils.java | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/contrib/views/wfmanager/src/main/java/org/apache/oozie/ambari/view/Utils.java b/contrib/views/wfmanager/src/main/java/org/apache/oozie/ambari/view/Utils.java
+index c0459c6a7d7..89ea8d3c119 100644
+--- a/contrib/views/wfmanager/src/main/java/org/apache/oozie/ambari/view/Utils.java
++++ b/contrib/views/wfmanager/src/main/java/org/apache/oozie/ambari/view/Utils.java
+@@ -58,9 +58,20 @@
+ public class Utils {
+ 	private static final String XML_INDENT_SPACES = "4";
+ 	private static final String XML_INDENT_AMT_PROP_NAME = "{http://xml.apache.org/xslt}indent-amount";
++	private final String FEATURES_DISALLOW_DOCTYPE = "http://apache.org/xml/features/disallow-doctype-decl";
+ 	private final static Logger LOGGER = LoggerFactory
+ 			.getLogger(Utils.class);
+ 	private final DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
++	Utils() {
++		// Refer to https://docs.oracle.com/javase/8/docs/api/javax/xml/parsers/DocumentBuilderFactory.html#setFeature-java.lang.String-boolean-
++		try{
++			dbf.setFeature(FEATURES_DISALLOW_DOCTYPE, true);
++			LOGGER.info("Setting feature disallow doctype to true");
++		} catch (ParserConfigurationException | TransformerFactoryConfigurationError e) {
++			LOGGER.error("Error in formatting xml", e);
++			throw new RuntimeException(e);
++		}
++	}
+ 	public String formatXml(String xml) {
+ 
+ 		try {

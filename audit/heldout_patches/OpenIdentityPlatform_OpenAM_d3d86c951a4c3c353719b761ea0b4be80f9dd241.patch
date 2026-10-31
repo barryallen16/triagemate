@@ -1,0 +1,252 @@
+From d3d86c951a4c3c353719b761ea0b4be80f9dd241 Mon Sep 17 00:00:00 2001
+From: Maxim Thomas <maxim.thomas@gmail.com>
+Date: Wed, 22 Apr 2026 14:29:17 +0300
+Subject: [PATCH] CVE-2026-41573 OpenAM LDAP Injection via  Parameter
+
+---
+ .../openam/core/rest/IdentityResourceV1.java  |  4 +--
+ .../plugins/DelegationPolicyImpl.java         |  3 +-
+ .../idm/plugins/internal/SpecialRepo.java     |  5 ++--
+ .../identity/idm/server/IdServicesImpl.java   |  4 +--
+ .../openam/idrepo/ldap/DJLDAPv3Repo.java      |  3 +-
+ .../openam/idrepo/ldap/GenericRepoTest.java   |  9 +++---
+ .../impl/IdRepoDataStoreProvider.java         |  3 +-
+ .../forgerock/openam/utils/CrestQuery.java    | 29 +++++++++++++++++++
+ 8 files changed, 47 insertions(+), 13 deletions(-)
+
+diff --git a/openam-core-rest/src/main/java/org/forgerock/openam/core/rest/IdentityResourceV1.java b/openam-core-rest/src/main/java/org/forgerock/openam/core/rest/IdentityResourceV1.java
+index 0dd5d3b973..2397cbb30f 100644
+--- a/openam-core-rest/src/main/java/org/forgerock/openam/core/rest/IdentityResourceV1.java
++++ b/openam-core-rest/src/main/java/org/forgerock/openam/core/rest/IdentityResourceV1.java
+@@ -12,7 +12,7 @@
+  * information: "Portions copyright [year] [name of copyright owner]".
+  *
+  * Copyright 2012-2016 ForgeRock AS.
+- * Portions copyright 2022-2025 3A Systems, LLC.
++ * Portions copyright 2022-2026 3A Systems, LLC.
+  */
+ package org.forgerock.openam.core.rest;
+ 
+@@ -1209,7 +1209,7 @@ public Promise<QueryResponse, ResourceException> queryCollection(final Context c
+             if (queryId == null || queryId.isEmpty()) {
+                 queryId = "*";
+             }
+-            List<String> users = identityServices.search(new CrestQuery(queryId, null, null, false),
++            List<String> users = identityServices.search(new CrestQuery(queryId),
+                                                          getIdentityServicesAttributes(realm), admin);
+             String principalName = PrincipalRestUtils.getPrincipalNameFromServerContext(context);
+             debug.message("IdentityResource.queryCollection :: QUERY performed on realm={}  by principalName={}", realm,
+diff --git a/openam-core/src/main/java/com/sun/identity/delegation/plugins/DelegationPolicyImpl.java b/openam-core/src/main/java/com/sun/identity/delegation/plugins/DelegationPolicyImpl.java
+index cfdaa07d83..43d813990d 100644
+--- a/openam-core/src/main/java/com/sun/identity/delegation/plugins/DelegationPolicyImpl.java
++++ b/openam-core/src/main/java/com/sun/identity/delegation/plugins/DelegationPolicyImpl.java
+@@ -25,6 +25,7 @@
+  * $Id: DelegationPolicyImpl.java,v 1.12 2010/01/16 06:35:25 dillidorai Exp $
+  *
+  * Portions Copyrighted 2011-2016 ForgeRock AS.
++ * Portions Copyrighted 2022-2026 3A Systems LLC.
+  */
+ 
+ package com.sun.identity.delegation.plugins;
+@@ -437,7 +438,7 @@ public Set getSubjects(SSOToken token, String orgName, Set types,
+                         ctrl.setRecursive(true);
+                         ctrl.setMaxResults(-1);
+                         ctrl.setTimeOut(-1);
+-                        CrestQuery crestQuery = new CrestQuery(pattern, null, null, false);
++                        CrestQuery crestQuery = new CrestQuery(pattern);
+                         IdSearchResults idsr = idRepo.searchIdentities(
+                                                 idType, crestQuery, ctrl);
+                         if (idsr != null) {
+diff --git a/openam-core/src/main/java/com/sun/identity/idm/plugins/internal/SpecialRepo.java b/openam-core/src/main/java/com/sun/identity/idm/plugins/internal/SpecialRepo.java
+index 7a9e64ea40..dbc46e140b 100644
+--- a/openam-core/src/main/java/com/sun/identity/idm/plugins/internal/SpecialRepo.java
++++ b/openam-core/src/main/java/com/sun/identity/idm/plugins/internal/SpecialRepo.java
+@@ -25,6 +25,7 @@
+  * $Id: SpecialRepo.java,v 1.19 2010/01/06 17:41:00 veiming Exp $
+  *
+  * Portions Copyrighted 2012-2016 ForgeRock AS.
++ * Portions Copyrighted 2021-2026 3A Systems LLC.
+  */
+ 
+ package com.sun.identity.idm.plugins.internal;
+@@ -565,7 +566,7 @@ public RepoSearchResults search(SSOToken token, IdType type, CrestQuery crestQue
+                     if (uidVals != null && !uidVals.isEmpty()) {
+                         pattern = (String) uidVals.iterator().next();
+                         if (crestQuery.isEscapeQueryId()) {
+-                            pattern =  Filter.escapeAssertionValue(pattern);
++                            pattern = crestQuery.getEscapedQueryId();
+                         }
+                     } else {
+                         // pattern is "*" and avPairs is not empty, so return
+@@ -579,7 +580,7 @@ public RepoSearchResults search(SSOToken token, IdType type, CrestQuery crestQue
+                 // If wild card is used for pattern, do a search else a lookup
+                 if (pattern.indexOf('*') != -1) {
+                     if (crestQuery.isEscapeQueryId()) {
+-                        pattern =  Filter.escapeAssertionValue(pattern);
++                        pattern = crestQuery.getEscapedQueryId();
+                     }
+                     userRes = userConfig.getSubConfigNames(pattern);
+                 } else {
+diff --git a/openam-core/src/main/java/com/sun/identity/idm/server/IdServicesImpl.java b/openam-core/src/main/java/com/sun/identity/idm/server/IdServicesImpl.java
+index 1403cae809..342d94c932 100644
+--- a/openam-core/src/main/java/com/sun/identity/idm/server/IdServicesImpl.java
++++ b/openam-core/src/main/java/com/sun/identity/idm/server/IdServicesImpl.java
+@@ -25,7 +25,7 @@
+  * $Id: IdServicesImpl.java,v 1.61 2010/01/20 01:08:36 goodearth Exp $
+  *
+  * Portions Copyrighted 2011-2016 ForgeRock AS.
+- * Portions Copyrighted 2021 Open Identity Platform Community.
++ * Portions Copyrighted 2021-2026 3A Systems LLC.
+  */
+ 
+ package com.sun.identity.idm.server;
+@@ -1667,7 +1667,7 @@ protected boolean isSpecialIdentity(SSOToken token, String name,
+                for (Iterator items = repos.iterator(); items.hasNext();) {
+                    IdRepo repo = (IdRepo) items.next();
+                    if (repo instanceof SpecialRepo) {
+-                       CrestQuery crestQuery = new CrestQuery("*", null, null, false);
++                       CrestQuery crestQuery = new CrestQuery("*");
+                        RepoSearchResults res = repo.search(token, type, crestQuery,
+                            0, 0, Collections.EMPTY_SET, false,
+                            0, Collections.EMPTY_MAP, false);
+diff --git a/openam-datastore/src/main/java/org/forgerock/openam/idrepo/ldap/DJLDAPv3Repo.java b/openam-datastore/src/main/java/org/forgerock/openam/idrepo/ldap/DJLDAPv3Repo.java
+index 8511385079..817d502847 100644
+--- a/openam-datastore/src/main/java/org/forgerock/openam/idrepo/ldap/DJLDAPv3Repo.java
++++ b/openam-datastore/src/main/java/org/forgerock/openam/idrepo/ldap/DJLDAPv3Repo.java
+@@ -13,6 +13,7 @@
+  *
+  * Copyright 2013-2016 ForgeRock AS.
+  * Portions Copyright 2016 Nomura Research Institute, Ltd.
++ * Portions copyright 2019-2026 3A Systems LLC.
+  */
+ package org.forgerock.openam.idrepo.ldap;
+ 
+@@ -1249,7 +1250,7 @@ protected Filter getFilter(IdType type, CrestQuery crestQuery, int filterOp, Map
+ 
+         		String pattern = crestQuery.getQueryId();
+                 if (crestQuery.isEscapeQueryId()) {
+-                    pattern =  Filter.escapeAssertionValue(pattern);
++                    pattern =  crestQuery.getEscapedQueryId();
+                 }
+                 first = Filter.valueOf(searchAttr + "=" + pattern);
+         	}
+diff --git a/openam-datastore/src/test/java/org/forgerock/openam/idrepo/ldap/GenericRepoTest.java b/openam-datastore/src/test/java/org/forgerock/openam/idrepo/ldap/GenericRepoTest.java
+index 9b26a51814..70f7b7a46c 100644
+--- a/openam-datastore/src/test/java/org/forgerock/openam/idrepo/ldap/GenericRepoTest.java
++++ b/openam-datastore/src/test/java/org/forgerock/openam/idrepo/ldap/GenericRepoTest.java
+@@ -12,6 +12,7 @@
+  * information: "Portions copyright [year] [name of copyright owner]".
+  *
+  * Copyright 2013-2016 ForgeRock AS.
++ * Portions copyright 2018-2026 3A Systems LLC.
+  */
+ package org.forgerock.openam.idrepo.ldap;
+ 
+@@ -350,7 +351,7 @@ public void searchReturnsEmptyResultsIfNoMatch() throws Exception {
+ 
+     @Test
+     public void searchReturnsMatchesForSearchAttribute() throws Exception {
+-        CrestQuery crestQuery = new CrestQuery("searchTester*", null, null, false);
++        CrestQuery crestQuery = new CrestQuery("searchTester*");
+         RepoSearchResults results =
+                 idrepo.search(null, IdType.USER, crestQuery, 0, 0, null, true, IdRepo.AND_MOD, null, true);
+         assertThat(results.getErrorCode()).isEqualTo(ResultCode.SUCCESS.intValue());
+@@ -380,7 +381,7 @@ public void searchReturnsMatchesForComplexFilters() throws Exception {
+         Map<String, Set<String>> avPairs = new HashMap<String, Set<String>>();
+         avPairs.put("objectclass", asSet("inetorgperson"));
+         avPairs.put("sn", asSet("hellNo"));
+-        CrestQuery crestQuery = new CrestQuery("*", null, null, false);
++        CrestQuery crestQuery = new CrestQuery("*");
+         RepoSearchResults results =
+                 idrepo.search(null, IdType.USER, crestQuery, 0, 0, null, true, IdRepo.AND_MOD, avPairs, true);
+         assertThat(results.getErrorCode()).isEqualTo(ResultCode.SUCCESS.intValue());
+@@ -400,10 +401,10 @@ public void getSearchFilter()  {
+         avPairs.put("sn", asSet("hellNo"));
+         CrestQuery crestQuery = new CrestQuery("*");
+         Filter filter = idrepo.getFilter(IdType.USER, crestQuery, IdRepo.AND_MOD, avPairs);
+-        assertThat(filter.toString()).isEqualTo("(&(&(sn=hellNo)(objectclass=inetorgperson))(&(uid=\\2A)(objectclass=inetorgperson)))");
++        assertThat(filter.toString()).isEqualTo("(&(&(sn=hellNo)(objectclass=inetorgperson))(&(uid=*)(objectclass=inetorgperson)))");
+ 
+         avPairs = new HashMap<>();
+-        crestQuery = new CrestQuery("*", null, null, false);
++        crestQuery = new CrestQuery("*");
+         filter = idrepo.getFilter(IdType.USER, crestQuery, IdRepo.AND_MOD, avPairs);
+         assertThat(filter.toString()).isEqualTo("(&(uid=*)(objectclass=inetorgperson))");
+ 
+diff --git a/openam-federation/OpenFM/src/main/java/com/sun/identity/plugin/datastore/impl/IdRepoDataStoreProvider.java b/openam-federation/OpenFM/src/main/java/com/sun/identity/plugin/datastore/impl/IdRepoDataStoreProvider.java
+index d11fc6f4c6..e9fc7440dd 100755
+--- a/openam-federation/OpenFM/src/main/java/com/sun/identity/plugin/datastore/impl/IdRepoDataStoreProvider.java
++++ b/openam-federation/OpenFM/src/main/java/com/sun/identity/plugin/datastore/impl/IdRepoDataStoreProvider.java
+@@ -25,6 +25,7 @@
+  * $Id: IdRepoDataStoreProvider.java,v 1.6 2008/08/06 17:29:26 exu Exp $
+  *
+  * Portions Copyrighted 2013-2015 ForgeRock AS.
++ * Portions Copyrighted 2026 3A Systems LLC.
+  */
+ 
+ package com.sun.identity.plugin.datastore.impl;
+@@ -275,7 +276,7 @@ public String getUserID(String orgDN, Map<String, Set<String>> avPairs)
+         try {
+             IdSearchControl searchControl = getIdSearchControl(avPairs, IdSearchOpModifier.AND);
+             AMIdentityRepository idRepo = getAMIdentityRepository(orgDN);
+-            CrestQuery pattern = new CrestQuery("*", null, null, false);
++            CrestQuery pattern = new CrestQuery("*");
+             IdSearchResults searchResults = idRepo.searchIdentities(IdType.USER, pattern, searchControl);
+             amIdSet = searchResults.getSearchResults();
+         } catch (IdRepoException ame) {
+diff --git a/openam-shared/src/main/java/org/forgerock/openam/utils/CrestQuery.java b/openam-shared/src/main/java/org/forgerock/openam/utils/CrestQuery.java
+index fcc999572a..88d8b7f798 100644
+--- a/openam-shared/src/main/java/org/forgerock/openam/utils/CrestQuery.java
++++ b/openam-shared/src/main/java/org/forgerock/openam/utils/CrestQuery.java
+@@ -12,6 +12,7 @@
+  * information: "Portions copyright [year] [name of copyright owner]".
+  *
+  * Copyright 2015-2016 ForgeRock AS.
++ * Portions copyright 2021-2026 3A Systems LLC.
+  */
+ 
+ package org.forgerock.openam.utils;
+@@ -19,8 +20,11 @@
+ import java.util.List;
+ 
+ import org.forgerock.json.JsonPointer;
++import org.forgerock.opendj.ldap.ByteString;
+ import org.forgerock.util.query.QueryFilter;
+ 
++import static com.forgerock.opendj.util.StaticUtils.byteToHex;
++
+ /**
+  * This class was created to handle queries made via CREST that can provide either a _queryID (String) or a
+  * _queryFilter (QueryFilter&lt;JsonPointer&gt;) to search for.  Obviously the query filter cannot be converted
+@@ -136,6 +140,31 @@ public boolean hasQueryFilter() {
+     public boolean isEscapeQueryId() {
+         return escapeQueryId;
+     }
++
++     /** The backslash character. */
++    private static final byte BACKSLASH = 0x5C;
++
++    public String getEscapedQueryId() {
++
++        final ByteString bytes = ByteString.valueOfObject(queryId);
++        final StringBuilder builder = new StringBuilder(bytes.length());
++        for (int i = 0; i < bytes.length(); i++) {
++            final byte b = bytes.byteAt(i);
++            if (((b & 0x7F) != b) // Not 7-bit clean
++                    || b <= 0x1F  // Below the printable character range
++                    || b == 0x28  // Open parenthesis
++                    || b == 0x29  // Close parenthesis
++                    || b == BACKSLASH
++                    || b == 0x7F  /* Delete character */) {
++                builder.append('\\');
++                builder.append(byteToHex(b));
++            } else {
++                builder.append((char) b);
++            }
++        }
++        return builder.toString();
++    }
++
+     /**
+      * This is mainly for debugging purposes so you can say "this is a rough idea of the CrestQuery object I've
+      * been handed".

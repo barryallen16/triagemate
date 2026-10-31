@@ -1,0 +1,227 @@
+From 03758f3a30dc99b01c75a330dd57a6d3499a1ce7 Mon Sep 17 00:00:00 2001
+From: Jack Smith <jasmith@hubspot.com>
+Date: Thu, 29 Jan 2026 18:22:58 -0500
+Subject: [PATCH 1/4] Add test that prevents bypassing the
+ JinjavaBeanELResolver's class restrictions
+
+---
+ .../java/com/hubspot/jinjava/lib/tag/ForTagTest.java     | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/src/test/java/com/hubspot/jinjava/lib/tag/ForTagTest.java b/src/test/java/com/hubspot/jinjava/lib/tag/ForTagTest.java
+index 0d579af9d..905e0da3d 100644
+--- a/src/test/java/com/hubspot/jinjava/lib/tag/ForTagTest.java
++++ b/src/test/java/com/hubspot/jinjava/lib/tag/ForTagTest.java
+@@ -406,6 +406,15 @@ public void forLoopTupleWithNullValues() {
+     assertThat(result).isEqualTo(" -1  -1  null  null  null ");
+   }
+ 
++  @Test
++  public void itUsesJinjavaRestrictedResolverOnReadingLoopVars() {
++    String template =
++      """
++      {% for _, config, class in ____int3rpr3t3r____ %}{{ class }}{% endfor %}""";
++    String result = interpreter.render(template);
++    assertThat(result).isEqualTo("");
++  }
++
+   public static boolean inForLoop() {
+     JinjavaInterpreter interpreter = JinjavaInterpreter.getCurrent();
+     return interpreter.getContext().isInForLoop();
+
+From 71a8003a4034ec22b7f5e48309c0184f23fec075 Mon Sep 17 00:00:00 2001
+From: Jack Smith <jasmith@hubspot.com>
+Date: Thu, 29 Jan 2026 18:25:22 -0500
+Subject: [PATCH 2/4] Use interpreter.resolveProperty instead of invoking the
+ read method directly
+
+---
+ src/main/java/com/hubspot/jinjava/lib/tag/ForTag.java | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/main/java/com/hubspot/jinjava/lib/tag/ForTag.java b/src/main/java/com/hubspot/jinjava/lib/tag/ForTag.java
+index 6f79cb68d..bd30aea24 100644
+--- a/src/main/java/com/hubspot/jinjava/lib/tag/ForTag.java
++++ b/src/main/java/com/hubspot/jinjava/lib/tag/ForTag.java
+@@ -247,7 +247,7 @@ public String renderForCollection(
+                   if (loopVar.equals(valProp.getName())) {
+                     interpreter
+                       .getContext()
+-                      .put(loopVar, valProp.getReadMethod().invoke(val));
++                      .put(loopVar, interpreter.resolveProperty(val, valProp.getName()));
+                     break;
+                   }
+                 }
+
+From 53fbb69e01ed8c73f927f9c26fe752557d68cc09 Mon Sep 17 00:00:00 2001
+From: Jack Smith <jasmith@hubspot.com>
+Date: Fri, 30 Jan 2026 11:17:35 -0500
+Subject: [PATCH 3/4] Update changes to prepare for release
+
+---
+ CHANGES.md | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/CHANGES.md b/CHANGES.md
+index 1c7735811..d2e4a5f0c 100644
+--- a/CHANGES.md
++++ b/CHANGES.md
+@@ -1,9 +1,23 @@
+ # Jinjava Releases #
++### 2025-01-30 Version 2.8.3 ([Maven Central](https://search.maven.org/artifact/com.hubspot.jinjava/jinjava/2.8.3/jar)) ###
++* Disallow accessing properties on restricted classes while rendering through ForTag
++* Upgrade jackson to version 2.20
++* [Add performance optimization to chained filters](https://github.com/HubSpot/jinjava/pull/1274)
++
++### 2025-01-30 Version 2.7.6 ([Maven Central](https://search.maven.org/artifact/com.hubspot.jinjava/jinjava/2.7.6/jar)) ###
++* Disallow accessing properties on restricted classes while rendering through ForTag
++* Upgrade jackson to version 2.20
++
+ ### 2025-10-22 Version 2.8.2 ([Maven Central](https://search.maven.org/artifact/com.hubspot.jinjava/jinjava/2.8.2/jar)) ###
+ * [Fix helper token escape handling and unescaping when unquoting strings](https://github.com/HubSpot/jinjava/pull/1263)
++
++### 2025-09-30 Version 2.7.5 ([Maven Central](https://search.maven.org/artifact/com.hubspot.jinjava/jinjava/2.7.5/jar)) ###
++* Disallow accessing properties on restricted classes while rendering
++
+ ### 2025-09-16 Version 2.8.1 ([Maven Central](https://search.maven.org/artifact/com.hubspot.jinjava/jinjava/2.8.1/jar)) ###
+ * Disallow accessing properties on restricted classes while rendering
+ * [Make stack operations use AutoCloseable for safer usage with try-with-resources](https://github.com/HubSpot/jinjava/pull/1250)
++
+ ### 2025-05-05 Version 2.8.0 ([Maven Central](https://search.maven.org/artifact/com.hubspot.jinjava/jinjava/2.8.0/jar)) ###
+ * [Target Java 17](https://github.com/HubSpot/jinjava/pull/1238)
+ * [Implement PyMap#get with optional default](https://github.com/HubSpot/jinjava/pull/1233)
+
+From f5c4dd5309c222ae9db8f10a6d03bb7c0379dc3c Mon Sep 17 00:00:00 2001
+From: Jack Smith <jasmith@hubspot.com>
+Date: Fri, 30 Jan 2026 11:59:33 -0500
+Subject: [PATCH 4/4] Explicitly ban evaluating ObjectMapper within jinjava for
+ defense-in-depth
+
+---
+ .../jinjava/el/ext/JinjavaBeanELResolver.java | 12 +++-
+ .../el/ext/JinjavaBeanELResolverTest.java     | 58 +++++++++++++++++++
+ 2 files changed, 68 insertions(+), 2 deletions(-)
+
+diff --git a/src/main/java/com/hubspot/jinjava/el/ext/JinjavaBeanELResolver.java b/src/main/java/com/hubspot/jinjava/el/ext/JinjavaBeanELResolver.java
+index 1146ad167..5a3779b14 100644
+--- a/src/main/java/com/hubspot/jinjava/el/ext/JinjavaBeanELResolver.java
++++ b/src/main/java/com/hubspot/jinjava/el/ext/JinjavaBeanELResolver.java
+@@ -1,5 +1,6 @@
+ package com.hubspot.jinjava.el.ext;
+ 
++import com.fasterxml.jackson.databind.ObjectMapper;
+ import com.google.common.base.CaseFormat;
+ import com.google.common.collect.ImmutableSet;
+ import com.hubspot.jinjava.interpret.DeferredValueException;
+@@ -36,6 +37,7 @@ public class JinjavaBeanELResolver extends BeanELResolver {
+     .add("notify")
+     .add("notifyAll")
+     .add("wait")
++    .add("readValueAs")
+     .build();
+ 
+   private static final Set<String> DEFERRED_EXECUTION_RESTRICTED_METHODS = ImmutableSet
+@@ -59,6 +61,10 @@ public class JinjavaBeanELResolver extends BeanELResolver {
+     .add("set")
+     .add("merge")
+     .build();
++  private static final String JAVA_LANG_REFLECT_PACKAGE =
++    Method.class.getPackage().getName(); // java.lang.reflect
++  private static final String JACKSON_DATABIND_PACKAGE =
++    ObjectMapper.class.getPackage().getName(); // com.fasterxml.jackson.databind
+ 
+   /**
+    * Creates a new read/write {@link JinjavaBeanELResolver}.
+@@ -251,9 +257,11 @@ protected boolean isRestrictedClass(Object o) {
+       return false;
+     }
+ 
++    Package oPackage = o.getClass().getPackage();
+     return (
+-      (o.getClass().getPackage() != null &&
+-        o.getClass().getPackage().getName().startsWith("java.lang.reflect")) ||
++      (oPackage != null &&
++        (oPackage.getName().startsWith(JAVA_LANG_REFLECT_PACKAGE) ||
++          oPackage.getName().startsWith(JACKSON_DATABIND_PACKAGE))) ||
+       o instanceof Class ||
+       o instanceof ClassLoader ||
+       o instanceof Thread ||
+diff --git a/src/test/java/com/hubspot/jinjava/el/ext/JinjavaBeanELResolverTest.java b/src/test/java/com/hubspot/jinjava/el/ext/JinjavaBeanELResolverTest.java
+index 42627cbfa..8f7926f40 100644
+--- a/src/test/java/com/hubspot/jinjava/el/ext/JinjavaBeanELResolverTest.java
++++ b/src/test/java/com/hubspot/jinjava/el/ext/JinjavaBeanELResolverTest.java
+@@ -5,11 +5,13 @@
+ import static org.mockito.Mockito.mock;
+ import static org.mockito.Mockito.when;
+ 
++import com.fasterxml.jackson.databind.ObjectMapper;
+ import com.google.common.collect.ImmutableSet;
+ import com.hubspot.jinjava.JinjavaConfig;
+ import com.hubspot.jinjava.el.JinjavaELContext;
+ import com.hubspot.jinjava.interpret.AutoCloseableSupplier;
+ import com.hubspot.jinjava.interpret.JinjavaInterpreter;
++import java.util.List;
+ import javax.el.ELContext;
+ import javax.el.MethodNotFoundException;
+ import javax.el.PropertyNotFoundException;
+@@ -186,4 +188,60 @@ public void itDoesNotAllowAccessingPropertiesOfInterpreter() {
+         .isNull();
+     }
+   }
++
++  @Test
++  public void itDoesNotGettingFromObjectMapper() {
++    try (
++      AutoCloseableSupplier.AutoCloseableImpl<JinjavaInterpreter> c = JinjavaInterpreter
++        .closeablePushCurrent(interpreter)
++        .get()
++    ) {
++      assertThat(
++        jinjavaBeanELResolver.getValue(elContext, new ObjectMapper(), "dateFormat")
++      )
++        .isNull();
++    }
++  }
++
++  @Test
++  public void itDoesNotAllowInvokingFromObjectMapper() throws NoSuchMethodException {
++    try (
++      AutoCloseableSupplier.AutoCloseableImpl<JinjavaInterpreter> c = JinjavaInterpreter
++        .closeablePushCurrent(interpreter)
++        .get()
++    ) {
++      ObjectMapper objectMapper = new ObjectMapper();
++      assertThatThrownBy(() ->
++          jinjavaBeanELResolver.invoke(
++            elContext,
++            objectMapper,
++            "getDateFormat",
++            new Class[] {},
++            new Object[] {}
++          )
++        )
++        .isInstanceOf(MethodNotFoundException.class);
++    }
++  }
++
++  @Test
++  public void itDoesNotAllowInvokingFromMethod() throws NoSuchMethodException {
++    try (
++      AutoCloseableSupplier.AutoCloseableImpl<JinjavaInterpreter> c = JinjavaInterpreter
++        .closeablePushCurrent(interpreter)
++        .get()
++    ) {
++      List<String> list = List.of("foo");
++      assertThatThrownBy(() ->
++          jinjavaBeanELResolver.invoke(
++            elContext,
++            list.getClass().getMethod("get", int.class),
++            "invoke",
++            new Class[] { Object.class, Object[].class },
++            new Object[] { list, 0 }
++          )
++        )
++        .isInstanceOf(MethodNotFoundException.class);
++    }
++  }
+ }

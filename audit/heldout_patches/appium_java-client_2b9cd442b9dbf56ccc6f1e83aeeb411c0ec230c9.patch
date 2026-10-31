@@ -1,0 +1,207 @@
+From 2b9cd442b9dbf56ccc6f1e83aeeb411c0ec230c9 Mon Sep 17 00:00:00 2001
+From: Mykola Mokhnach <mokhnach@gmail.com>
+Date: Sun, 19 Apr 2026 19:41:30 +0200
+Subject: [PATCH] fix: Perform additional security checks on overrideServerUrl
+ API (#2408)
+
+---
+ .../internal/DirectConnectUrlSafety.java      | 78 +++++++++++++++++++
+ .../remote/AppiumCommandExecutor.java         | 10 ++-
+ .../internal/DirectConnectUrlSafetyTest.java  | 37 +++++++++
+ .../remote/AppiumCommandExecutorTest.java     | 12 ++-
+ 4 files changed, 134 insertions(+), 3 deletions(-)
+ create mode 100644 src/main/java/io/appium/java_client/internal/DirectConnectUrlSafety.java
+ create mode 100644 src/test/java/io/appium/java_client/internal/DirectConnectUrlSafetyTest.java
+
+diff --git a/src/main/java/io/appium/java_client/internal/DirectConnectUrlSafety.java b/src/main/java/io/appium/java_client/internal/DirectConnectUrlSafety.java
+new file mode 100644
+index 000000000..af6d48de1
+--- /dev/null
++++ b/src/main/java/io/appium/java_client/internal/DirectConnectUrlSafety.java
+@@ -0,0 +1,78 @@
++/*
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package io.appium.java_client.internal;
++
++import org.openqa.selenium.SessionNotCreatedException;
++
++import java.net.InetAddress;
++import java.net.URL;
++import java.net.UnknownHostException;
++
++/**
++ * Validates URLs used with {@code overrideServerUrl} (for example after a {@code directConnect}
++ * response). Refuses the override when any resolved address is loopback, link-local (including
++ * typical cloud metadata IPv4 link-local space), unspecified, or multicast.
++ *
++ * <p>This is not a full &quot;public internet only&quot; policy: RFC 1918 private space, shared
++ * address space ({@code 100.64.0.0/10}), IPv6 unique-local ({@code fc00::/7}), and other addresses
++ * outside the checks above are still accepted. Stricter control belongs at the application or
++ * network layer (allowlists, egress rules, etc.).
++ */
++public final class DirectConnectUrlSafety {
++
++    private DirectConnectUrlSafety() {
++    }
++
++    /**
++     * Ensures the given URL's host does not resolve to loopback, link-local, unspecified, or
++     * multicast addresses (see class documentation for what is still allowed).
++     *
++     * @param url candidate server URL
++     * @throws SessionNotCreatedException if the host is missing, cannot be resolved, or resolves
++     *         to any address in the disallowed categories
++     */
++    public static void requireSafeOverrideTarget(URL url) throws SessionNotCreatedException {
++        String host = url.getHost();
++        if (host == null || host.isEmpty()) {
++            throw new SessionNotCreatedException(
++                    "Refusing to override the server URL: the URL must include a non-empty host.");
++        }
++
++        final InetAddress[] addresses;
++        try {
++            addresses = InetAddress.getAllByName(host);
++        } catch (UnknownHostException e) {
++            throw new SessionNotCreatedException(
++                    "Refusing to override the server URL: cannot resolve host '" + host + "'.", e);
++        }
++
++        for (InetAddress address : addresses) {
++            if (isDisallowed(address)) {
++                throw new SessionNotCreatedException(String.format(
++                        "Refusing to override the server URL: host '%s' resolves to %s, which is not "
++                                + "allowed (loopback, link-local, unspecified, or multicast address).",
++                        host,
++                        address.getHostAddress()));
++            }
++        }
++    }
++
++    private static boolean isDisallowed(InetAddress address) {
++        return address.isLoopbackAddress()
++                || address.isLinkLocalAddress()
++                || address.isAnyLocalAddress()
++                || address.isMulticastAddress();
++    }
++}
+diff --git a/src/main/java/io/appium/java_client/remote/AppiumCommandExecutor.java b/src/main/java/io/appium/java_client/remote/AppiumCommandExecutor.java
+index ad6bb36c3..54b590201 100644
+--- a/src/main/java/io/appium/java_client/remote/AppiumCommandExecutor.java
++++ b/src/main/java/io/appium/java_client/remote/AppiumCommandExecutor.java
+@@ -18,6 +18,7 @@
+ 
+ import com.google.common.base.Throwables;
+ import io.appium.java_client.AppiumClientConfig;
++import io.appium.java_client.internal.DirectConnectUrlSafety;
+ import io.appium.java_client.internal.ReflectionHelpers;
+ import lombok.Getter;
+ import org.jspecify.annotations.NullMarked;
+@@ -155,9 +156,16 @@ protected HttpClient getClient() {
+      * Override the http client in the HttpCommandExecutor class with a new http client instance with the given URL.
+      * It uses the same http client factory and client config for the new http client instance
+      * if the constructor got them.
+-     * @param serverUrl A url to override.
++     *
++     * @param serverUrl URL to use for subsequent HTTP requests. Before switching clients, the host is
++     *                  resolved and the override is refused if any resolved address is loopback,
++     *                  link-local (including IPv4 link-local such as metadata-service ranges),
++     *                  unspecified ({@code 0.0.0.0} / {@code ::}), or multicast. Private (RFC 1918),
++     *                  carrier-grade NAT ({@code 100.64.0.0/10}), IPv6 unique-local ({@code fc00::/7}),
++     *                  and other non-special addresses are not rejected by this check.
+      */
+     protected void overrideServerUrl(URL serverUrl) {
++        DirectConnectUrlSafety.requireSafeOverrideTarget(serverUrl);
+         HttpClient newClient = getHttpClientFactory().createClient(appiumClientConfig.baseUrl(serverUrl));
+         setPrivateFieldValue(HttpCommandExecutor.class, "client", newClient);
+     }
+diff --git a/src/test/java/io/appium/java_client/internal/DirectConnectUrlSafetyTest.java b/src/test/java/io/appium/java_client/internal/DirectConnectUrlSafetyTest.java
+new file mode 100644
+index 000000000..beda427f9
+--- /dev/null
++++ b/src/test/java/io/appium/java_client/internal/DirectConnectUrlSafetyTest.java
+@@ -0,0 +1,37 @@
++package io.appium.java_client.internal;
++
++import org.junit.jupiter.api.Test;
++import org.junit.jupiter.params.ParameterizedTest;
++import org.junit.jupiter.params.provider.ValueSource;
++import org.openqa.selenium.SessionNotCreatedException;
++
++import java.net.MalformedURLException;
++import java.net.URL;
++
++import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
++import static org.junit.jupiter.api.Assertions.assertThrows;
++
++class DirectConnectUrlSafetyTest {
++
++    @Test
++    void allowsDocumentationNetIpLiteral() throws MalformedURLException {
++        // RFC 5737 TEST-NET-3; parsed locally without DNS
++        assertDoesNotThrow(() -> DirectConnectUrlSafety.requireSafeOverrideTarget(
++                new URL("https://203.0.113.1/wd/hub")));
++    }
++
++    @ParameterizedTest(name = "[{index}] {0}")
++    @ValueSource(strings = {
++        "https://127.0.0.1:4443/wd/hub",
++        "https://localhost:4443/wd/hub",
++        "https://169.254.169.254/wd/hub",
++        "https://[::1]:4443/wd/hub",
++        "https://0.0.0.0:4443/wd/hub",
++        "https://[::]:4443/wd/hub",
++        "https://224.0.0.1:4443/wd/hub",
++    })
++    void rejectsDisallowedOverrideTargets(String urlSpec) throws MalformedURLException {
++        assertThrows(SessionNotCreatedException.class,
++                () -> DirectConnectUrlSafety.requireSafeOverrideTarget(new URL(urlSpec)));
++    }
++}
+diff --git a/src/test/java/io/appium/java_client/remote/AppiumCommandExecutorTest.java b/src/test/java/io/appium/java_client/remote/AppiumCommandExecutorTest.java
+index 38b1b6459..b11bd6273 100644
+--- a/src/test/java/io/appium/java_client/remote/AppiumCommandExecutorTest.java
++++ b/src/test/java/io/appium/java_client/remote/AppiumCommandExecutorTest.java
+@@ -3,12 +3,14 @@
+ import io.appium.java_client.AppiumClientConfig;
+ import io.appium.java_client.MobileCommand;
+ import org.junit.jupiter.api.Test;
++import org.openqa.selenium.SessionNotCreatedException;
+ 
+ import java.net.MalformedURLException;
+ import java.net.URL;
+ 
+ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+ import static org.junit.jupiter.api.Assertions.assertNotNull;
++import static org.junit.jupiter.api.Assertions.assertThrows;
+ 
+ class AppiumCommandExecutorTest {
+     private static final String APPIUM_URL = "https://appium.example.com";
+@@ -35,7 +37,13 @@ void getHttpClientFactory() {
+     }
+ 
+     @Test
+-    void overrideServerUrl() {
+-        assertDoesNotThrow(() -> createExecutor().overrideServerUrl(new URL("https://direct.example.com")));
++    void overrideServerUrl() throws MalformedURLException {
++        assertDoesNotThrow(() -> createExecutor().overrideServerUrl(new URL("https://203.0.113.1/wd/hub")));
++    }
++
++    @Test
++    void overrideServerUrlRejectsLoopbackTarget() throws MalformedURLException {
++        assertThrows(SessionNotCreatedException.class,
++                () -> createExecutor().overrideServerUrl(new URL("https://127.0.0.1:4443/wd/hub")));
+     }
+ }

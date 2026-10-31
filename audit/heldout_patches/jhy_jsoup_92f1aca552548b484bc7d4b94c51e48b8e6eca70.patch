@@ -1,0 +1,120 @@
+From 92f1aca552548b484bc7d4b94c51e48b8e6eca70 Mon Sep 17 00:00:00 2001
+From: Jonathan Hedley <jonathan@hedley.net>
+Date: Sun, 26 Jul 2026 14:03:02 +1000
+Subject: [PATCH] Preserve control characters in parsed tag names
+
+Tokenizer tag names were normalized with trim(), which could make a name ending in a control character take on the parsing behavior of a different element.
+
+Lower-case source names without trimming them, while retaining trimming for programmatic Tag.valueOf() input.
+
+This keeps the token and resulting Tag consistent and prevents raw-data content from being exposed as markup during serialization
+---
+ CHANGES.md                                         |  1 +
+ src/main/java/org/jsoup/parser/TagSet.java         |  2 +-
+ src/main/java/org/jsoup/parser/Token.java          |  8 +++++---
+ src/test/java/org/jsoup/parser/HtmlParserTest.java | 13 +++++--------
+ src/test/java/org/jsoup/safety/CleanerTest.java    |  2 ++
+ 5 files changed, 14 insertions(+), 12 deletions(-)
+
+diff --git a/CHANGES.md b/CHANGES.md
+index f09c0d5cd9..1555ba640d 100644
+--- a/CHANGES.md
++++ b/CHANGES.md
+@@ -13,6 +13,7 @@
+ ### Bug Fixes
+ * Fixed HTML parsing of mixed-case RCDATA end tags after tag-shaped text. For example, `<title><p>Foo</TiTLE>` and `<textarea><img src=x></TeXtArEa>` now keep the tag-shaped content as text instead of promoting it to markup. [#2503](https://github.com/jhy/jsoup/issues/2503)
+ * Fixed `W3CDom` XML conversion so plain XML elements don't serialize with the reserved XML namespace as the default namespace. Explicit XML namespaces and `xml:*` attributes are still preserved. [#2504](https://github.com/jhy/jsoup/issues/2504)
++* Preserve control characters in parsed tag names [#2358](https://github.com/jhy/jsoup/issues/2538)
+ 
+ ### Build Changes
+ * Cleaned up the Maven build for the multi-release JAR so Java 8 and Java 11+ sources compile as separate source sets. This avoids spurious Java 8 compiler warnings from newer-language overlay sources, keeps long-running parser checks behind an explicit profile, and preserves the same published artifacts and runtime behavior.
+diff --git a/src/main/java/org/jsoup/parser/TagSet.java b/src/main/java/org/jsoup/parser/TagSet.java
+index e7e12de4f7..a55ef55d0a 100644
+--- a/src/main/java/org/jsoup/parser/TagSet.java
++++ b/src/main/java/org/jsoup/parser/TagSet.java
+@@ -137,7 +137,7 @@ private void doAdd(Tag tag) {
+     Tag valueOf(String tagName, @Nullable String normalName, String namespace, boolean preserveTagCase) {
+         Validate.notNull(tagName);
+         Validate.notNull(namespace);
+-        tagName = tagName.trim();
++        if (normalName == null) tagName = tagName.trim(); // public API input; tokenizer names are already delimited
+         Validate.notEmpty(tagName);
+         Tag tag = get(tagName, namespace);
+         if (tag != null) return tag;
+diff --git a/src/main/java/org/jsoup/parser/Token.java b/src/main/java/org/jsoup/parser/Token.java
+index 34da74e258..44e58638fd 100644
+--- a/src/main/java/org/jsoup/parser/Token.java
++++ b/src/main/java/org/jsoup/parser/Token.java
+@@ -9,6 +9,8 @@
+ import java.util.Arrays;
+ import java.util.Objects;
+ 
++import static org.jsoup.internal.Normalizer.lowerCase;
++
+ /**
+  * Parse tokens for the Tokeniser.
+  */
+@@ -299,7 +301,7 @@ final String toStringName() {
+ 
+         final Tag name(String name) {
+             tagName.set(name);
+-            normalName = ParseSettings.normalName(tagName.value());
++            normalName = lowerCase(tagName.value());
+             return this;
+         }
+ 
+@@ -312,7 +314,7 @@ final void appendTagName(String append) {
+             // might have null chars - need to replace with null replacement character
+             append = append.replace(TokeniserState.nullChar, Tokeniser.replacementChar);
+             tagName.append(append);
+-            normalName = ParseSettings.normalName(tagName.value());
++            normalName = lowerCase(tagName.value());
+         }
+ 
+         final void appendTagName(char append) {
+@@ -387,7 +389,7 @@ Tag reset() {
+         StartTag nameAttr(String name, Attributes attributes) {
+             this.tagName.set(name);
+             this.attributes = attributes;
+-            normalName = ParseSettings.normalName(name);
++            normalName = lowerCase(name);
+             return this;
+         }
+ 
+diff --git a/src/test/java/org/jsoup/parser/HtmlParserTest.java b/src/test/java/org/jsoup/parser/HtmlParserTest.java
+index efe3d0e8a0..10f88db28c 100644
+--- a/src/test/java/org/jsoup/parser/HtmlParserTest.java
++++ b/src/test/java/org/jsoup/parser/HtmlParserTest.java
+@@ -1884,16 +1884,13 @@ private boolean didAddElements(String input) {
+             TextUtil.stripNewlines(doc.head().html()));
+     }
+ 
+-    @Test void trimNormalizeElementNamesInBuilder() {
++    @Test void doesNotTrimControlCharactersFromTagNames() {
+         // https://github.com/jhy/jsoup/issues/1637 | https://bugs.chromium.org/p/oss-fuzz/issues/detail?id=38983
+-        // This is interesting - in TB state, the element name was "template\u001E", so no name checks matched. Then,
+-        // when the Element is created, the name got normalized to "template" and so looked like there should be a
+-        // template on the stack during resetInsertionMode for the select.
+-        // The issue was that the normalization in Tag.valueOf did a trim which the Token.Tag did not
++        // The source tag is not a template, so its control character must survive tree building.
+         Document doc = Jsoup.parse("<template\u001E><select><input>");
+-        assertNotNull(doc);
+-        assertEquals("<template><select></select><input></template>",
+-            TextUtil.stripNewlines(doc.head().html()));
++        assertEquals("<template\u001E><select></select><input></template\u001E>",
++            TextUtil.stripNewlines(doc.body().html()));
++        assertEquals("template\u001E", doc.body().child(0).normalName());
+     }
+ 
+     @Test void templateInLi() {
+diff --git a/src/test/java/org/jsoup/safety/CleanerTest.java b/src/test/java/org/jsoup/safety/CleanerTest.java
+index 9524c5210c..f22eb82615 100644
+--- a/src/test/java/org/jsoup/safety/CleanerTest.java
++++ b/src/test/java/org/jsoup/safety/CleanerTest.java
+@@ -651,4 +651,6 @@ void cleansCaseSensitiveElements(boolean preserveCase) {
+         String clean2 = cleaner.clean(doc2).body().html();
+         assertEquals("content is &lt;data&gt;", clean2);
+     }
++
++
+ }

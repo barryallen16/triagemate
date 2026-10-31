@@ -1,0 +1,250 @@
+From 273fcedaee984c08197c0890f14190b86ab7e0b8 Mon Sep 17 00:00:00 2001
+From: Copilot <198982749+Copilot@users.noreply.github.com>
+Date: Sat, 18 Apr 2026 12:21:49 +0800
+Subject: [PATCH] Fix SpEL injection (potential RCE) in
+ DsSpelExpressionProcessor (#767)
+
+* Initial plan
+
+* Fix SpEL injection vulnerability in DsSpelExpressionProcessor
+
+Agent-Logs-Url: https://github.com/baomidou/dynamic-datasource/sessions/db0ccd4f-03f6-4326-8c42-5d5f0a35961a
+
+Co-authored-by: huayanYu <16700837+huayanYu@users.noreply.github.com>
+
+* Add allowedSpelTypeAccess toggle for SpEL type-reference restriction
+
+Agent-Logs-Url: https://github.com/baomidou/dynamic-datasource/sessions/c4f1a2e2-7b0c-4023-b77b-c0a660bd855f
+
+Co-authored-by: huayanYu <16700837+huayanYu@users.noreply.github.com>
+
+---------
+
+Co-authored-by: copilot-swe-agent[bot] <198982749+Copilot@users.noreply.github.com>
+Co-authored-by: huayanYu <16700837+huayanYu@users.noreply.github.com>
+---
+ .../DynamicDatasourceAopProperties.java       |  8 ++
+ .../DynamicDataSourceAopConfiguration.java    |  1 +
+ .../DynamicDataSourceAopConfiguration.java    |  1 +
+ ...DsSpelExpressionProcessorSecurityTest.java | 89 +++++++++++++++++++
+ .../DynamicDataSourceAopConfiguration.java    |  1 +
+ .../processor/DsSpelExpressionProcessor.java  | 32 +++++++
+ 6 files changed, 132 insertions(+)
+ create mode 100644 dynamic-datasource-spring-boot3-starter/src/test/java/com/baomidou/dynamic/datasource/common/v3/DsSpelExpressionProcessorSecurityTest.java
+
+diff --git a/dynamic-datasource-spring-boot-common/src/main/java/com/baomidou/dynamic/datasource/spring/boot/autoconfigure/DynamicDatasourceAopProperties.java b/dynamic-datasource-spring-boot-common/src/main/java/com/baomidou/dynamic/datasource/spring/boot/autoconfigure/DynamicDatasourceAopProperties.java
+index dfaac567..b0a38cc7 100644
+--- a/dynamic-datasource-spring-boot-common/src/main/java/com/baomidou/dynamic/datasource/spring/boot/autoconfigure/DynamicDatasourceAopProperties.java
++++ b/dynamic-datasource-spring-boot-common/src/main/java/com/baomidou/dynamic/datasource/spring/boot/autoconfigure/DynamicDatasourceAopProperties.java
+@@ -38,4 +38,12 @@ public class DynamicDatasourceAopProperties {
+      * aop allowedPublicOnly
+      */
+     private Boolean allowedPublicOnly = true;
++    /**
++     * Whether to allow SpEL type references (e.g. T(java.lang.Runtime)) and constructor
++     * expressions in datasource key expressions resolved by DsSpelExpressionProcessor.
++     * Defaults to false (restricted / safe mode) to prevent SpEL injection attacks.
++     * Set to true only if your application genuinely requires such expressions and you
++     * fully understand the security risk.
++     */
++    private Boolean allowedSpelTypeAccess = false;
+ }
+\ No newline at end of file
+diff --git a/dynamic-datasource-spring-boot-starter/src/main/java/com/baomidou/dynamic/datasource/spring/boot/autoconfigure/DynamicDataSourceAopConfiguration.java b/dynamic-datasource-spring-boot-starter/src/main/java/com/baomidou/dynamic/datasource/spring/boot/autoconfigure/DynamicDataSourceAopConfiguration.java
+index 29f31a75..59f42e01 100644
+--- a/dynamic-datasource-spring-boot-starter/src/main/java/com/baomidou/dynamic/datasource/spring/boot/autoconfigure/DynamicDataSourceAopConfiguration.java
++++ b/dynamic-datasource-spring-boot-starter/src/main/java/com/baomidou/dynamic/datasource/spring/boot/autoconfigure/DynamicDataSourceAopConfiguration.java
+@@ -66,6 +66,7 @@ public DsProcessor dsProcessor(BeanFactory beanFactory) {
+         DsProcessor sessionProcessor = new DsSessionProcessor();
+         DsSpelExpressionProcessor spelExpressionProcessor = new DsSpelExpressionProcessor();
+         spelExpressionProcessor.setBeanResolver(new BeanFactoryResolver(beanFactory));
++        spelExpressionProcessor.setAllowedSpelTypeAccess(properties.getAop().getAllowedSpelTypeAccess());
+         headerProcessor.setNextProcessor(sessionProcessor);
+         sessionProcessor.setNextProcessor(spelExpressionProcessor);
+         return headerProcessor;
+diff --git a/dynamic-datasource-spring-boot3-starter/src/main/java/com/baomidou/dynamic/datasource/spring/boot/autoconfigure/DynamicDataSourceAopConfiguration.java b/dynamic-datasource-spring-boot3-starter/src/main/java/com/baomidou/dynamic/datasource/spring/boot/autoconfigure/DynamicDataSourceAopConfiguration.java
+index ac8f233a..069247c1 100644
+--- a/dynamic-datasource-spring-boot3-starter/src/main/java/com/baomidou/dynamic/datasource/spring/boot/autoconfigure/DynamicDataSourceAopConfiguration.java
++++ b/dynamic-datasource-spring-boot3-starter/src/main/java/com/baomidou/dynamic/datasource/spring/boot/autoconfigure/DynamicDataSourceAopConfiguration.java
+@@ -66,6 +66,7 @@ public DsProcessor dsProcessor(BeanFactory beanFactory) {
+         DsProcessor sessionProcessor = new DsJakartaSessionProcessor();
+         DsSpelExpressionProcessor spelExpressionProcessor = new DsSpelExpressionProcessor();
+         spelExpressionProcessor.setBeanResolver(new BeanFactoryResolver(beanFactory));
++        spelExpressionProcessor.setAllowedSpelTypeAccess(properties.getAop().getAllowedSpelTypeAccess());
+         headerProcessor.setNextProcessor(sessionProcessor);
+         sessionProcessor.setNextProcessor(spelExpressionProcessor);
+         return headerProcessor;
+diff --git a/dynamic-datasource-spring-boot3-starter/src/test/java/com/baomidou/dynamic/datasource/common/v3/DsSpelExpressionProcessorSecurityTest.java b/dynamic-datasource-spring-boot3-starter/src/test/java/com/baomidou/dynamic/datasource/common/v3/DsSpelExpressionProcessorSecurityTest.java
+new file mode 100644
+index 00000000..c1baef19
+--- /dev/null
++++ b/dynamic-datasource-spring-boot3-starter/src/test/java/com/baomidou/dynamic/datasource/common/v3/DsSpelExpressionProcessorSecurityTest.java
+@@ -0,0 +1,89 @@
++/*
++ * Copyright © 2018 organization baomidou
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++package com.baomidou.dynamic.datasource.common.v3;
++
++import com.baomidou.dynamic.datasource.processor.DsSpelExpressionProcessor;
++import org.aopalliance.intercept.MethodInvocation;
++import org.junit.jupiter.api.BeforeEach;
++import org.junit.jupiter.api.Test;
++import org.springframework.expression.EvaluationException;
++
++import java.lang.reflect.Method;
++
++import static org.junit.jupiter.api.Assertions.assertEquals;
++import static org.junit.jupiter.api.Assertions.assertThrows;
++import static org.mockito.Mockito.mock;
++import static org.mockito.Mockito.when;
++
++/**
++ * Security tests for {@link DsSpelExpressionProcessor} verifying that SpEL injection via
++ * type references (T(...)) is blocked to prevent Remote Code Execution, and that the
++ * behaviour can be restored by explicitly enabling {@code allowedSpelTypeAccess}.
++ */
++class DsSpelExpressionProcessorSecurityTest {
++
++    private DsSpelExpressionProcessor processor;
++    private MethodInvocation invocation;
++
++    @BeforeEach
++    void setUp() throws Exception {
++        processor = new DsSpelExpressionProcessor();
++
++        Method method = SampleService.class.getMethod("getByTenant", String.class);
++        invocation = mock(MethodInvocation.class);
++        when(invocation.getMethod()).thenReturn(method);
++        when(invocation.getArguments()).thenReturn(new Object[]{"tenant1"});
++        when(invocation.getThis()).thenReturn(new SampleService());
++    }
++
++    @Test
++    void normalSpelExpressionShouldWork() {
++        // #tenant reads the method parameter value normally
++        String result = processor.doDetermineDatasource(invocation, "#tenant");
++        assertEquals("tenant1", result);
++    }
++
++    @Test
++    void typeReferenceExpressionShouldBeBlockedByDefault() {
++        // T(...) type references must be blocked to prevent SpEL injection / RCE
++        assertThrows(EvaluationException.class, () ->
++                processor.doDetermineDatasource(invocation, "T(java.lang.Runtime).getRuntime().exec('id')")
++        );
++    }
++
++    @Test
++    void newInstanceExpressionShouldBeBlockedByDefault() {
++        // new Type(...) constructor invocations must also be blocked
++        assertThrows(EvaluationException.class, () ->
++                processor.doDetermineDatasource(invocation, "new java.lang.ProcessBuilder('id').start()")
++        );
++    }
++
++    @Test
++    void typeReferenceExpressionShouldWorkWhenExplicitlyAllowed() {
++        // When allowedSpelTypeAccess=true, T(...) expressions are permitted (opt-in unsafe mode)
++        processor.setAllowedSpelTypeAccess(true);
++        // T(java.lang.String) is a safe type reference to verify the restriction is lifted
++        String result = processor.doDetermineDatasource(invocation, "T(java.lang.String).valueOf(#tenant)");
++        assertEquals("tenant1", result);
++    }
++
++    static class SampleService {
++        public String getByTenant(String tenant) {
++            return tenant;
++        }
++    }
++}
+diff --git a/dynamic-datasource-spring-boot4-starter/src/main/java/com/baomidou/dynamic/datasource/spring/boot/autoconfigure/DynamicDataSourceAopConfiguration.java b/dynamic-datasource-spring-boot4-starter/src/main/java/com/baomidou/dynamic/datasource/spring/boot/autoconfigure/DynamicDataSourceAopConfiguration.java
+index ac8f233a..069247c1 100644
+--- a/dynamic-datasource-spring-boot4-starter/src/main/java/com/baomidou/dynamic/datasource/spring/boot/autoconfigure/DynamicDataSourceAopConfiguration.java
++++ b/dynamic-datasource-spring-boot4-starter/src/main/java/com/baomidou/dynamic/datasource/spring/boot/autoconfigure/DynamicDataSourceAopConfiguration.java
+@@ -66,6 +66,7 @@ public DsProcessor dsProcessor(BeanFactory beanFactory) {
+         DsProcessor sessionProcessor = new DsJakartaSessionProcessor();
+         DsSpelExpressionProcessor spelExpressionProcessor = new DsSpelExpressionProcessor();
+         spelExpressionProcessor.setBeanResolver(new BeanFactoryResolver(beanFactory));
++        spelExpressionProcessor.setAllowedSpelTypeAccess(properties.getAop().getAllowedSpelTypeAccess());
+         headerProcessor.setNextProcessor(sessionProcessor);
+         sessionProcessor.setNextProcessor(spelExpressionProcessor);
+         return headerProcessor;
+diff --git a/dynamic-datasource-spring/src/main/java/com/baomidou/dynamic/datasource/processor/DsSpelExpressionProcessor.java b/dynamic-datasource-spring/src/main/java/com/baomidou/dynamic/datasource/processor/DsSpelExpressionProcessor.java
+index 03c6c36d..cf7e0b68 100644
+--- a/dynamic-datasource-spring/src/main/java/com/baomidou/dynamic/datasource/processor/DsSpelExpressionProcessor.java
++++ b/dynamic-datasource-spring/src/main/java/com/baomidou/dynamic/datasource/processor/DsSpelExpressionProcessor.java
+@@ -22,12 +22,14 @@
+ import org.springframework.core.DefaultParameterNameDiscoverer;
+ import org.springframework.core.ParameterNameDiscoverer;
+ import org.springframework.expression.BeanResolver;
++import org.springframework.expression.EvaluationException;
+ import org.springframework.expression.ExpressionParser;
+ import org.springframework.expression.ParserContext;
+ import org.springframework.expression.spel.standard.SpelExpressionParser;
+ import org.springframework.expression.spel.support.StandardEvaluationContext;
+ 
+ import java.lang.reflect.Method;
++import java.util.Collections;
+ 
+ /**
+  * SpEL表达式处理器
+@@ -69,6 +71,18 @@ public String getExpressionSuffix() {
+         }
+     };
+     private BeanResolver beanResolver;
++    /**
++     * Whether to allow SpEL type references (e.g. {@code T(java.lang.Runtime)}) and constructor
++     * expressions in datasource key expressions.
++     * <p>
++     * Defaults to {@code false} (restricted / safe mode). When {@code false}, any attempt to use
++     * {@code T(...)} type-references or {@code new} constructor expressions will throw an
++     * {@link EvaluationException}, preventing potential SpEL-injection / RCE attacks.
++     * <p>
++     * Set to {@code true} only if your application genuinely requires such expressions and you
++     * fully understand the security implications.
++     */
++    private boolean allowedSpelTypeAccess = false;
+ 
+     @Override
+     public boolean matches(String key) {
+@@ -82,10 +96,28 @@ public String doDetermineDatasource(MethodInvocation invocation, String key) {
+         ExpressionRootObject rootObject = new ExpressionRootObject(method, arguments, invocation.getThis());
+         StandardEvaluationContext context = new MethodBasedEvaluationContext(rootObject, method, arguments, NAME_DISCOVERER);
+         context.setBeanResolver(beanResolver);
++        if (!allowedSpelTypeAccess) {
++            // Prevent SpEL injection: block T(...) type references and new instance creation
++            context.setTypeLocator(typeName -> {
++                throw new EvaluationException("Type access is not allowed in DS SpEL expressions: " + typeName);
++            });
++            context.setConstructorResolvers(Collections.emptyList());
++        }
+         final Object value = PARSER.parseExpression(key, parserContext).getValue(context);
+         return value == null ? null : value.toString();
+     }
+ 
++    /**
++     * Allow or restrict SpEL type references ({@code T(...)}) and constructor expressions in
++     * datasource key resolution. Defaults to {@code false} (restricted). Enable only when
++     * strictly necessary and you accept the associated security risk.
++     *
++     * @param allowedSpelTypeAccess {@code true} to allow type access, {@code false} to block it
++     */
++    public void setAllowedSpelTypeAccess(boolean allowedSpelTypeAccess) {
++        this.allowedSpelTypeAccess = allowedSpelTypeAccess;
++    }
++
+     /**
+      * 设置解析上下文
+      *

@@ -1,0 +1,442 @@
+From 35ccbf1e3d38ab6aa178524a47c38dff6b448b59 Mon Sep 17 00:00:00 2001
+From: msdev <msdev@mingsoft.net>
+Date: Fri, 11 Jul 2025 17:44:38 +0800
+Subject: [PATCH] =?UTF-8?q?fix=EF=BC=9A6.0.2=E6=9B=B4=E6=96=B0?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ pom.xml                                       |   8 +-
+ .../net/mingsoft/cms/action/BaseAction.java   |  48 +++--
+ .../cms/biz/impl/CategoryBizImpl.java         |   2 +-
+ .../java/net/mingsoft/cms/dao/IContentDao.xml |   2 +-
+ .../WEB-INF/manager/cms/category/form.ftl     |  10 +
+ .../WEB-INF/manager/cms/content/form.ftl      |   5 +
+ .../WEB-INF/manager/cms/content/list.ftl      |  20 +-
+ .../plugins/ueditor/1.4.3.3/config.json       |   2 +-
+ .../static/plugins/ueditor/1.4.3.3/index.html | 175 ------------------
+ 9 files changed, 58 insertions(+), 214 deletions(-)
+ delete mode 100644 src/main/webapp/static/plugins/ueditor/1.4.3.3/index.html
+
+diff --git a/pom.xml b/pom.xml
+index 0de3b763b..e8cd00d7e 100644
+--- a/pom.xml
++++ b/pom.xml
+@@ -21,22 +21,22 @@
+         <dependency>
+             <groupId>net.mingsoft</groupId>
+             <artifactId>ms-base</artifactId>
+-            <version>3.0.1</version>
++            <version>3.0.2</version>
+         </dependency>
+         <dependency>
+             <groupId>net.mingsoft</groupId>
+             <artifactId>ms-basic</artifactId>
+-            <version>3.0.1</version>
++            <version>3.0.2</version>
+         </dependency>
+         <dependency>
+             <groupId>net.mingsoft</groupId>
+             <artifactId>ms-mdiy</artifactId>
+-            <version>3.0.1</version>
++            <version>3.0.2</version>
+         </dependency>
+         <dependency>
+             <groupId>net.mingsoft</groupId>
+             <artifactId>store-client</artifactId>
+-            <version>3.0.1</version>
++            <version>3.0.2</version>
+         </dependency>
+         <dependency>
+             <groupId>com.github.oshi</groupId>
+diff --git a/src/main/java/net/mingsoft/cms/action/BaseAction.java b/src/main/java/net/mingsoft/cms/action/BaseAction.java
+index d12510e31..863a4629a 100755
+--- a/src/main/java/net/mingsoft/cms/action/BaseAction.java
++++ b/src/main/java/net/mingsoft/cms/action/BaseAction.java
+@@ -21,11 +21,14 @@
+ 
+ 
+ package net.mingsoft.cms.action;
++
+ import cn.hutool.core.date.DateUtil;
+ import cn.hutool.core.io.FileUtil;
+ import cn.hutool.core.io.file.FileNameUtil;
+ import cn.hutool.core.map.MapUtil;
+ import cn.hutool.core.util.StrUtil;
++import cn.hutool.json.JSONArray;
++import cn.hutool.json.JSONObject;
+ import cn.hutool.json.JSONUtil;
+ import com.baidu.ueditor.define.BaseState;
+ import com.baidu.ueditor.define.State;
+@@ -49,10 +52,7 @@
+ 
+ import java.security.MessageDigest;
+ import java.security.NoSuchAlgorithmException;
+-import java.util.Date;
+-import java.util.HashMap;
+-import java.util.Map;
+-import java.util.MissingResourceException;
++import java.util.*;
+ 
+ /**
+  * @Author: 铭飞开源团队--huise
+@@ -150,15 +150,15 @@ public String exec(HttpServletRequest request, MultipartFile upfile, Map execFil
+                 // 判断是依赖ms-file插件
+                 String type = ConfigUtil.getString("存储设置", "storeSelect");
+                 IUploadBaseService uploadBaseService = null;
+-                if (StringUtils.isNotBlank(type)) {
+-                    // 单个文件上传计算下各个参数值避免重复上传
+-                    if (StringUtils.isBlank(bean.getFileIdentifier())){
+-                        try {
+-                            bean.setFileIdentifier(String.valueOf(Hex.encodeHex(MessageDigest.getInstance("MD5").digest(bean.getFile().getBytes()))));
+-                        } catch (NoSuchAlgorithmException e) {
+-                            e.printStackTrace();
+-                        }
++                // 单个文件上传计算下各个参数值避免重复上传
++                if (StringUtils.isBlank(bean.getFileIdentifier())){
++                    try {
++                        bean.setFileIdentifier(String.valueOf(Hex.encodeHex(MessageDigest.getInstance("MD5").digest(bean.getFile().getBytes()))));
++                    } catch (NoSuchAlgorithmException e) {
++                        e.printStackTrace();
+                     }
++                }
++                if (StringUtils.isNotBlank(type)) {
+                     //ms-file 插件启用
+                     uploadBaseService = (IUploadBaseService) SpringUtil.getBean(type);
+                 }
+@@ -201,8 +201,30 @@ public String exec(HttpServletRequest request, MultipartFile upfile, Map execFil
+         }
+         UeditorActionEnter actionEnter = new UeditorActionEnter(upfile,request, rootPath, execConfig, BasicUtil.getRealPath(""), BasicUtil.getRealPath(StrUtil.format("static/plugins/ueditor/{}/config.json",version)));
+         String result = actionEnter.exec();
++        // 获取请求类型
++        String action = BasicUtil.getString("action");
+         Map jsonMap = JSONUtil.toBean(result,Map.class);
+-        jsonMap.put("url","/".concat(uploadMapping.replaceAll("/([\\s\\S]*)/\\*\\*",  "$1")).concat(jsonMap.get("url")+""));
++        // 这里会有图片复制粘贴情况
++        if ("catchimage".equalsIgnoreCase(action) && jsonMap.get("state").equals("SUCCESS")) {
++            // 处理绝对路径和项目名情况
++            JSONArray fileUrls = JSONUtil.parseArray(MapUtil.getStr(jsonMap, "list", "[]"));
++            String url = "";
++            List<JSONObject> list = new ArrayList<>();
++            // 循环上传文件，判断是否有项目名和绝对路径
++            for (Object fileUrl : fileUrls) {
++                JSONObject jsonObject = (JSONObject) fileUrl;
++                url = jsonObject.getStr("url");
++                // 判断是否有contentPath
++                String contextPath = BasicUtil.getContextPath();
++                if (StringUtils.isNotBlank(url) && !url.startsWith("http")) {
++                    url = "/".concat(uploadMapping.replaceAll("/([\\s\\S]*)/\\*\\*", "$1")).concat(url + "");
++                    url = (contextPath.equals("/") ? "" : contextPath) + url;
++                }
++                jsonObject.set("url", url);
++                list.add(jsonObject);
++            }
++            jsonMap.put("list", list);
++        }
+         return JSONUtil.toJsonStr(jsonMap);
+ 
+ 
+diff --git a/src/main/java/net/mingsoft/cms/biz/impl/CategoryBizImpl.java b/src/main/java/net/mingsoft/cms/biz/impl/CategoryBizImpl.java
+index 0672cebd4..c9c8313c8 100755
+--- a/src/main/java/net/mingsoft/cms/biz/impl/CategoryBizImpl.java
++++ b/src/main/java/net/mingsoft/cms/biz/impl/CategoryBizImpl.java
+@@ -225,7 +225,7 @@ public void delete(String categoryId) {
+                 //如果没有子节点进行更新代码
+                 if (childNode.size() == 1) {
+                     // 更新父级为叶子节点
+-                    updateWrapper.eq(CategoryEntity::getCategoryId, parentNode.getId())
++                    updateWrapper.eq(CategoryEntity::getId, parentNode.getId())
+                             .set(CategoryEntity::getLeaf, true);
+                     categoryDao.update(null, updateWrapper);
+                 }
+diff --git a/src/main/java/net/mingsoft/cms/dao/IContentDao.xml b/src/main/java/net/mingsoft/cms/dao/IContentDao.xml
+index da3277a37..de348eace 100755
+--- a/src/main/java/net/mingsoft/cms/dao/IContentDao.xml
++++ b/src/main/java/net/mingsoft/cms/dao/IContentDao.xml
+@@ -257,7 +257,7 @@
+ 			<if test="createBy &gt; 0"> and ct.create_by=#{createBy} </if>
+ 			<if test="createDate != null"> and ct.create_date=#{createDate} </if>
+ 			<if test="updateBy &gt; 0"> and ct.update_by=#{updateBy} </if>
+-			<if test="updateDate != null"> and update_date=#{updateDate} </if>
++			<if test="updateDate != null"> and ct.update_date=#{updateDate} </if>
+ 
+ 			<include refid="net.mingsoft.base.dao.IBaseDao.sqlWhere"></include>
+ 		</where>
+diff --git a/src/main/webapp/WEB-INF/manager/cms/category/form.ftl b/src/main/webapp/WEB-INF/manager/cms/category/form.ftl
+index c94b32dbe..6d3778227 100644
+--- a/src/main/webapp/WEB-INF/manager/cms/category/form.ftl
++++ b/src/main/webapp/WEB-INF/manager/cms/category/form.ftl
+@@ -785,6 +785,11 @@
+             //categoryImg文件上传完成回调
+             categoryImgSuccess: function (response, file, fileList) {
+                 if (response.result) {
++                    if(!response.data.startsWith("http://") && !response.data.startsWith("https://")) {
++                        file.url = ms.contextpath + response.data;
++                    }else{
++                        file.url = response.data;
++                    }
+                     this.form.categoryImg.push({
+                         url: response.data,
+                         name: file.name,
+@@ -823,6 +828,11 @@
+             //categoryIco文件上传完成回调
+             categoryIcoSuccess: function (response, file, fileList) {
+                 if (response.result) {
++                    if(!response.data.startsWith("http://") && !response.data.startsWith("https://")) {
++                        file.url = ms.contextpath + response.data;
++                    }else{
++                        file.url = response.data;
++                    }
+                     this.form.categoryIco.push({
+                         url: response.data,
+                         name: file.name,
+diff --git a/src/main/webapp/WEB-INF/manager/cms/content/form.ftl b/src/main/webapp/WEB-INF/manager/cms/content/form.ftl
+index 7cc0ba545..823c443db 100644
+--- a/src/main/webapp/WEB-INF/manager/cms/content/form.ftl
++++ b/src/main/webapp/WEB-INF/manager/cms/content/form.ftl
+@@ -814,6 +814,11 @@
+             //contentImg文件上传完成回调
+             contentImgSuccess: function (response, file, fileList) {
+                 if(response.result){
++                    if(!response.data.startsWith("http://") && !response.data.startsWith("https://")) {
++                        file.url = ms.contextpath + response.data;
++                    }else{
++                        file.url = response.data;
++                    }
+                     this.form.contentImg.push({
+                         url: response.data,
+                         name: file.name,
+diff --git a/src/main/webapp/WEB-INF/manager/cms/content/list.ftl b/src/main/webapp/WEB-INF/manager/cms/content/list.ftl
+index 3b0b1b4a4..f1c13fd17 100644
+--- a/src/main/webapp/WEB-INF/manager/cms/content/list.ftl
++++ b/src/main/webapp/WEB-INF/manager/cms/content/list.ftl
+@@ -485,6 +485,7 @@
+             },
+             //重置表单
+             rest: function () {
++                this.currentPage = 1;
+                 this.form.sqlWhere = null;
+                 this.$refs.searchForm.resetFields();
+                 this.list();
+@@ -542,25 +543,6 @@
+             }
+         },
+ 
+-        created: function () {
+-            //因为mounted生命周期，不能更新data对象，所以需要增加created进行处理
+-            if(sessionStorage.getItem(this.historyKey)) {
+-                var _history = JSON.parse(sessionStorage.getItem(this.historyKey))
+-                if(_history.form) {
+-                    this.form = _history.form;
+-                }
+-                if(_history.total) {
+-                    this.total = parseInt(_history.total);
+-                }
+-                if(_history.page.pageNo) {
+-                    this.currentPage = parseInt(_history.page.pageNo);
+-                }
+-                if(_history.page.pageSize) {
+-                    this.pageSize = parseInt(_history.page.pageSize);
+-                }
+-
+-            }
+-        }
+ 
+     });
+ </script>
+diff --git a/src/main/webapp/static/plugins/ueditor/1.4.3.3/config.json b/src/main/webapp/static/plugins/ueditor/1.4.3.3/config.json
+index 644899503..c9fe51cb2 100644
+--- a/src/main/webapp/static/plugins/ueditor/1.4.3.3/config.json
++++ b/src/main/webapp/static/plugins/ueditor/1.4.3.3/config.json
+@@ -42,7 +42,7 @@
+     "catcherActionName": "catchimage", /* 执行抓取远程图片的action名称 */
+     "catcherFieldName": "source", /* 提交的图片列表表单名称 */
+     "catcherPathFormat": "/ueditor/jsp/upload/image/{yyyy}{mm}{dd}/{time}{rand:6}", /* 上传保存路径,可以自定义保存路径和文件名格式 */
+-    "catcherUrlPrefix": "/upload", /* 图片访问路径前缀 */
++    "catcherUrlPrefix": "", /* 图片访问路径前缀 */
+     "catcherMaxSize": 2048000, /* 上传大小限制，单位B */
+     "catcherAllowFiles": [".png", ".jpg", ".jpeg", ".gif", ".bmp"], /* 抓取图片格式显示 */
+ 
+diff --git a/src/main/webapp/static/plugins/ueditor/1.4.3.3/index.html b/src/main/webapp/static/plugins/ueditor/1.4.3.3/index.html
+deleted file mode 100644
+index a41641825..000000000
+--- a/src/main/webapp/static/plugins/ueditor/1.4.3.3/index.html
++++ /dev/null
+@@ -1,175 +0,0 @@
+-<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"
+-        "http://www.w3.org/TR/html4/loose.dtd">
+-<html>
+-<head>
+-    <title>完整demo</title>
+-    <meta http-equiv="Content-Type" content="text/html;charset=utf-8"/>
+-    <script type="text/javascript" charset="utf-8" src="ueditor.config.js"></script>
+-    <script type="text/javascript" charset="utf-8" src="ueditor.all.min.js"> </script>
+-    <!--建议手动加在语言，避免在ie下有时因为加载语言失败导致编辑器加载失败-->
+-    <!--这里加载的语言文件会覆盖你在配置项目里添加的语言类型，比如你在配置项目里配置的是英文，这里加载的中文，那最后就是中文-->
+-    <script type="text/javascript" charset="utf-8" src="lang/zh-cn/zh-cn.js"></script>
+-
+-    <style type="text/css">
+-        div{
+-            width:100%;
+-        }
+-    </style>
+-</head>
+-<body>
+-<div>
+-    <h1>完整demo</h1>
+-    <script id="editor" type="text/plain" style="width:1024px;height:500px;"></script>
+-</div>
+-<div id="btns">
+-    <div>
+-        <button onclick="getAllHtml()">获得整个html的内容</button>
+-        <button onclick="getContent()">获得内容</button>
+-        <button onclick="setContent()">写入内容</button>
+-        <button onclick="setContent(true)">追加内容</button>
+-        <button onclick="getContentTxt()">获得纯文本</button>
+-        <button onclick="getPlainTxt()">获得带格式的纯文本</button>
+-        <button onclick="hasContent()">判断是否有内容</button>
+-        <button onclick="setFocus()">使编辑器获得焦点</button>
+-        <button onmousedown="isFocus(event)">编辑器是否获得焦点</button>
+-        <button onmousedown="setblur(event)" >编辑器失去焦点</button>
+-
+-    </div>
+-    <div>
+-        <button onclick="getText()">获得当前选中的文本</button>
+-        <button onclick="insertHtml()">插入给定的内容</button>
+-        <button id="enable" onclick="setEnabled()">可以编辑</button>
+-        <button onclick="setDisabled()">不可编辑</button>
+-        <button onclick=" UE.getEditor('editor').setHide()">隐藏编辑器</button>
+-        <button onclick=" UE.getEditor('editor').setShow()">显示编辑器</button>
+-        <button onclick=" UE.getEditor('editor').setHeight(300)">设置高度为300默认关闭了自动长高</button>
+-    </div>
+-
+-    <div>
+-        <button onclick="getLocalData()" >获取草稿箱内容</button>
+-        <button onclick="clearLocalData()" >清空草稿箱</button>
+-    </div>
+-
+-</div>
+-<div>
+-    <button onclick="createEditor()">
+-    创建编辑器</button>
+-    <button onclick="deleteEditor()">
+-    删除编辑器</button>
+-</div>
+-
+-<script type="text/javascript">
+-
+-    //实例化编辑器
+-    //建议使用工厂方法getEditor创建和引用编辑器实例，如果在某个闭包下引用该编辑器，直接调用UE.getEditor('editor')就能拿到相关的实例
+-    var ue = UE.getEditor('editor');
+-
+-
+-    function isFocus(e){
+-        alert(UE.getEditor('editor').isFocus());
+-        UE.dom.domUtils.preventDefault(e)
+-    }
+-    function setblur(e){
+-        UE.getEditor('editor').blur();
+-        UE.dom.domUtils.preventDefault(e)
+-    }
+-    function insertHtml() {
+-        var value = prompt('插入html代码', '');
+-        UE.getEditor('editor').execCommand('insertHtml', value)
+-    }
+-    function createEditor() {
+-        enableBtn();
+-        UE.getEditor('editor');
+-    }
+-    function getAllHtml() {
+-        alert(UE.getEditor('editor').getAllHtml())
+-    }
+-    function getContent() {
+-        var arr = [];
+-        arr.push("使用editor.getContent()方法可以获得编辑器的内容");
+-        arr.push("内容为：");
+-        arr.push(UE.getEditor('editor').getContent());
+-        alert(arr.join("\n"));
+-    }
+-    function getPlainTxt() {
+-        var arr = [];
+-        arr.push("使用editor.getPlainTxt()方法可以获得编辑器的带格式的纯文本内容");
+-        arr.push("内容为：");
+-        arr.push(UE.getEditor('editor').getPlainTxt());
+-        alert(arr.join('\n'))
+-    }
+-    function setContent(isAppendTo) {
+-        var arr = [];
+-        arr.push("使用editor.setContent('欢迎使用ueditor')方法可以设置编辑器的内容");
+-        UE.getEditor('editor').setContent('欢迎使用ueditor', isAppendTo);
+-        alert(arr.join("\n"));
+-    }
+-    function setDisabled() {
+-        UE.getEditor('editor').setDisabled('fullscreen');
+-        disableBtn("enable");
+-    }
+-
+-    function setEnabled() {
+-        UE.getEditor('editor').setEnabled();
+-        enableBtn();
+-    }
+-
+-    function getText() {
+-        //当你点击按钮时编辑区域已经失去了焦点，如果直接用getText将不会得到内容，所以要在选回来，然后取得内容
+-        var range = UE.getEditor('editor').selection.getRange();
+-        range.select();
+-        var txt = UE.getEditor('editor').selection.getText();
+-        alert(txt)
+-    }
+-
+-    function getContentTxt() {
+-        var arr = [];
+-        arr.push("使用editor.getContentTxt()方法可以获得编辑器的纯文本内容");
+-        arr.push("编辑器的纯文本内容为：");
+-        arr.push(UE.getEditor('editor').getContentTxt());
+-        alert(arr.join("\n"));
+-    }
+-    function hasContent() {
+-        var arr = [];
+-        arr.push("使用editor.hasContents()方法判断编辑器里是否有内容");
+-        arr.push("判断结果为：");
+-        arr.push(UE.getEditor('editor').hasContents());
+-        alert(arr.join("\n"));
+-    }
+-    function setFocus() {
+-        UE.getEditor('editor').focus();
+-    }
+-    function deleteEditor() {
+-        disableBtn();
+-        UE.getEditor('editor').destroy();
+-    }
+-    function disableBtn(str) {
+-        var div = document.getElementById('btns');
+-        var btns = UE.dom.domUtils.getElementsByTagName(div, "button");
+-        for (var i = 0, btn; btn = btns[i++];) {
+-            if (btn.id == str) {
+-                UE.dom.domUtils.removeAttributes(btn, ["disabled"]);
+-            } else {
+-                btn.setAttribute("disabled", "true");
+-            }
+-        }
+-    }
+-    function enableBtn() {
+-        var div = document.getElementById('btns');
+-        var btns = UE.dom.domUtils.getElementsByTagName(div, "button");
+-        for (var i = 0, btn; btn = btns[i++];) {
+-            UE.dom.domUtils.removeAttributes(btn, ["disabled"]);
+-        }
+-    }
+-
+-    function getLocalData () {
+-        alert(UE.getEditor('editor').execCommand( "getlocaldata" ));
+-    }
+-
+-    function clearLocalData () {
+-        UE.getEditor('editor').execCommand( "clearlocaldata" );
+-        alert("已清空草稿箱")
+-    }
+-</script>
+-</body>
+-</html>
+\ No newline at end of file

@@ -1,0 +1,410 @@
+[
+  {
+    "id": "GHSA-2jc4-r94c-rp7h:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:src/java/org/apache/ivy/util/XMLHelper.java:227",
+    "tags": [
+      "on-CWE-sample"
+    ]
+  },
+  {
+    "id": "GHSA-3gm7-v7vw-866c:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:solr/contrib/dataimporthandler/src/java/org/apache/solr/handler/dataimport/DataImporter.java:205",
+    "tags": [
+      "off-CWE"
+    ]
+  },
+  {
+    "id": "GHSA-3mcp-9wr4-cjqf:java.lang.security.audit.el-injection.el-injection:dropwizard-validation/src/main/java/io/dropwizard/validation/selfvalidating/ViolationCollector.java:24",
+    "tags": [
+      "off-CWE"
+    ]
+  },
+  {
+    "id": "GHSA-3ppr-72x5-x67q:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:src/main/java/hudson/plugins/mstest/MSTestReportConverter.java:116",
+    "tags": [
+      "method-only"
+    ]
+  },
+  {
+    "id": "GHSA-3ppr-72x5-x67q:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:src/main/java/hudson/plugins/mstest/MSTestReportConverter.java:151",
+    "tags": [
+      "method-only"
+    ]
+  },
+  {
+    "id": "GHSA-3ppr-72x5-x67q:java.lang.security.audit.xxe.transformerfactory-dtds-not-disabled.transformerfactory-dtds-not-disabled:src/main/java/hudson/plugins/mstest/XslTransformer.java:25",
+    "tags": [
+      "method-only"
+    ]
+  },
+  {
+    "id": "GHSA-3ppr-72x5-x67q:java.lang.security.audit.xxe.transformerfactory-dtds-not-disabled.transformerfactory-dtds-not-disabled:src/main/java/hudson/plugins/mstest/XslTransformer.java:31",
+    "tags": [
+      "method-only"
+    ]
+  },
+  {
+    "id": "GHSA-3vrc-rrpw-r5pw:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:src/main/java/com/jamesmurty/utils/BaseXMLBuilder.java:134",
+    "tags": [
+      "method-only",
+      "on-CWE-sample"
+    ]
+  },
+  {
+    "id": "GHSA-3vrc-rrpw-r5pw:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:src/main/java/com/jamesmurty/utils/BaseXMLBuilder.java:165",
+    "tags": [
+      "method-only"
+    ]
+  },
+  {
+    "id": "GHSA-3xrr-7m6p-p7xh:java.lang.security.audit.xxe.transformerfactory-dtds-not-disabled.transformerfactory-dtds-not-disabled:src/main/java/com/gargoylesoftware/htmlunit/javascript/host/xml/XSLTProcessor.java:144",
+    "tags": [
+      "off-CWE",
+      "method-only"
+    ]
+  },
+  {
+    "id": "GHSA-3xrr-7m6p-p7xh:java.lang.security.audit.xxe.transformerfactory-dtds-not-disabled.transformerfactory-dtds-not-disabled:src/main/java/com/gargoylesoftware/htmlunit/javascript/host/xml/XSLTProcessor.java:171",
+    "tags": [
+      "off-CWE",
+      "method-only"
+    ]
+  },
+  {
+    "id": "GHSA-3xrr-7m6p-p7xh:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:src/main/java/com/gargoylesoftware/htmlunit/javascript/host/xml/XSLTProcessor.java:177",
+    "tags": [
+      "off-CWE",
+      "method-only"
+    ]
+  },
+  {
+    "id": "GHSA-7c5v-895v-w4q5:java.lang.security.audit.object-deserialization.object-deserialization:modules/jooby-pac4j/src/main/java/io/jooby/internal/pac4j/SessionStoreImpl.java:131",
+    "tags": [
+      "on-CWE-sample"
+    ]
+  },
+  {
+    "id": "GHSA-7v6m-28jr-rg84:java.lang.security.audit.el-injection.el-injection:engine/src/main/java/org/hibernate/validator/internal/engine/messageinterpolation/ElTermResolver.java:31",
+    "tags": [
+      "method-only"
+    ]
+  },
+  {
+    "id": "GHSA-8c3x-hq82-gjcm:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:org.hl7.fhir.publisher.core/src/main/java/org/hl7/fhir/igtools/publisher/Publisher.java:14317",
+    "tags": [
+      "on-CWE-sample"
+    ]
+  },
+  {
+    "id": "GHSA-8c3x-hq82-gjcm:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:org.hl7.fhir.publisher.core/src/main/java/org/hl7/fhir/igtools/publisher/utils/PackageReleaser.java:844",
+    "tags": [
+      "on-CWE-sample"
+    ]
+  },
+  {
+    "id": "GHSA-8c3x-hq82-gjcm:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:org.hl7.fhir.publisher.core/src/main/java/org/hl7/fhir/igtools/publisher/utils/TemplateReleaser.java:605",
+    "tags": [
+      "on-CWE-sample"
+    ]
+  },
+  {
+    "id": "GHSA-8gqp-hr9g-pg62:java.lang.security.audit.script-engine-injection.script-engine-injection:conductor-clients/java/conductor-java-sdk/sdk/src/main/java/com/netflix/conductor/sdk/workflow/def/tasks/Javascript.java:102",
+    "tags": [
+      "off-CWE"
+    ]
+  },
+  {
+    "id": "GHSA-8gqp-hr9g-pg62:java.lang.security.audit.script-engine-injection.script-engine-injection:conductor-clients/java/conductor-java-sdk/sdk/src/main/java/com/netflix/conductor/sdk/workflow/def/tasks/Javascript.java:129",
+    "tags": [
+      "off-CWE"
+    ]
+  },
+  {
+    "id": "GHSA-54wc-49qj-5ghj:java.lang.security.audit.crypto.use-of-md5.use-of-md5:src/main/java/net/mingsoft/cms/action/BaseAction.java:157",
+    "tags": [
+      "off-CWE"
+    ]
+  },
+  {
+    "id": "GHSA-65hj-9ppw-77xc:java.lang.security.audit.crlf-injection-logs.crlf-injection-logs:ff4j-web/src/main/java/org/ff4j/web/embedded/ConsoleOperations.java:87",
+    "tags": [
+      "off-CWE",
+      "method-only"
+    ]
+  },
+  {
+    "id": "GHSA-83w4-x5w9-hf4h:java.spring.security.unrestricted-request-mapping.unrestricted-request-mapping:xxl-job-admin/src/main/java/com/xxl/job/admin/controller/JobLogController.java:138",
+    "tags": [
+      "off-CWE"
+    ]
+  },
+  {
+    "id": "GHSA-763j-q7wv-vf3m:java.lang.security.audit.unvalidated-redirect.unvalidated-redirect:dspace-jspui/src/main/java/org/dspace/app/webui/servlet/ControlledVocabularyServlet.java:31",
+    "tags": [
+      "on-CWE-sample"
+    ]
+  },
+  {
+    "id": "GHSA-763j-q7wv-vf3m:java.lang.security.audit.tainted-session-from-http-request.tainted-session-from-http-request:dspace-jspui/src/main/java/org/dspace/app/webui/servlet/ControlledVocabularyServlet.java:51",
+    "tags": [
+      "off-CWE",
+      "method-only"
+    ]
+  },
+  {
+    "id": "GHSA-763j-q7wv-vf3m:java.lang.security.audit.tainted-session-from-http-request.tainted-session-from-http-request:dspace-jspui/src/main/java/org/dspace/app/webui/servlet/ControlledVocabularyServlet.java:52",
+    "tags": [
+      "off-CWE",
+      "method-only"
+    ]
+  },
+  {
+    "id": "GHSA-f5h9-qx38-2hgp:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:aws-android-sdk-core/src/main/java/com/amazonaws/regions/RegionMetadataParser.java:115",
+    "tags": [
+      "off-CWE"
+    ]
+  },
+  {
+    "id": "GHSA-f63g-88cj-hjf9:java.lang.security.audit.object-deserialization.object-deserialization:izpack-installer/src/main/java/com/izforge/izpack/installer/unpacker/UnpackerBase.java:312",
+    "tags": [
+      "off-CWE",
+      "method-only"
+    ]
+  },
+  {
+    "id": "GHSA-f63g-88cj-hjf9:java.lang.security.audit.object-deserialization.object-deserialization:izpack-installer/src/main/java/com/izforge/izpack/installer/unpacker/UnpackerBase.java:1206",
+    "tags": [
+      "off-CWE",
+      "method-only"
+    ]
+  },
+  {
+    "id": "GHSA-f729-58x4-gqgf:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:140",
+    "tags": [
+      "method-only",
+      "on-CWE-sample"
+    ]
+  },
+  {
+    "id": "GHSA-f729-58x4-gqgf:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:190",
+    "tags": [
+      "method-only",
+      "on-CWE-sample"
+    ]
+  },
+  {
+    "id": "GHSA-f729-58x4-gqgf:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:194",
+    "tags": [
+      "method-only"
+    ]
+  },
+  {
+    "id": "GHSA-f729-58x4-gqgf:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:204",
+    "tags": [
+      "method-only"
+    ]
+  },
+  {
+    "id": "GHSA-fmj2-7wx8-qj4v:java.lang.security.audit.xxe.transformerfactory-dtds-not-disabled.transformerfactory-dtds-not-disabled:src/main/java/org/apache/xmlgraphics/xmp/XMPParser.java:57",
+    "tags": [
+      "off-CWE",
+      "method-only"
+    ]
+  },
+  {
+    "id": "GHSA-g4r8-28fp-f255:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:src/main/java/de/timroes/axmlrpc/ResponseParser.java:51",
+    "tags": [
+      "method-only",
+      "on-CWE-sample"
+    ]
+  },
+  {
+    "id": "GHSA-g5mj-c26g-vmpm:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:src/main/java/com/smartbear/jenkins/plugins/testcomplete/parser/LogNodeUtils.java:172",
+    "tags": [
+      "method-only",
+      "on-CWE-sample"
+    ]
+  },
+  {
+    "id": "GHSA-g43x-pcc9-f472:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:src/main/java/com/compuware/jenkins/common/utils/CLIVersionUtils.java:192",
+    "tags": [
+      "method-only"
+    ]
+  },
+  {
+    "id": "GHSA-h7qf-qmf3-85qg:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:plugins/junit-xml-plugin/src/main/java/io/qameta/allure/junitxml/JunitXmlPlugin.java:136",
+    "tags": [
+      "method-only"
+    ]
+  },
+  {
+    "id": "GHSA-h7qf-qmf3-85qg:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:plugins/trx-plugin/src/main/java/io/qameta/allure/trx/TrxPlugin.java:109",
+    "tags": [
+      "method-only"
+    ]
+  },
+  {
+    "id": "GHSA-h7qf-qmf3-85qg:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:plugins/xunit-xml-plugin/src/main/java/io/qameta/allure/xunitxml/XunitXmlPlugin.java:97",
+    "tags": [
+      "method-only",
+      "on-CWE-sample"
+    ]
+  },
+  {
+    "id": "GHSA-hg25-w3vg-7279:java.lang.security.audit.crypto.ssl.defaulthttpclient-is-deprecated.defaulthttpclient-is-deprecated:modules/jpawebapi/src/com/haulmont/addon/jpawebapi/api/controller/RestFileDownloadController.java:148",
+    "tags": [
+      "off-CWE",
+      "method-only"
+    ]
+  },
+  {
+    "id": "GHSA-j7jm-8gf5-frcm:java.lang.security.audit.object-deserialization.object-deserialization:ngrinder-core/src/main/java/net/grinder/communication/Connector.java:199",
+    "tags": [
+      "method-only",
+      "on-CWE-sample"
+    ]
+  },
+  {
+    "id": "GHSA-jmw5-58c7-587h:java.lang.security.audit.crypto.unencrypted-socket.unencrypted-socket:collector/log4j-socket/src/main/java/org/apache/karaf/decanter/collector/log/socket/SocketCollector.java:78",
+    "tags": [
+      "off-CWE"
+    ]
+  },
+  {
+    "id": "GHSA-jqfv-jrvq-95jm:java.lang.security.audit.xxe.transformerfactory-dtds-not-disabled.transformerfactory-dtds-not-disabled:fop-core/src/main/java/org/apache/fop/cli/InputHandler.java:272",
+    "tags": [
+      "method-only"
+    ]
+  },
+  {
+    "id": "GHSA-jqfv-jrvq-95jm:java.lang.security.audit.xxe.transformerfactory-dtds-not-disabled.transformerfactory-dtds-not-disabled:fop-core/src/main/java/org/apache/fop/cli/InputHandler.java:274",
+    "tags": [
+      "method-only"
+    ]
+  },
+  {
+    "id": "GHSA-m964-fjrh-xxq2:java.lang.security.audit.object-deserialization.object-deserialization:server/src/main/java/org/apache/seata/server/cluster/raft/sync/RaftSyncMessageSerializer.java:65",
+    "tags": [
+      "on-CWE-sample"
+    ]
+  },
+  {
+    "id": "GHSA-qrp9-23p7-g5mf:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:contrib/views/wfmanager/src/main/java/org/apache/oozie/ambari/view/Utils.java:67",
+    "tags": [
+      "method-only"
+    ]
+  },
+  {
+    "id": "GHSA-rpj9-pc39-h8j8:java.lang.security.audit.xxe.transformerfactory-dtds-not-disabled.transformerfactory-dtds-not-disabled:portal-impl/src/com/liferay/portlet/xslcontent/util/XSLContentUtil.java:54",
+    "tags": [
+      "off-CWE",
+      "method-only"
+    ]
+  },
+  {
+    "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:194",
+    "tags": [
+      "off-CWE"
+    ]
+  },
+  {
+    "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:223",
+    "tags": [
+      "off-CWE"
+    ]
+  },
+  {
+    "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:291",
+    "tags": [
+      "off-CWE",
+      "method-only"
+    ]
+  },
+  {
+    "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:295",
+    "tags": [
+      "off-CWE",
+      "method-only"
+    ]
+  },
+  {
+    "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:307",
+    "tags": [
+      "off-CWE",
+      "method-only"
+    ]
+  },
+  {
+    "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:545",
+    "tags": [
+      "off-CWE"
+    ]
+  },
+  {
+    "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:548",
+    "tags": [
+      "off-CWE"
+    ]
+  },
+  {
+    "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:558",
+    "tags": [
+      "off-CWE"
+    ]
+  },
+  {
+    "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:560",
+    "tags": [
+      "off-CWE"
+    ]
+  },
+  {
+    "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:851",
+    "tags": [
+      "off-CWE"
+    ]
+  },
+  {
+    "id": "GHSA-v7gr-mqpj-wwh3:java.lang.security.httpservlet-path-traversal.httpservlet-path-traversal:bundles/org.openhab.ui.cometvisu/src/main/java/org/openhab/ui/cometvisu/internal/servlet/CometVisuServlet.java:873",
+    "tags": [
+      "off-CWE"
+    ]
+  },
+  {
+    "id": "GHSA-vhwv-8897-jm7q:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:src/main/java/com/compuware/jenkins/totaltest/TotalTestCTRunner.java:326",
+    "tags": [
+      "method-only"
+    ]
+  },
+  {
+    "id": "GHSA-wg5r-wc3x-39vc:java.lang.security.audit.object-deserialization.object-deserialization:openam-core/src/main/java/com/sun/identity/authentication/share/AuthXMLUtils.java:1786",
+    "tags": [
+      "off-CWE",
+      "method-only"
+    ]
+  },
+  {
+    "id": "GHSA-x832-fpvj-r5ph:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:library/src/main/java/org/mustangproject/ZUGFeRD/ZUGFeRDVisualizer.java:104",
+    "tags": [
+      "method-only"
+    ]
+  },
+  {
+    "id": "GHSA-x832-fpvj-r5ph:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:validator/src/main/java/org/mustangproject/validator/XMLValidator.java:155",
+    "tags": [
+      "method-only",
+      "on-CWE-sample"
+    ]
+  },
+  {
+    "id": "GHSA-x832-fpvj-r5ph:java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing:validator/src/main/java/org/mustangproject/validator/ZUGFeRDValidator.java:145",
+    "tags": [
+      "method-only"
+    ]
+  },
+  {
+    "id": "GHSA-xrrw-9j78-hpf3:java.lang.security.audit.crypto.use-of-sha1.use-of-sha1:src/main/java/htmlpublisher/HtmlPublisher.java:118",
+    "tags": [
+      "off-CWE",
+      "method-only"
+    ]
+  }
+]

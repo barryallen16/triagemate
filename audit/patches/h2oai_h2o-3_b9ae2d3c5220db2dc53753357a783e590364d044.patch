@@ -1,0 +1,87 @@
+From b9ae2d3c5220db2dc53753357a783e590364d044 Mon Sep 17 00:00:00 2001
+From: Adam Valenta <adam.valenta@h2o.ai>
+Date: Mon, 9 Mar 2026 23:17:51 +0100
+Subject: [PATCH] GH-16775 - Add couple of postgres sql parameters to
+ DEFAULT_JDBC_DISALLOWED_PARAMETERS (#16776)
+
+* Add postgres sql parameters. Follow-up on GH-16622
+
+* Add logs also as user should not need to use them
+---
+ .../src/main/java/water/jdbc/SQLManager.java  |  7 +++-
+ .../test/java/water/jdbc/SQLManagerTest.java  | 39 +++++++++++++++++++
+ 2 files changed, 44 insertions(+), 2 deletions(-)
+
+diff --git a/h2o-core/src/main/java/water/jdbc/SQLManager.java b/h2o-core/src/main/java/water/jdbc/SQLManager.java
+index eed8e54d61de..f0498b264d3b 100644
+--- a/h2o-core/src/main/java/water/jdbc/SQLManager.java
++++ b/h2o-core/src/main/java/water/jdbc/SQLManager.java
+@@ -46,8 +46,11 @@ public class SQLManager {
+   private static final Pattern JDBC_PARAMETERS_REGEX_PATTERN = Pattern.compile("(?i)([a-z0-9_]+)\\s*=\\s*");
+ 
+   private static final List<String> DEFAULT_JDBC_DISALLOWED_PARAMETERS = Stream.of(
+-          "autoDeserialize", "queryInterceptors", "allowLoadLocalInfile", "allowMultiQueries", //mysql 
+-          "allowLoadLocalInfileInPath", "allowUrlInLocalInfile", "allowPublicKeyRetrieval", //mysql 
++          "autoDeserialize", "queryInterceptors", "allowLoadLocalInfile", "allowMultiQueries", //mysql
++          "allowLoadLocalInfileInPath", "allowUrlInLocalInfile", "allowPublicKeyRetrieval", //mysql
++          "statementInterceptors", //mysql
++          "socketFactory", "socketFactoryArg", "sslfactory", "sslfactoryarg", //postgresql
++          "loggerLevel", "loggerFile", //postgresql -- not dangerous but user should not have a reason to use them
+           "init", "script", "shutdown" //h2
+   ).map(String::toLowerCase).collect(Collectors.toList());
+   private static AtomicLong NEXT_TABLE_NUM = new AtomicLong(0);
+diff --git a/h2o-core/src/test/java/water/jdbc/SQLManagerTest.java b/h2o-core/src/test/java/water/jdbc/SQLManagerTest.java
+index 774a47e1fec6..4f93651dcb3c 100644
+--- a/h2o-core/src/test/java/water/jdbc/SQLManagerTest.java
++++ b/h2o-core/src/test/java/water/jdbc/SQLManagerTest.java
+@@ -246,6 +246,36 @@ public void testValidateJdbcConnectionStringMysqlMultipleEncodedString() {
+     SQLManager.validateJdbcUrl(jdbcConnection);
+   }
+ 
++  @Test
++  public void testValidateJdbcConnectionStringPostgresqlSocketFactory() {
++    exception.expect(IllegalArgumentException.class);
++    exception.expectMessage("Potentially dangerous JDBC parameter found: socketFactory");
++
++    String jdbcConnection = "jdbc:postgresql://127.0.0.1:5432/test?socketFactory=org.springframework.context.support.ClassPathXmlApplicationContext&socketFactoryArg=http://127.0.0.1:9090/evil.xml";
++
++    SQLManager.validateJdbcUrl(jdbcConnection);
++  }
++
++  @Test
++  public void testValidateJdbcConnectionStringPostgresqlSslFactory() {
++    exception.expect(IllegalArgumentException.class);
++    exception.expectMessage("Potentially dangerous JDBC parameter found: sslfactory");
++
++    String jdbcConnection = "jdbc:postgresql://127.0.0.1:5432/test?sslfactory=org.springframework.context.support.ClassPathXmlApplicationContext&sslfactoryarg=http://127.0.0.1:9090/evil.xml";
++
++    SQLManager.validateJdbcUrl(jdbcConnection);
++  }
++
++  @Test
++  public void testValidateJdbcConnectionStringPostgresqlLoggerLevel() {
++    exception.expect(IllegalArgumentException.class);
++    exception.expectMessage("Potentially dangerous JDBC parameter found: loggerLevel");
++
++    String jdbcConnection = "jdbc:postgresql://127.0.0.1:5432/test?loggerLevel=DEBUG&loggerFile=/tmp/pwned.jsp";
++
++    SQLManager.validateJdbcUrl(jdbcConnection);
++  }
++
+   /**
+    * Test fail if any exception is thrown therefore no assert
+    */
+@@ -254,4 +284,13 @@ public void testValidateJdbcConnectionStringMysqlPass() {
+     String jdbcConnection = "jdbc:mysql://127.0.0.1:3306/mydb?allowedParameter=true";
+     SQLManager.validateJdbcUrl(jdbcConnection);
+   }
++
++  /**
++   * Test fail if any exception is thrown therefore no assert
++   */
++  @Test
++  public void testValidateJdbcConnectionStringPostgresqlPass() {
++    String jdbcConnection = "jdbc:postgresql://127.0.0.1:5432/mydb?ssl=true&sslmode=require";
++    SQLManager.validateJdbcUrl(jdbcConnection);
++  }
+ }

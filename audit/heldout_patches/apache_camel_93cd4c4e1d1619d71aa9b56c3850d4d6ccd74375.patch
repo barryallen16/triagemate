@@ -1,0 +1,621 @@
+From 93cd4c4e1d1619d71aa9b56c3850d4d6ccd74375 Mon Sep 17 00:00:00 2001
+From: Andrea Cosentino <ancosen@gmail.com>
+Date: Fri, 29 May 2026 21:58:09 +0200
+Subject: [PATCH] [backport camel-4.14.x] CAMEL-23584: camel-kafka - align
+ Exchange header constant names with Camel naming convention (#23602)
+
+Backport of #23602 (CAMEL-23584) to camel-4.14.x.
+
+Renames the Exchange header string values in KafkaConstants from the
+non-Camel-prefixed "kafka.*" namespace to the project-wide "CamelKafka*"
+PascalCase convention. Java field names are unchanged (symbolic references
+keep working); routes hard-coding the literal "kafka.*" header strings must
+move to the new "CamelKafka*" values. Only the string values were changed on
+this branch (4.14.x KafkaConstants differs from main and its structure is
+otherwise preserved). Keeps the bundled transforms, the KafkaHeaderDeserializer,
+and the camel-tracing / camel-telemetry KafkaSpanDecorator copies in sync, and
+regenerates the catalog and endpoint DSL artifacts. The camel-opentelemetry2
+test infra, core ImportantHeaderUtils, and important-headers.json do not exist
+on this branch. The upgrade-guide entry is added on main (per the backport
+upgrade-guide policy).
+
+Tracker: CAMEL-23577
+
+Closes #23632
+---
+ .../camel/catalog/components/kafka.json       | 24 ++++-----
+ .../apache/camel/component/kafka/kafka.json   | 24 ++++-----
+ .../src/main/docs/kafka-component.adoc        | 24 ++++-----
+ .../camel/component/kafka/KafkaConstants.java | 24 ++++-----
+ .../kafka/KafkaHeaderDeserializer.java        |  2 +-
+ .../transform/MessageTimestampRouter.java     |  5 +-
+ .../kafka/transform/RegexRouter.java          |  5 +-
+ .../kafka/transform/TimestampRouter.java      |  5 +-
+ .../component/kafka/transform/ValueToKey.java |  3 +-
+ .../integration/KafkaConsumerFullIT.java      |  2 +-
+ .../kafka/transform/RegexRouterTest.java      |  5 +-
+ .../clients/producer/KafkaProducerTest.java   |  9 ++--
+ .../decorators/KafkaSpanDecorator.java        | 10 ++--
+ .../decorators/KafkaSpanDecorator.java        | 10 ++--
+ .../dsl/KafkaEndpointBuilderFactory.java      | 49 +++++++++----------
+ 15 files changed, 103 insertions(+), 98 deletions(-)
+
+diff --git a/catalog/camel-catalog/src/generated/resources/org/apache/camel/catalog/components/kafka.json b/catalog/camel-catalog/src/generated/resources/org/apache/camel/catalog/components/kafka.json
+index ec3cbe85f125e..125cf6b762b59 100644
+--- a/catalog/camel-catalog/src/generated/resources/org/apache/camel/catalog/components/kafka.json
++++ b/catalog/camel-catalog/src/generated/resources/org/apache/camel/catalog/components/kafka.json
+@@ -146,18 +146,18 @@
+     "useGlobalSslContextParameters": { "index": 119, "kind": "property", "displayName": "Use Global Ssl Context Parameters", "group": "security", "label": "security", "required": false, "type": "boolean", "javaType": "boolean", "deprecated": false, "autowired": false, "secret": false, "defaultValue": false, "description": "Enable usage of global SSL context parameters." }
+   },
+   "headers": {
+-    "kafka.PARTITION_KEY": { "index": 0, "kind": "header", "displayName": "", "group": "producer", "label": "producer", "required": false, "javaType": "Integer", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "Explicitly specify the partition", "constantName": "org.apache.camel.component.kafka.KafkaConstants#PARTITION_KEY" },
+-    "kafka.PARTITION": { "index": 1, "kind": "header", "displayName": "", "group": "consumer", "label": "consumer", "required": false, "javaType": "Integer", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "The partition where the message was stored", "constantName": "org.apache.camel.component.kafka.KafkaConstants#PARTITION" },
+-    "kafka.KEY": { "index": 2, "kind": "header", "displayName": "", "group": "common", "label": "", "required": true, "javaType": "Object", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "Producer: The key of the message in order to ensure that all related message goes in the same partition. Consumer: The key of the message if configured", "constantName": "org.apache.camel.component.kafka.KafkaConstants#KEY" },
+-    "kafka.TOPIC": { "index": 3, "kind": "header", "displayName": "", "group": "consumer", "label": "consumer", "required": false, "javaType": "String", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "The topic from where the message originated", "constantName": "org.apache.camel.component.kafka.KafkaConstants#TOPIC" },
+-    "kafka.OVERRIDE_TOPIC": { "index": 4, "kind": "header", "displayName": "", "group": "producer", "label": "producer", "required": false, "javaType": "String", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "The topic to which send the message (override and takes precedence), and the header is not preserved.", "constantName": "org.apache.camel.component.kafka.KafkaConstants#OVERRIDE_TOPIC" },
+-    "kafka.OFFSET": { "index": 5, "kind": "header", "displayName": "", "group": "consumer", "label": "consumer", "required": false, "javaType": "Long", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "The offset of the message", "constantName": "org.apache.camel.component.kafka.KafkaConstants#OFFSET" },
+-    "kafka.HEADERS": { "index": 6, "kind": "header", "displayName": "", "group": "consumer", "label": "consumer", "required": false, "javaType": "org.apache.kafka.common.header.Headers", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "The record headers", "constantName": "org.apache.camel.component.kafka.KafkaConstants#HEADERS" },
+-    "kafka.LAST_RECORD_BEFORE_COMMIT": { "index": 7, "kind": "header", "displayName": "", "group": "consumer", "label": "consumer", "required": false, "javaType": "Boolean", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "Whether or not it's the last record before commit (only available if autoCommitEnable endpoint parameter is false)", "constantName": "org.apache.camel.component.kafka.KafkaConstants#LAST_RECORD_BEFORE_COMMIT" },
+-    "kafka.LAST_POLL_RECORD": { "index": 8, "kind": "header", "displayName": "", "group": "consumer", "label": "consumer", "required": false, "javaType": "Boolean", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "Indicates the last record within the current poll request (only available if autoCommitEnable endpoint parameter is false or allowManualCommit is true)", "constantName": "org.apache.camel.component.kafka.KafkaConstants#LAST_POLL_RECORD" },
+-    "kafka.TIMESTAMP": { "index": 9, "kind": "header", "displayName": "", "group": "consumer", "label": "consumer", "required": false, "javaType": "Long", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "The timestamp of the message", "constantName": "org.apache.camel.component.kafka.KafkaConstants#TIMESTAMP" },
+-    "kafka.OVERRIDE_TIMESTAMP": { "index": 10, "kind": "header", "displayName": "", "group": "producer", "label": "producer", "required": false, "javaType": "Long", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "The ProducerRecord also has an associated timestamp. If the user did provide a timestamp, the producer will stamp the record with the provided timestamp and the header is not preserved.", "constantName": "org.apache.camel.component.kafka.KafkaConstants#OVERRIDE_TIMESTAMP" },
+-    "kafka.RECORD_META": { "index": 11, "kind": "header", "displayName": "", "group": "producer", "label": "producer", "required": false, "javaType": "List<RecordMetadata>", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "The metadata (only configured if recordMetadata endpoint parameter is true)", "constantName": "org.apache.camel.component.kafka.KafkaConstants#KAFKA_RECORD_META" },
++    "CamelKafkaPartitionKey": { "index": 0, "kind": "header", "displayName": "", "group": "producer", "label": "producer", "required": false, "javaType": "Integer", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "Explicitly specify the partition", "constantName": "org.apache.camel.component.kafka.KafkaConstants#PARTITION_KEY" },
++    "CamelKafkaPartition": { "index": 1, "kind": "header", "displayName": "", "group": "consumer", "label": "consumer", "required": false, "javaType": "Integer", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "The partition where the message was stored", "constantName": "org.apache.camel.component.kafka.KafkaConstants#PARTITION" },
++    "CamelKafkaKey": { "index": 2, "kind": "header", "displayName": "", "group": "common", "label": "", "required": true, "javaType": "Object", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "Producer: The key of the message in order to ensure that all related message goes in the same partition. Consumer: The key of the message if configured", "constantName": "org.apache.camel.component.kafka.KafkaConstants#KEY" },
++    "CamelKafkaTopic": { "index": 3, "kind": "header", "displayName": "", "group": "consumer", "label": "consumer", "required": false, "javaType": "String", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "The topic from where the message originated", "constantName": "org.apache.camel.component.kafka.KafkaConstants#TOPIC" },
++    "CamelKafkaOverrideTopic": { "index": 4, "kind": "header", "displayName": "", "group": "producer", "label": "producer", "required": false, "javaType": "String", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "The topic to which send the message (override and takes precedence), and the header is not preserved.", "constantName": "org.apache.camel.component.kafka.KafkaConstants#OVERRIDE_TOPIC" },
++    "CamelKafkaOffset": { "index": 5, "kind": "header", "displayName": "", "group": "consumer", "label": "consumer", "required": false, "javaType": "Long", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "The offset of the message", "constantName": "org.apache.camel.component.kafka.KafkaConstants#OFFSET" },
++    "CamelKafkaHeaders": { "index": 6, "kind": "header", "displayName": "", "group": "consumer", "label": "consumer", "required": false, "javaType": "org.apache.kafka.common.header.Headers", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "The record headers", "constantName": "org.apache.camel.component.kafka.KafkaConstants#HEADERS" },
++    "CamelKafkaLastRecordBeforeCommit": { "index": 7, "kind": "header", "displayName": "", "group": "consumer", "label": "consumer", "required": false, "javaType": "Boolean", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "Whether or not it's the last record before commit (only available if autoCommitEnable endpoint parameter is false)", "constantName": "org.apache.camel.component.kafka.KafkaConstants#LAST_RECORD_BEFORE_COMMIT" },
++    "CamelKafkaLastPollRecord": { "index": 8, "kind": "header", "displayName": "", "group": "consumer", "label": "consumer", "required": false, "javaType": "Boolean", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "Indicates the last record within the current poll request (only available if autoCommitEnable endpoint parameter is false or allowManualCommit is true)", "constantName": "org.apache.camel.component.kafka.KafkaConstants#LAST_POLL_RECORD" },
++    "CamelKafkaTimestamp": { "index": 9, "kind": "header", "displayName": "", "group": "consumer", "label": "consumer", "required": false, "javaType": "Long", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "The timestamp of the message", "constantName": "org.apache.camel.component.kafka.KafkaConstants#TIMESTAMP" },
++    "CamelKafkaOverrideTimestamp": { "index": 10, "kind": "header", "displayName": "", "group": "producer", "label": "producer", "required": false, "javaType": "Long", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "The ProducerRecord also has an associated timestamp. If the user did provide a timestamp, the producer will stamp the record with the provided timestamp and the header is not preserved.", "constantName": "org.apache.camel.component.kafka.KafkaConstants#OVERRIDE_TIMESTAMP" },
++    "CamelKafkaRecordMeta": { "index": 11, "kind": "header", "displayName": "", "group": "producer", "label": "producer", "required": false, "javaType": "List<RecordMetadata>", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "The metadata (only configured if recordMetadata endpoint parameter is true)", "constantName": "org.apache.camel.component.kafka.KafkaConstants#KAFKA_RECORD_META" },
+     "CamelKafkaManualCommit": { "index": 12, "kind": "header", "displayName": "", "group": "consumer", "label": "consumer", "required": false, "javaType": "org.apache.camel.component.kafka.consumer.KafkaManualCommit", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "Can be used for forcing manual offset commit when using Kafka consumer.", "constantName": "org.apache.camel.component.kafka.KafkaConstants#MANUAL_COMMIT" }
+   },
+   "properties": {
+diff --git a/components/camel-kafka/src/generated/resources/META-INF/org/apache/camel/component/kafka/kafka.json b/components/camel-kafka/src/generated/resources/META-INF/org/apache/camel/component/kafka/kafka.json
+index ec3cbe85f125e..125cf6b762b59 100644
+--- a/components/camel-kafka/src/generated/resources/META-INF/org/apache/camel/component/kafka/kafka.json
++++ b/components/camel-kafka/src/generated/resources/META-INF/org/apache/camel/component/kafka/kafka.json
+@@ -146,18 +146,18 @@
+     "useGlobalSslContextParameters": { "index": 119, "kind": "property", "displayName": "Use Global Ssl Context Parameters", "group": "security", "label": "security", "required": false, "type": "boolean", "javaType": "boolean", "deprecated": false, "autowired": false, "secret": false, "defaultValue": false, "description": "Enable usage of global SSL context parameters." }
+   },
+   "headers": {
+-    "kafka.PARTITION_KEY": { "index": 0, "kind": "header", "displayName": "", "group": "producer", "label": "producer", "required": false, "javaType": "Integer", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "Explicitly specify the partition", "constantName": "org.apache.camel.component.kafka.KafkaConstants#PARTITION_KEY" },
+-    "kafka.PARTITION": { "index": 1, "kind": "header", "displayName": "", "group": "consumer", "label": "consumer", "required": false, "javaType": "Integer", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "The partition where the message was stored", "constantName": "org.apache.camel.component.kafka.KafkaConstants#PARTITION" },
+-    "kafka.KEY": { "index": 2, "kind": "header", "displayName": "", "group": "common", "label": "", "required": true, "javaType": "Object", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "Producer: The key of the message in order to ensure that all related message goes in the same partition. Consumer: The key of the message if configured", "constantName": "org.apache.camel.component.kafka.KafkaConstants#KEY" },
+-    "kafka.TOPIC": { "index": 3, "kind": "header", "displayName": "", "group": "consumer", "label": "consumer", "required": false, "javaType": "String", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "The topic from where the message originated", "constantName": "org.apache.camel.component.kafka.KafkaConstants#TOPIC" },
+-    "kafka.OVERRIDE_TOPIC": { "index": 4, "kind": "header", "displayName": "", "group": "producer", "label": "producer", "required": false, "javaType": "String", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "The topic to which send the message (override and takes precedence), and the header is not preserved.", "constantName": "org.apache.camel.component.kafka.KafkaConstants#OVERRIDE_TOPIC" },
+-    "kafka.OFFSET": { "index": 5, "kind": "header", "displayName": "", "group": "consumer", "label": "consumer", "required": false, "javaType": "Long", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "The offset of the message", "constantName": "org.apache.camel.component.kafka.KafkaConstants#OFFSET" },
+-    "kafka.HEADERS": { "index": 6, "kind": "header", "displayName": "", "group": "consumer", "label": "consumer", "required": false, "javaType": "org.apache.kafka.common.header.Headers", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "The record headers", "constantName": "org.apache.camel.component.kafka.KafkaConstants#HEADERS" },
+-    "kafka.LAST_RECORD_BEFORE_COMMIT": { "index": 7, "kind": "header", "displayName": "", "group": "consumer", "label": "consumer", "required": false, "javaType": "Boolean", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "Whether or not it's the last record before commit (only available if autoCommitEnable endpoint parameter is false)", "constantName": "org.apache.camel.component.kafka.KafkaConstants#LAST_RECORD_BEFORE_COMMIT" },
+-    "kafka.LAST_POLL_RECORD": { "index": 8, "kind": "header", "displayName": "", "group": "consumer", "label": "consumer", "required": false, "javaType": "Boolean", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "Indicates the last record within the current poll request (only available if autoCommitEnable endpoint parameter is false or allowManualCommit is true)", "constantName": "org.apache.camel.component.kafka.KafkaConstants#LAST_POLL_RECORD" },
+-    "kafka.TIMESTAMP": { "index": 9, "kind": "header", "displayName": "", "group": "consumer", "label": "consumer", "required": false, "javaType": "Long", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "The timestamp of the message", "constantName": "org.apache.camel.component.kafka.KafkaConstants#TIMESTAMP" },
+-    "kafka.OVERRIDE_TIMESTAMP": { "index": 10, "kind": "header", "displayName": "", "group": "producer", "label": "producer", "required": false, "javaType": "Long", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "The ProducerRecord also has an associated timestamp. If the user did provide a timestamp, the producer will stamp the record with the provided timestamp and the header is not preserved.", "constantName": "org.apache.camel.component.kafka.KafkaConstants#OVERRIDE_TIMESTAMP" },
+-    "kafka.RECORD_META": { "index": 11, "kind": "header", "displayName": "", "group": "producer", "label": "producer", "required": false, "javaType": "List<RecordMetadata>", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "The metadata (only configured if recordMetadata endpoint parameter is true)", "constantName": "org.apache.camel.component.kafka.KafkaConstants#KAFKA_RECORD_META" },
++    "CamelKafkaPartitionKey": { "index": 0, "kind": "header", "displayName": "", "group": "producer", "label": "producer", "required": false, "javaType": "Integer", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "Explicitly specify the partition", "constantName": "org.apache.camel.component.kafka.KafkaConstants#PARTITION_KEY" },
++    "CamelKafkaPartition": { "index": 1, "kind": "header", "displayName": "", "group": "consumer", "label": "consumer", "required": false, "javaType": "Integer", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "The partition where the message was stored", "constantName": "org.apache.camel.component.kafka.KafkaConstants#PARTITION" },
++    "CamelKafkaKey": { "index": 2, "kind": "header", "displayName": "", "group": "common", "label": "", "required": true, "javaType": "Object", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "Producer: The key of the message in order to ensure that all related message goes in the same partition. Consumer: The key of the message if configured", "constantName": "org.apache.camel.component.kafka.KafkaConstants#KEY" },
++    "CamelKafkaTopic": { "index": 3, "kind": "header", "displayName": "", "group": "consumer", "label": "consumer", "required": false, "javaType": "String", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "The topic from where the message originated", "constantName": "org.apache.camel.component.kafka.KafkaConstants#TOPIC" },
++    "CamelKafkaOverrideTopic": { "index": 4, "kind": "header", "displayName": "", "group": "producer", "label": "producer", "required": false, "javaType": "String", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "The topic to which send the message (override and takes precedence), and the header is not preserved.", "constantName": "org.apache.camel.component.kafka.KafkaConstants#OVERRIDE_TOPIC" },
++    "CamelKafkaOffset": { "index": 5, "kind": "header", "displayName": "", "group": "consumer", "label": "consumer", "required": false, "javaType": "Long", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "The offset of the message", "constantName": "org.apache.camel.component.kafka.KafkaConstants#OFFSET" },
++    "CamelKafkaHeaders": { "index": 6, "kind": "header", "displayName": "", "group": "consumer", "label": "consumer", "required": false, "javaType": "org.apache.kafka.common.header.Headers", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "The record headers", "constantName": "org.apache.camel.component.kafka.KafkaConstants#HEADERS" },
++    "CamelKafkaLastRecordBeforeCommit": { "index": 7, "kind": "header", "displayName": "", "group": "consumer", "label": "consumer", "required": false, "javaType": "Boolean", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "Whether or not it's the last record before commit (only available if autoCommitEnable endpoint parameter is false)", "constantName": "org.apache.camel.component.kafka.KafkaConstants#LAST_RECORD_BEFORE_COMMIT" },
++    "CamelKafkaLastPollRecord": { "index": 8, "kind": "header", "displayName": "", "group": "consumer", "label": "consumer", "required": false, "javaType": "Boolean", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "Indicates the last record within the current poll request (only available if autoCommitEnable endpoint parameter is false or allowManualCommit is true)", "constantName": "org.apache.camel.component.kafka.KafkaConstants#LAST_POLL_RECORD" },
++    "CamelKafkaTimestamp": { "index": 9, "kind": "header", "displayName": "", "group": "consumer", "label": "consumer", "required": false, "javaType": "Long", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "The timestamp of the message", "constantName": "org.apache.camel.component.kafka.KafkaConstants#TIMESTAMP" },
++    "CamelKafkaOverrideTimestamp": { "index": 10, "kind": "header", "displayName": "", "group": "producer", "label": "producer", "required": false, "javaType": "Long", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "The ProducerRecord also has an associated timestamp. If the user did provide a timestamp, the producer will stamp the record with the provided timestamp and the header is not preserved.", "constantName": "org.apache.camel.component.kafka.KafkaConstants#OVERRIDE_TIMESTAMP" },
++    "CamelKafkaRecordMeta": { "index": 11, "kind": "header", "displayName": "", "group": "producer", "label": "producer", "required": false, "javaType": "List<RecordMetadata>", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "The metadata (only configured if recordMetadata endpoint parameter is true)", "constantName": "org.apache.camel.component.kafka.KafkaConstants#KAFKA_RECORD_META" },
+     "CamelKafkaManualCommit": { "index": 12, "kind": "header", "displayName": "", "group": "consumer", "label": "consumer", "required": false, "javaType": "org.apache.camel.component.kafka.consumer.KafkaManualCommit", "deprecated": false, "deprecationNote": "", "autowired": false, "secret": false, "description": "Can be used for forcing manual offset commit when using Kafka consumer.", "constantName": "org.apache.camel.component.kafka.KafkaConstants#MANUAL_COMMIT" }
+   },
+   "properties": {
+diff --git a/components/camel-kafka/src/main/docs/kafka-component.adoc b/components/camel-kafka/src/main/docs/kafka-component.adoc
+index 4deb01226499c..8af4b80003fad 100644
+--- a/components/camel-kafka/src/main/docs/kafka-component.adoc
++++ b/components/camel-kafka/src/main/docs/kafka-component.adoc
+@@ -660,10 +660,10 @@ Here is the minimal route you need to read messages from Kafka.
+ ----
+ from("kafka:test?brokers=localhost:9092")
+     .log("Message received from Kafka : ${body}")
+-    .log("    on the topic ${headers[kafka.TOPIC]}")
+-    .log("    on the partition ${headers[kafka.PARTITION]}")
+-    .log("    with the offset ${headers[kafka.OFFSET]}")
+-    .log("    with the key ${headers[kafka.KEY]}")
++    .log("    on the topic ${headers[CamelKafkaTopic]}")
++    .log("    on the partition ${headers[CamelKafkaPartition]}")
++    .log("    with the offset ${headers[CamelKafkaOffset]}")
++    .log("    with the key ${headers[CamelKafkaKey]}")
+ ----
+ 
+ If you need to consume messages from multiple topics, you can use a comma separated list of topic names.
+@@ -672,10 +672,10 @@ If you need to consume messages from multiple topics, you can use a comma separa
+ ----
+ from("kafka:test,test1,test2?brokers=localhost:9092")
+     .log("Message received from Kafka : ${body}")
+-    .log("    on the topic ${headers[kafka.TOPIC]}")
+-    .log("    on the partition ${headers[kafka.PARTITION]}")
+-    .log("    with the offset ${headers[kafka.OFFSET]}")
+-    .log("    with the key ${headers[kafka.KEY]}")
++    .log("    on the topic ${headers[CamelKafkaTopic]}")
++    .log("    on the partition ${headers[CamelKafkaPartition]}")
++    .log("    with the offset ${headers[CamelKafkaOffset]}")
++    .log("    with the key ${headers[CamelKafkaKey]}")
+ ----
+ 
+ It's also possible to subscribe to multiple topics giving a pattern as the topic name and using the `topicIsPattern` option.
+@@ -684,10 +684,10 @@ It's also possible to subscribe to multiple topics giving a pattern as the topic
+ ----
+ from("kafka:test.*?brokers=localhost:9092&topicIsPattern=true")
+     .log("Message received from Kafka : ${body}")
+-    .log("    on the topic ${headers[kafka.TOPIC]}")
+-    .log("    on the partition ${headers[kafka.PARTITION]}")
+-    .log("    with the offset ${headers[kafka.OFFSET]}")
+-    .log("    with the key ${headers[kafka.KEY]}")
++    .log("    on the topic ${headers[CamelKafkaTopic]}")
++    .log("    on the partition ${headers[CamelKafkaPartition]}")
++    .log("    with the offset ${headers[CamelKafkaOffset]}")
++    .log("    with the key ${headers[CamelKafkaKey]}")
+ ----
+ 
+ When consuming messages from Kafka, you can use your own offset management and not delegate this management to Kafka.
+diff --git a/components/camel-kafka/src/main/java/org/apache/camel/component/kafka/KafkaConstants.java b/components/camel-kafka/src/main/java/org/apache/camel/component/kafka/KafkaConstants.java
+index 5fc3e184bda15..9779c22ba62ce 100644
+--- a/components/camel-kafka/src/main/java/org/apache/camel/component/kafka/KafkaConstants.java
++++ b/components/camel-kafka/src/main/java/org/apache/camel/component/kafka/KafkaConstants.java
+@@ -21,38 +21,38 @@
+ public final class KafkaConstants {
+ 
+     @Metadata(label = "producer", description = "Explicitly specify the partition", javaType = "Integer")
+-    public static final String PARTITION_KEY = "kafka.PARTITION_KEY";
++    public static final String PARTITION_KEY = "CamelKafkaPartitionKey";
+     @Metadata(label = "consumer", description = "The partition where the message was stored", javaType = "Integer")
+-    public static final String PARTITION = "kafka.PARTITION";
++    public static final String PARTITION = "CamelKafkaPartition";
+     @Metadata(description = "*Producer:* The key of the message in order to ensure that all related message goes in the same partition. "
+                             +
+                             "*Consumer:* The key of the message if configured",
+               javaType = "Object", required = true)
+-    public static final String KEY = "kafka.KEY";
++    public static final String KEY = "CamelKafkaKey";
+     @Metadata(label = "consumer", description = "The topic from where the message originated", javaType = "String")
+-    public static final String TOPIC = "kafka.TOPIC";
++    public static final String TOPIC = "CamelKafkaTopic";
+     @Metadata(label = "producer",
+               description = "The topic to which send the message (override and takes precedence), and the header is not preserved.",
+               javaType = "String")
+-    public static final String OVERRIDE_TOPIC = "kafka.OVERRIDE_TOPIC";
++    public static final String OVERRIDE_TOPIC = "CamelKafkaOverrideTopic";
+     @Metadata(label = "consumer", description = "The offset of the message", javaType = "Long")
+-    public static final String OFFSET = "kafka.OFFSET";
++    public static final String OFFSET = "CamelKafkaOffset";
+     @Metadata(label = "consumer", description = "The record headers", javaType = "org.apache.kafka.common.header.Headers")
+-    public static final String HEADERS = "kafka.HEADERS";
++    public static final String HEADERS = "CamelKafkaHeaders";
+     @Metadata(label = "consumer",
+               description = "Whether or not it's the last record before commit (only available if `autoCommitEnable` endpoint parameter is `false`)",
+               javaType = "Boolean")
+-    public static final String LAST_RECORD_BEFORE_COMMIT = "kafka.LAST_RECORD_BEFORE_COMMIT";
++    public static final String LAST_RECORD_BEFORE_COMMIT = "CamelKafkaLastRecordBeforeCommit";
+     @Metadata(label = "consumer", description = "Indicates the last record within the current poll request " +
+                                                 "(only available if `autoCommitEnable` endpoint parameter is `false` or `allowManualCommit` is `true`)",
+               javaType = "Boolean")
+-    public static final String LAST_POLL_RECORD = "kafka.LAST_POLL_RECORD";
++    public static final String LAST_POLL_RECORD = "CamelKafkaLastPollRecord";
+     @Metadata(label = "consumer", description = "The timestamp of the message", javaType = "Long")
+-    public static final String TIMESTAMP = "kafka.TIMESTAMP";
++    public static final String TIMESTAMP = "CamelKafkaTimestamp";
+     @Metadata(label = "producer", description = "The ProducerRecord also has an associated timestamp. " +
+                                                 "If the user did provide a timestamp, the producer will stamp the  record with the provided timestamp and the header is not preserved.",
+               javaType = "Long")
+-    public static final String OVERRIDE_TIMESTAMP = "kafka.OVERRIDE_TIMESTAMP";
++    public static final String OVERRIDE_TIMESTAMP = "CamelKafkaOverrideTimestamp";
+ 
+     @Deprecated
+     public static final String KAFKA_DEFAULT_ENCODER = "kafka.serializer.DefaultEncoder";
+@@ -65,7 +65,7 @@ public final class KafkaConstants {
+     @Metadata(label = "producer",
+               description = "The metadata (only configured if `recordMetadata` endpoint parameter is `true`)",
+               javaType = "List<RecordMetadata>")
+-    public static final String KAFKA_RECORD_META = "kafka.RECORD_META";
++    public static final String KAFKA_RECORD_META = "CamelKafkaRecordMeta";
+     @Metadata(label = "consumer", description = "Can be used for forcing manual offset commit when using Kafka consumer.",
+               javaType = "org.apache.camel.component.kafka.consumer.KafkaManualCommit")
+     public static final String MANUAL_COMMIT = "CamelKafkaManualCommit";
+diff --git a/components/camel-kafka/src/main/java/org/apache/camel/component/kafka/KafkaHeaderDeserializer.java b/components/camel-kafka/src/main/java/org/apache/camel/component/kafka/KafkaHeaderDeserializer.java
+index 645c1883b59f2..4b7e43f4c1d05 100644
+--- a/components/camel-kafka/src/main/java/org/apache/camel/component/kafka/KafkaHeaderDeserializer.java
++++ b/components/camel-kafka/src/main/java/org/apache/camel/component/kafka/KafkaHeaderDeserializer.java
+@@ -85,7 +85,7 @@ private static Object convert(Class<?> type, Exchange exchange, Object value) {
+      * Exclude special Kafka headers from auto deserialization.
+      */
+     private boolean shouldDeserialize(Map.Entry<String, Object> entry) {
+-        return !entry.getKey().equals("kafka.HEADERS") && !entry.getKey().equals("CamelKafkaManualCommit");
++        return !entry.getKey().equals(KafkaConstants.HEADERS) && !entry.getKey().equals(KafkaConstants.MANUAL_COMMIT);
+     }
+ 
+     public void setEnabled(String enabled) {
+diff --git a/components/camel-kafka/src/main/java/org/apache/camel/component/kafka/transform/MessageTimestampRouter.java b/components/camel-kafka/src/main/java/org/apache/camel/component/kafka/transform/MessageTimestampRouter.java
+index 0ad6718b1183a..9009188d9a205 100644
+--- a/components/camel-kafka/src/main/java/org/apache/camel/component/kafka/transform/MessageTimestampRouter.java
++++ b/components/camel-kafka/src/main/java/org/apache/camel/component/kafka/transform/MessageTimestampRouter.java
+@@ -28,6 +28,7 @@
+ import com.fasterxml.jackson.databind.ObjectMapper;
+ import org.apache.camel.Exchange;
+ import org.apache.camel.ExchangeProperty;
++import org.apache.camel.component.kafka.KafkaConstants;
+ import org.apache.camel.util.ObjectHelper;
+ 
+ public class MessageTimestampRouter {
+@@ -54,7 +55,7 @@ public void process(
+         }
+ 
+         Object rawTimestamp = null;
+-        String topicName = ex.getMessage().getHeader("kafka.TOPIC", String.class);
++        String topicName = ex.getMessage().getHeader(KafkaConstants.TOPIC, String.class);
+         for (String key : splittedKeys) {
+             if (ObjectHelper.isNotEmpty(key)) {
+                 rawTimestamp = body.get(key);
+@@ -82,7 +83,7 @@ public void process(
+                 replace1 = TOPIC.matcher(topicFormat).replaceAll(Matcher.quoteReplacement(""));
+                 updatedTopic = TIMESTAMP.matcher(replace1).replaceAll(Matcher.quoteReplacement(formattedTimestamp));
+             }
+-            ex.getMessage().setHeader("kafka.OVERRIDE_TOPIC", updatedTopic);
++            ex.getMessage().setHeader(KafkaConstants.OVERRIDE_TOPIC, updatedTopic);
+         }
+     }
+ 
+diff --git a/components/camel-kafka/src/main/java/org/apache/camel/component/kafka/transform/RegexRouter.java b/components/camel-kafka/src/main/java/org/apache/camel/component/kafka/transform/RegexRouter.java
+index 582b9761bf630..f72893f5f5e00 100644
+--- a/components/camel-kafka/src/main/java/org/apache/camel/component/kafka/transform/RegexRouter.java
++++ b/components/camel-kafka/src/main/java/org/apache/camel/component/kafka/transform/RegexRouter.java
+@@ -21,6 +21,7 @@
+ 
+ import org.apache.camel.Exchange;
+ import org.apache.camel.ExchangeProperty;
++import org.apache.camel.component.kafka.KafkaConstants;
+ import org.apache.camel.util.ObjectHelper;
+ 
+ public class RegexRouter {
+@@ -28,12 +29,12 @@ public class RegexRouter {
+     public void process(
+             @ExchangeProperty("regex") String regex, @ExchangeProperty("replacement") String replacement, Exchange ex) {
+         Pattern regexPattern = Pattern.compile(regex);
+-        String topicName = ex.getMessage().getHeader("kafka.TOPIC", String.class);
++        String topicName = ex.getMessage().getHeader(KafkaConstants.TOPIC, String.class);
+         if (ObjectHelper.isNotEmpty(topicName)) {
+             final Matcher matcher = regexPattern.matcher(topicName);
+             if (matcher.matches()) {
+                 final String topicUpdated = matcher.replaceFirst(replacement);
+-                ex.getMessage().setHeader("kafka.OVERRIDE_TOPIC", topicUpdated);
++                ex.getMessage().setHeader(KafkaConstants.OVERRIDE_TOPIC, topicUpdated);
+             }
+         }
+         String ceType = ex.getMessage().getHeader("ce-type", String.class);
+diff --git a/components/camel-kafka/src/main/java/org/apache/camel/component/kafka/transform/TimestampRouter.java b/components/camel-kafka/src/main/java/org/apache/camel/component/kafka/transform/TimestampRouter.java
+index d0fac82211354..0629607043849 100644
+--- a/components/camel-kafka/src/main/java/org/apache/camel/component/kafka/transform/TimestampRouter.java
++++ b/components/camel-kafka/src/main/java/org/apache/camel/component/kafka/transform/TimestampRouter.java
+@@ -25,6 +25,7 @@
+ 
+ import org.apache.camel.Exchange;
+ import org.apache.camel.ExchangeProperty;
++import org.apache.camel.component.kafka.KafkaConstants;
+ import org.apache.camel.util.ObjectHelper;
+ 
+ public class TimestampRouter {
+@@ -40,7 +41,7 @@ public void process(
+         fmt.setTimeZone(TimeZone.getTimeZone("UTC"));
+ 
+         Long timestamp = null;
+-        String topicName = ex.getMessage().getHeader("kafka.TOPIC", String.class);
++        String topicName = ex.getMessage().getHeader(KafkaConstants.TOPIC, String.class);
+         Object rawTimestamp = ex.getMessage().getHeader(timestampHeaderName);
+         if (rawTimestamp instanceof Long) {
+             timestamp = (Long) rawTimestamp;
+@@ -61,7 +62,7 @@ public void process(
+                 replace1 = TOPIC.matcher(topicFormat).replaceAll(Matcher.quoteReplacement(""));
+                 updatedTopic = TIMESTAMP.matcher(replace1).replaceAll(Matcher.quoteReplacement(formattedTimestamp));
+             }
+-            ex.getMessage().setHeader("kafka.OVERRIDE_TOPIC", updatedTopic);
++            ex.getMessage().setHeader(KafkaConstants.OVERRIDE_TOPIC, updatedTopic);
+         }
+     }
+ 
+diff --git a/components/camel-kafka/src/main/java/org/apache/camel/component/kafka/transform/ValueToKey.java b/components/camel-kafka/src/main/java/org/apache/camel/component/kafka/transform/ValueToKey.java
+index 9adf1067c1a8e..b2fc89b9a2c83 100644
+--- a/components/camel-kafka/src/main/java/org/apache/camel/component/kafka/transform/ValueToKey.java
++++ b/components/camel-kafka/src/main/java/org/apache/camel/component/kafka/transform/ValueToKey.java
+@@ -25,6 +25,7 @@
+ import org.apache.camel.Exchange;
+ import org.apache.camel.ExchangeProperty;
+ import org.apache.camel.InvalidPayloadException;
++import org.apache.camel.component.kafka.KafkaConstants;
+ import org.apache.camel.util.ObjectHelper;
+ 
+ public class ValueToKey {
+@@ -47,7 +48,7 @@ public void process(@ExchangeProperty("fields") String fields, Exchange ex) thro
+             }
+         }
+ 
+-        ex.getMessage().setHeader("kafka.KEY", key);
++        ex.getMessage().setHeader(KafkaConstants.KEY, key);
+     }
+ 
+     boolean filterNames(String fieldName, List<String> splittedFields) {
+diff --git a/components/camel-kafka/src/test/java/org/apache/camel/component/kafka/integration/KafkaConsumerFullIT.java b/components/camel-kafka/src/test/java/org/apache/camel/component/kafka/integration/KafkaConsumerFullIT.java
+index 0957733834ce6..dad03bf627a41 100644
+--- a/components/camel-kafka/src/test/java/org/apache/camel/component/kafka/integration/KafkaConsumerFullIT.java
++++ b/components/camel-kafka/src/test/java/org/apache/camel/component/kafka/integration/KafkaConsumerFullIT.java
+@@ -160,7 +160,7 @@ public void kafkaRecordSpecificHeadersAreNotOverwritten() throws InterruptedExce
+         to.assertIsSatisfied(3000);
+ 
+         Map<String, Object> headers = to.getExchanges().get(0).getIn().getHeaders();
+-        assertTrue(headers.containsKey(KafkaConstants.TOPIC), "Should receive KafkaEndpoint populated kafka.TOPIC header");
++        assertTrue(headers.containsKey(KafkaConstants.TOPIC), "Should receive KafkaEndpoint populated CamelKafkaTopic header");
+         assertEquals(TOPIC, headers.get(KafkaConstants.TOPIC), "Topic name received");
+     }
+ 
+diff --git a/components/camel-kafka/src/test/java/org/apache/camel/component/kafka/transform/RegexRouterTest.java b/components/camel-kafka/src/test/java/org/apache/camel/component/kafka/transform/RegexRouterTest.java
+index 84d859a815089..473bfa05b7765 100644
+--- a/components/camel-kafka/src/test/java/org/apache/camel/component/kafka/transform/RegexRouterTest.java
++++ b/components/camel-kafka/src/test/java/org/apache/camel/component/kafka/transform/RegexRouterTest.java
+@@ -17,6 +17,7 @@
+ package org.apache.camel.component.kafka.transform;
+ 
+ import org.apache.camel.Exchange;
++import org.apache.camel.component.kafka.KafkaConstants;
+ import org.apache.camel.impl.DefaultCamelContext;
+ import org.apache.camel.support.DefaultExchange;
+ import org.junit.jupiter.api.Assertions;
+@@ -41,10 +42,10 @@ void setup() {
+     void shouldReplaceFieldToPlainJson() throws Exception {
+         Exchange exchange = new DefaultExchange(camelContext);
+ 
+-        exchange.getMessage().setHeader("kafka.TOPIC", topic);
++        exchange.getMessage().setHeader(KafkaConstants.TOPIC, topic);
+ 
+         processor.process(".*ll.*", "newTopic", exchange);
+ 
+-        Assertions.assertEquals("newTopic", exchange.getMessage().getHeader("kafka.OVERRIDE_TOPIC"));
++        Assertions.assertEquals("newTopic", exchange.getMessage().getHeader(KafkaConstants.OVERRIDE_TOPIC));
+     }
+ }
+diff --git a/components/camel-kafka/src/test/java/org/apache/kafka/clients/producer/KafkaProducerTest.java b/components/camel-kafka/src/test/java/org/apache/kafka/clients/producer/KafkaProducerTest.java
+index f15905c5f4294..73e703f5b9f4a 100644
+--- a/components/camel-kafka/src/test/java/org/apache/kafka/clients/producer/KafkaProducerTest.java
++++ b/components/camel-kafka/src/test/java/org/apache/kafka/clients/producer/KafkaProducerTest.java
+@@ -23,6 +23,7 @@
+ import org.apache.camel.Exchange;
+ import org.apache.camel.Message;
+ import org.apache.camel.component.kafka.KafkaComponent;
++import org.apache.camel.component.kafka.KafkaConstants;
+ import org.apache.camel.component.kafka.KafkaEndpoint;
+ import org.apache.camel.component.kafka.KafkaProducer;
+ import org.apache.camel.impl.DefaultCamelContext;
+@@ -56,8 +57,8 @@ public void init() throws Exception {
+         camelProducer.setKafkaProducer(kafkaProducer);
+         when(exchange.getIn()).thenReturn(message);
+         when(exchange.getContext()).thenReturn(context);
+-        when(message.getHeader("kafka.PARTITION_KEY", Integer.class)).thenReturn(0);
+-        when(message.getHeader("kafka.KEY")).thenReturn("key");
++        when(message.getHeader(KafkaConstants.PARTITION_KEY, Integer.class)).thenReturn(0);
++        when(message.getHeader(KafkaConstants.KEY)).thenReturn("key");
+     }
+ 
+     @AfterEach
+@@ -67,9 +68,9 @@ public void after() {
+ 
+     @Test
+     public void testSendOverrideTopic() throws Exception {
+-        when(message.removeHeader("kafka.OVERRIDE_TOPIC")).thenReturn("overridden-topic");
++        when(message.removeHeader(KafkaConstants.OVERRIDE_TOPIC)).thenReturn("overridden-topic");
+         camelProducer.process(exchange);
+-        when(message.removeHeader("kafka.OVERRIDE_TOPIC")).thenReturn(new TextNode("overridden-topic-jackson"));
++        when(message.removeHeader(KafkaConstants.OVERRIDE_TOPIC)).thenReturn(new TextNode("overridden-topic-jackson"));
+         camelProducer.process(exchange);
+         List<ProducerRecord<Object, Object>> records = kafkaProducer.history();
+         assertThat(records.get(0).topic(), Is.is("overridden-topic"));
+diff --git a/components/camel-telemetry/src/main/java/org/apache/camel/telemetry/decorators/KafkaSpanDecorator.java b/components/camel-telemetry/src/main/java/org/apache/camel/telemetry/decorators/KafkaSpanDecorator.java
+index c7905527fdfbb..2a798e40f9f39 100644
+--- a/components/camel-telemetry/src/main/java/org/apache/camel/telemetry/decorators/KafkaSpanDecorator.java
++++ b/components/camel-telemetry/src/main/java/org/apache/camel/telemetry/decorators/KafkaSpanDecorator.java
+@@ -30,11 +30,11 @@ public class KafkaSpanDecorator extends AbstractMessagingSpanDecorator {
+     /**
+      * Constants copied from {@link org.apache.camel.component.kafka.KafkaConstants}
+      */
+-    protected static final String PARTITION_KEY = "kafka.PARTITION_KEY";
+-    protected static final String PARTITION = "kafka.PARTITION";
+-    protected static final String KEY = "kafka.KEY";
+-    protected static final String OVERRIDE_TOPIC = "kafka.OVERRIDE_TOPIC";
+-    protected static final String OFFSET = "kafka.OFFSET";
++    protected static final String PARTITION_KEY = "CamelKafkaPartitionKey";
++    protected static final String PARTITION = "CamelKafkaPartition";
++    protected static final String KEY = "CamelKafkaKey";
++    protected static final String OVERRIDE_TOPIC = "CamelKafkaOverrideTopic";
++    protected static final String OFFSET = "CamelKafkaOffset";
+ 
+     @Override
+     public String getComponent() {
+diff --git a/components/camel-tracing/src/main/java/org/apache/camel/tracing/decorators/KafkaSpanDecorator.java b/components/camel-tracing/src/main/java/org/apache/camel/tracing/decorators/KafkaSpanDecorator.java
+index 2116d316f672f..74fa8f99e97f9 100644
+--- a/components/camel-tracing/src/main/java/org/apache/camel/tracing/decorators/KafkaSpanDecorator.java
++++ b/components/camel-tracing/src/main/java/org/apache/camel/tracing/decorators/KafkaSpanDecorator.java
+@@ -30,11 +30,11 @@ public class KafkaSpanDecorator extends AbstractMessagingSpanDecorator {
+     /**
+      * Constants copied from {@link org.apache.camel.component.kafka.KafkaConstants}
+      */
+-    protected static final String PARTITION_KEY = "kafka.PARTITION_KEY";
+-    protected static final String PARTITION = "kafka.PARTITION";
+-    protected static final String KEY = "kafka.KEY";
+-    protected static final String OVERRIDE_TOPIC = "kafka.OVERRIDE_TOPIC";
+-    protected static final String OFFSET = "kafka.OFFSET";
++    protected static final String PARTITION_KEY = "CamelKafkaPartitionKey";
++    protected static final String PARTITION = "CamelKafkaPartition";
++    protected static final String KEY = "CamelKafkaKey";
++    protected static final String OVERRIDE_TOPIC = "CamelKafkaOverrideTopic";
++    protected static final String OFFSET = "CamelKafkaOffset";
+ 
+     @Override
+     public String getComponent() {
+diff --git a/dsl/camel-endpointdsl/src/generated/java/org/apache/camel/builder/endpoint/dsl/KafkaEndpointBuilderFactory.java b/dsl/camel-endpointdsl/src/generated/java/org/apache/camel/builder/endpoint/dsl/KafkaEndpointBuilderFactory.java
+index f0dc762a5d22f..7f659f5fb0fae 100644
+--- a/dsl/camel-endpointdsl/src/generated/java/org/apache/camel/builder/endpoint/dsl/KafkaEndpointBuilderFactory.java
++++ b/dsl/camel-endpointdsl/src/generated/java/org/apache/camel/builder/endpoint/dsl/KafkaEndpointBuilderFactory.java
+@@ -5316,10 +5316,10 @@ public static class KafkaHeaderNameBuilder {
+          * 
+          * Group: producer
+          * 
+-         * @return the name of the header {@code kafka.PARTITION_KEY}.
++         * @return the name of the header {@code KafkaPartitionKey}.
+          */
+         public String kafkaPartitionKey() {
+-            return "kafka.PARTITION_KEY";
++            return "CamelKafkaPartitionKey";
+         }
+         /**
+          * The partition where the message was stored.
+@@ -5328,10 +5328,10 @@ public String kafkaPartitionKey() {
+          * 
+          * Group: consumer
+          * 
+-         * @return the name of the header {@code kafka.PARTITION}.
++         * @return the name of the header {@code KafkaPartition}.
+          */
+         public String kafkaPartition() {
+-            return "kafka.PARTITION";
++            return "CamelKafkaPartition";
+         }
+         /**
+          * Producer: The key of the message in order to ensure that all related
+@@ -5343,10 +5343,10 @@ public String kafkaPartition() {
+          * Required: true
+          * Group: common
+          * 
+-         * @return the name of the header {@code kafka.KEY}.
++         * @return the name of the header {@code KafkaKey}.
+          */
+         public String kafkaKey() {
+-            return "kafka.KEY";
++            return "CamelKafkaKey";
+         }
+         /**
+          * The topic from where the message originated.
+@@ -5355,10 +5355,10 @@ public String kafkaKey() {
+          * 
+          * Group: consumer
+          * 
+-         * @return the name of the header {@code kafka.TOPIC}.
++         * @return the name of the header {@code KafkaTopic}.
+          */
+         public String kafkaTopic() {
+-            return "kafka.TOPIC";
++            return "CamelKafkaTopic";
+         }
+         /**
+          * The topic to which send the message (override and takes precedence),
+@@ -5368,10 +5368,10 @@ public String kafkaTopic() {
+          * 
+          * Group: producer
+          * 
+-         * @return the name of the header {@code kafka.OVERRIDE_TOPIC}.
++         * @return the name of the header {@code KafkaOverrideTopic}.
+          */
+         public String kafkaOverrideTopic() {
+-            return "kafka.OVERRIDE_TOPIC";
++            return "CamelKafkaOverrideTopic";
+         }
+         /**
+          * The offset of the message.
+@@ -5380,10 +5380,10 @@ public String kafkaOverrideTopic() {
+          * 
+          * Group: consumer
+          * 
+-         * @return the name of the header {@code kafka.OFFSET}.
++         * @return the name of the header {@code KafkaOffset}.
+          */
+         public String kafkaOffset() {
+-            return "kafka.OFFSET";
++            return "CamelKafkaOffset";
+         }
+         /**
+          * The record headers.
+@@ -5392,10 +5392,10 @@ public String kafkaOffset() {
+          * 
+          * Group: consumer
+          * 
+-         * @return the name of the header {@code kafka.HEADERS}.
++         * @return the name of the header {@code KafkaHeaders}.
+          */
+         public String kafkaHeaders() {
+-            return "kafka.HEADERS";
++            return "CamelKafkaHeaders";
+         }
+         /**
+          * Whether or not it's the last record before commit (only available if
+@@ -5405,11 +5405,10 @@ public String kafkaHeaders() {
+          * 
+          * Group: consumer
+          * 
+-         * @return the name of the header {@code
+-         * kafka.LAST_RECORD_BEFORE_COMMIT}.
++         * @return the name of the header {@code KafkaLastRecordBeforeCommit}.
+          */
+         public String kafkaLastRecordBeforeCommit() {
+-            return "kafka.LAST_RECORD_BEFORE_COMMIT";
++            return "CamelKafkaLastRecordBeforeCommit";
+         }
+         /**
+          * Indicates the last record within the current poll request (only
+@@ -5420,10 +5419,10 @@ public String kafkaLastRecordBeforeCommit() {
+          * 
+          * Group: consumer
+          * 
+-         * @return the name of the header {@code kafka.LAST_POLL_RECORD}.
++         * @return the name of the header {@code KafkaLastPollRecord}.
+          */
+         public String kafkaLastPollRecord() {
+-            return "kafka.LAST_POLL_RECORD";
++            return "CamelKafkaLastPollRecord";
+         }
+         /**
+          * The timestamp of the message.
+@@ -5432,10 +5431,10 @@ public String kafkaLastPollRecord() {
+          * 
+          * Group: consumer
+          * 
+-         * @return the name of the header {@code kafka.TIMESTAMP}.
++         * @return the name of the header {@code KafkaTimestamp}.
+          */
+         public String kafkaTimestamp() {
+-            return "kafka.TIMESTAMP";
++            return "CamelKafkaTimestamp";
+         }
+         /**
+          * The ProducerRecord also has an associated timestamp. If the user did
+@@ -5446,10 +5445,10 @@ public String kafkaTimestamp() {
+          * 
+          * Group: producer
+          * 
+-         * @return the name of the header {@code kafka.OVERRIDE_TIMESTAMP}.
++         * @return the name of the header {@code KafkaOverrideTimestamp}.
+          */
+         public String kafkaOverrideTimestamp() {
+-            return "kafka.OVERRIDE_TIMESTAMP";
++            return "CamelKafkaOverrideTimestamp";
+         }
+         /**
+          * The metadata (only configured if recordMetadata endpoint parameter is
+@@ -5459,10 +5458,10 @@ public String kafkaOverrideTimestamp() {
+          * 
+          * Group: producer
+          * 
+-         * @return the name of the header {@code kafka.RECORD_META}.
++         * @return the name of the header {@code KafkaRecordMeta}.
+          */
+         public String kafkaRecordMeta() {
+-            return "kafka.RECORD_META";
++            return "CamelKafkaRecordMeta";
+         }
+         /**
+          * Can be used for forcing manual offset commit when using Kafka

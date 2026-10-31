@@ -1,0 +1,738 @@
+From 131e8576dcf3613f944c3e02527959bbf52370c3 Mon Sep 17 00:00:00 2001
+From: Valera V Harseko <vharseko@3a-systems.ru>
+Date: Fri, 17 Jul 2026 14:17:33 +0300
+Subject: [PATCH] GHSA-68r5-9hpg-7qw9 Unauthenticated SSRF, local file read and
+ unbounded-read DoS in the DSMLv2 gateway
+
+---
+ opendj-dsml-servlet/pom.xml                   |   8 +
+ opendj-dsml-servlet/resources/webapp/web.xml  |  64 +++++
+ .../dsml/protocol/ByteStringUtility.java      | 251 +++++++++++++++++-
+ .../org/opends/dsml/protocol/DSMLServlet.java |  36 ++-
+ .../protocol/ByteStringUtilityTestCase.java   | 251 ++++++++++++++++++
+ 5 files changed, 599 insertions(+), 11 deletions(-)
+ create mode 100644 opendj-dsml-servlet/src/test/java/org/opends/dsml/protocol/ByteStringUtilityTestCase.java
+
+diff --git a/opendj-dsml-servlet/pom.xml b/opendj-dsml-servlet/pom.xml
+index e130eba8b9..8688bf2e49 100644
+--- a/opendj-dsml-servlet/pom.xml
++++ b/opendj-dsml-servlet/pom.xml
+@@ -13,6 +13,7 @@
+   information: "Portions Copyright [year] [name of copyright owner]".
+ 
+   Copyright 2015-2016 ForgeRock AS.
++  Portions Copyright 2026 3A Systems, LLC.
+ -->
+ <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+     <modelVersion>4.0.0</modelVersion>
+@@ -97,6 +98,13 @@
+             <version>4.0.5</version>
+             <scope>runtime</scope>
+         </dependency>
++
++        <!-- Test dependencies (TestNG itself is inherited from the parent) -->
++        <dependency>
++            <groupId>org.openidentityplatform.commons</groupId>
++            <artifactId>build-tools</artifactId>
++            <scope>test</scope>
++        </dependency>
+     </dependencies>
+ 
+     <build><finalName>${project.groupId}.${project.artifactId}</finalName>
+diff --git a/opendj-dsml-servlet/resources/webapp/web.xml b/opendj-dsml-servlet/resources/webapp/web.xml
+index 7a33a03a3c..7d24136c03 100644
+--- a/opendj-dsml-servlet/resources/webapp/web.xml
++++ b/opendj-dsml-servlet/resources/webapp/web.xml
+@@ -1,5 +1,9 @@
+ <?xml version="1.0" encoding="ISO-8859-1"?>
+ 
++<!--
++  Portions Copyright 2026 3A Systems, LLC.
++-->
++
+ <web-app xmlns="http://java.sun.com/xml/ns/j2ee" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://java.sun.com/xml/ns/j2ee http://java.sun.com/xml/ns/j2ee/web-app_2_4.xsd"
+          version="2.4">
+@@ -72,6 +76,35 @@
+   </context-param>
+ -->
+ 
++<!-- Server-side dereferencing of xsd:anyURI values is DISABLED by default.
++     When disabled, an anyURI value is stored verbatim instead of being fetched
++     by the gateway. Fetching attacker-supplied URIs server-side is a
++     server-side request forgery, local-file disclosure and unbounded-read DoS
++     primitive (GHSA-68r5-9hpg-7qw9); enable it only if you fully trust every
++     DSML client. When enabled, only the allowlisted schemes are permitted,
++     requests to loopback/link-local/private/reserved addresses are rejected,
++     HTTP redirects are refused, and the fetched content is capped. Known
++     limitation: the address check and the fetch resolve the host name
++     independently, so a DNS name whose records change between the two lookups
++     (DNS rebinding) can still reach an internal address; only enable
++     dereferencing for trusted clients.
++  <context-param>
++    <description>Enable server-side dereferencing of anyURI values (default false)</description>
++    <param-name>ldap.dsml.dereference.anyuri</param-name>
++    <param-value>true</param-value>
++  </context-param>
++  <context-param>
++    <description>Comma-separated allowlist of URI schemes to dereference (default http,https)</description>
++    <param-name>ldap.dsml.dereference.anyuri.schemes</param-name>
++    <param-value>http,https</param-value>
++  </context-param>
++  <context-param>
++    <description>Maximum number of bytes fetched from an anyURI value (default 10485760)</description>
++    <param-name>ldap.dsml.dereference.anyuri.maxsize</param-name>
++    <param-value>10485760</param-value>
++  </context-param>
++-->
++
+ <!-- Add an extra <context-param> like the one below for each extended operation
+      that is known to return a string in the LDAP response. -->
+   <context-param>
+@@ -90,6 +123,37 @@
+     <url-pattern>/DSMLServlet</url-pattern>
+   </servlet-mapping>
+ 
++  <!-- Require container-managed authentication for the gateway so that it is
++       not reachable anonymously (GHSA-68r5-9hpg-7qw9). Map real accounts to the
++       "dsml-user" role in your servlet container's security realm; the same
++       HTTP Basic credentials are then forwarded as the LDAP bind. To serve the
++       gateway without authentication (NOT recommended), remove this
++       security-constraint, the login-config and the security-role below.
++       Uncomment the user-data-constraint to additionally require TLS. -->
++  <security-constraint>
++    <web-resource-collection>
++      <web-resource-name>DSML Gateway</web-resource-name>
++      <url-pattern>/DSMLServlet</url-pattern>
++    </web-resource-collection>
++    <auth-constraint>
++      <role-name>dsml-user</role-name>
++    </auth-constraint>
++<!--
++    <user-data-constraint>
++      <transport-guarantee>CONFIDENTIAL</transport-guarantee>
++    </user-data-constraint>
++-->
++  </security-constraint>
++
++  <login-config>
++    <auth-method>BASIC</auth-method>
++    <realm-name>OpenDJ DSML Gateway</realm-name>
++  </login-config>
++
++  <security-role>
++    <role-name>dsml-user</role-name>
++  </security-role>
++
+ </web-app>
+ 
+ 
+diff --git a/opendj-dsml-servlet/src/main/java/org/opends/dsml/protocol/ByteStringUtility.java b/opendj-dsml-servlet/src/main/java/org/opends/dsml/protocol/ByteStringUtility.java
+index c94cb562b0..1febf74228 100644
+--- a/opendj-dsml-servlet/src/main/java/org/opends/dsml/protocol/ByteStringUtility.java
++++ b/opendj-dsml-servlet/src/main/java/org/opends/dsml/protocol/ByteStringUtility.java
+@@ -12,12 +12,22 @@
+  * information: "Portions Copyright [year] [name of copyright owner]".
+  *
+  * Copyright 2012-2016 ForgeRock AS.
++ * Portions Copyright 2026 3A Systems, LLC.
+  */
+ package org.opends.dsml.protocol;
+ 
+ import java.io.IOException;
+ import java.io.InputStream;
++import java.net.HttpURLConnection;
++import java.net.InetAddress;
+ import java.net.URI;
++import java.net.URLConnection;
++import java.net.UnknownHostException;
++import java.util.Arrays;
++import java.util.Collections;
++import java.util.HashSet;
++import java.util.Locale;
++import java.util.Set;
+ 
+ import org.forgerock.opendj.ldap.ByteString;
+ import org.forgerock.opendj.ldap.ByteStringBuilder;
+@@ -29,6 +39,79 @@
+  */
+ class ByteStringUtility
+ {
++  /** Number of bytes read from a dereferenced URI per iteration. */
++  private static final int READ_CHUNK = 2048;
++
++  /** Connect timeout (ms) applied when dereferencing an anyURI value. */
++  private static final int CONNECT_TIMEOUT_MS = 10000;
++
++  /** Read timeout (ms) applied when dereferencing an anyURI value. */
++  private static final int READ_TIMEOUT_MS = 30000;
++
++  /**
++   * Whether xsd:anyURI values are dereferenced (fetched) server-side.
++   * <p>
++   * Disabled by default: fetching an attacker-supplied URI on the server is a
++   * server-side request forgery, local-file disclosure and unbounded-read DoS
++   * primitive (GHSA-68r5-9hpg-7qw9). When disabled, an anyURI value is stored
++   * verbatim (its string form) instead of being dereferenced.
++   */
++  private static volatile boolean dereferenceUri;
++
++  /** URI schemes that may be dereferenced when {@link #dereferenceUri} is enabled. */
++  private static volatile Set<String> allowedUriSchemes =
++      Collections.unmodifiableSet(new HashSet<>(Arrays.asList("http", "https")));
++
++  /** Maximum number of bytes read from a dereferenced URI (10 MiB by default). */
++  private static volatile long maxUriContentLength = 10L * 1024 * 1024;
++
++  /**
++   * Enables or disables server-side dereferencing of xsd:anyURI values.
++   *
++   * @param enabled {@code true} to fetch anyURI values (subject to the scheme
++   *                allowlist, address filter and size cap), {@code false} to
++   *                store them verbatim.
++   */
++  static void setDereferenceUri(boolean enabled)
++  {
++    dereferenceUri = enabled;
++  }
++
++  /**
++   * Sets the schemes that may be dereferenced from a comma-separated list.
++   *
++   * @param schemes comma-separated scheme names (e.g. {@code "http,https"}).
++   */
++  static void setAllowedUriSchemes(String schemes)
++  {
++    Set<String> parsed = new HashSet<>();
++    for (String scheme : schemes.split(","))
++    {
++      String trimmed = scheme.trim();
++      if (!trimmed.isEmpty())
++      {
++        parsed.add(trimmed.toLowerCase(Locale.ROOT));
++      }
++    }
++    allowedUriSchemes = Collections.unmodifiableSet(parsed);
++  }
++
++  /**
++   * Sets the maximum number of bytes read from a dereferenced URI.
++   *
++   * @param maxLength the maximum size, in bytes; must be positive.
++   * @throws IllegalArgumentException if the size is zero or negative.
++   */
++  static void setMaxUriContentLength(long maxLength)
++  {
++    if (maxLength <= 0)
++    {
++      throw new IllegalArgumentException(
++          "The maximum anyURI content length must be positive, but was: " + maxLength);
++    }
++    maxUriContentLength = maxLength;
++  }
++
+   /**
+    * Returns a ByteString from a DsmlValue Object.
+    *
+@@ -54,16 +137,7 @@ else if (obj instanceof byte[])
+     }
+     else if (obj instanceof URI)
+     {
+-      // read raw content and return as a byte[].
+-      try (InputStream is = ((URI) obj).toURL().openStream())
+-      {
+-        ByteStringBuilder bsb = new ByteStringBuilder();
+-        while (bsb.appendBytes(is, 2048) != -1)
+-        {
+-          // do nothing
+-        }
+-        return bsb.toByteString();
+-      }
++      return convertUri((URI) obj);
+     }
+     else if (obj instanceof Element)
+     {
+@@ -73,6 +147,163 @@ else if (obj instanceof Element)
+     return null;
+   }
+ 
++  /**
++   * Converts an xsd:anyURI value into a ByteString.
++   * <p>
++   * Unless dereferencing has been explicitly enabled, the URI is treated as an
++   * opaque string and is not fetched. When enabled, the scheme must be on the
++   * allowlist, the target must not resolve to a loopback/link-local/private
++   * address (SSRF hardening), HTTP redirects are refused (following one would
++   * connect to a host that never went through the address filter) and the
++   * amount of data read is capped.
++   * <p>
++   * Known limitation: the address filter and the subsequent connection resolve
++   * the host name independently, so DNS records changing between the two
++   * lookups (DNS rebinding) can still direct the fetch at an internal address.
++   * The JVM's positive DNS cache ({@code networkaddress.cache.ttl}, 30 seconds
++   * by default) narrows this window but does not close it; only enable
++   * dereferencing for trusted clients.
++   *
++   * @param uri the anyURI value.
++   * @return the resulting ByteString.
++   * @throws IOException if the URI is rejected or an I/O error occurs.
++   */
++  static ByteString convertUri(URI uri) throws IOException
++  {
++    if (!dereferenceUri)
++    {
++      // Secure default: do not fetch remote or local content.
++      return ByteString.valueOfUtf8(uri.toString());
++    }
++
++    String scheme = uri.getScheme();
++    if (scheme == null || !allowedUriSchemes.contains(scheme.toLowerCase(Locale.ROOT)))
++    {
++      throw new IOException(
++          "Refusing to dereference anyURI value with disallowed scheme: " + uri);
++    }
++    assertHostAllowed(uri);
++
++    URLConnection connection = uri.toURL().openConnection();
++    connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
++    connection.setReadTimeout(READ_TIMEOUT_MS);
++    if (connection instanceof HttpURLConnection)
++    {
++      HttpURLConnection httpConnection = (HttpURLConnection) connection;
++      httpConnection.setInstanceFollowRedirects(false);
++      assertNotRedirect(httpConnection.getResponseCode(), uri);
++    }
++    try (InputStream is = connection.getInputStream())
++    {
++      return readCapped(is, uri);
++    }
++  }
++
++  /**
++   * Rejects HTTP 3xx responses: the redirect target has not been validated by
++   * {@link #assertHostAllowed}, so following it would let an allowlisted public
++   * host bounce the gateway onto an internal or metadata address.
++   *
++   * @param responseCode the HTTP response code.
++   * @param uri the anyURI value being dereferenced.
++   * @throws IOException if the response is a redirect.
++   */
++  static void assertNotRedirect(int responseCode, URI uri) throws IOException
++  {
++    if (responseCode >= 300 && responseCode < 400)
++    {
++      throw new IOException("Refusing to follow redirect (HTTP " + responseCode
++          + ") while dereferencing anyURI value: " + uri);
++    }
++  }
++
++  /**
++   * Reads a stream into a ByteString, enforcing the configured size cap.
++   *
++   * @param is the stream to read.
++   * @param uri the anyURI value being dereferenced, for diagnostics.
++   * @return the stream content.
++   * @throws IOException on I/O error, or if the content exceeds the cap.
++   */
++  static ByteString readCapped(InputStream is, URI uri) throws IOException
++  {
++    ByteStringBuilder bsb = new ByteStringBuilder();
++    while (bsb.appendBytes(is, READ_CHUNK) != -1)
++    {
++      if (bsb.length() > maxUriContentLength)
++      {
++        throw new IOException("anyURI content exceeds the maximum allowed size of "
++            + maxUriContentLength + " bytes: " + uri);
++      }
++    }
++    return bsb.toByteString();
++  }
++
++  /**
++   * Rejects a URI whose host resolves (in whole or in part) to a non-routable
++   * or otherwise internal address, to prevent server-side request forgery
++   * against internal services and the cloud metadata endpoint.
++   *
++   * @param uri the anyURI value being dereferenced.
++   * @throws IOException if the host is missing, unresolvable or internal.
++   */
++  static void assertHostAllowed(URI uri) throws IOException
++  {
++    String host = uri.getHost();
++    if (host == null)
++    {
++      throw new IOException("Refusing to dereference anyURI value with no host: " + uri);
++    }
++    InetAddress[] addresses;
++    try
++    {
++      addresses = InetAddress.getAllByName(host);
++    }
++    catch (UnknownHostException e)
++    {
++      throw new IOException("Unable to resolve anyURI host: " + host, e);
++    }
++    for (InetAddress address : addresses)
++    {
++      if (isInternalAddress(address))
++      {
++        throw new IOException("Refusing to dereference anyURI value targeting a "
++            + "non-routable/internal address: " + host + " -> " + address.getHostAddress());
++      }
++    }
++  }
++
++  /**
++   * Returns {@code true} if the address is one the gateway must not connect to
++   * on behalf of a request: loopback, wildcard, link-local (covers the
++   * 169.254.169.254 metadata endpoint), site-local/private, multicast, an
++   * IANA-reserved IPv4 range (including 100.64.0.0/10, home of the Alibaba
++   * Cloud metadata endpoint 100.100.100.200), or an IPv6 unique-local address
++   * (fc00::/7).
++   */
++  static boolean isInternalAddress(InetAddress address)
++  {
++    if (address.isLoopbackAddress() || address.isAnyLocalAddress()
++        || address.isLinkLocalAddress() || address.isSiteLocalAddress()
++        || address.isMulticastAddress())
++    {
++      return true;
++    }
++    byte[] bytes = address.getAddress();
++    if (bytes.length == 4)
++    {
++      int b0 = bytes[0] & 0xff;
++      int b1 = bytes[1] & 0xff;
++      return b0 == 0                                        // 0.0.0.0/8 "this network"
++          || (b0 == 100 && (b1 & 0xc0) == 0x40)             // 100.64.0.0/10 CGNAT
++          || (b0 == 192 && b1 == 0 && (bytes[2] & 0xff) == 0) // 192.0.0.0/24 IETF assignments
++          || (b0 == 198 && (b1 & 0xfe) == 18)               // 198.18.0.0/15 benchmarking
++          || b0 >= 240;                                     // 240.0.0.0/4 reserved + broadcast
++    }
++    // IPv6 unique-local addresses (fc00::/7) are not covered by isSiteLocalAddress().
++    return bytes.length == 16 && (bytes[0] & 0xfe) == 0xfc;
++  }
++
+   /**
+    * Returns a DsmlValue (Object) from an LDAP ByteString. The conversion is
+    * simplistic - try and convert it to UTF-8 and if that fails return a byte[].
+diff --git a/opendj-dsml-servlet/src/main/java/org/opends/dsml/protocol/DSMLServlet.java b/opendj-dsml-servlet/src/main/java/org/opends/dsml/protocol/DSMLServlet.java
+index b93de93b15..3b2d725bb7 100644
+--- a/opendj-dsml-servlet/src/main/java/org/opends/dsml/protocol/DSMLServlet.java
++++ b/opendj-dsml-servlet/src/main/java/org/opends/dsml/protocol/DSMLServlet.java
+@@ -13,6 +13,7 @@
+  *
+  * Copyright 2006-2010 Sun Microsystems, Inc.
+  * Portions Copyright 2011-2016 ForgeRock AS.
++ * Portions Copyright 2026 3A Systems, LLC.
+  */
+ package org.opends.dsml.protocol;
+ 
+@@ -119,6 +120,9 @@ public class DSMLServlet extends HttpServlet {
+   private static final String TRUSTALLCERTS = "ldap.trustall";
+   private static final String USEHTTPAUTHZID = "ldap.authzidtypeisid";
+   private static final String EXOPSTRINGPREFIX = "ldap.exop.string.";
++  private static final String DEREF_ANYURI = "ldap.dsml.dereference.anyuri";
++  private static final String DEREF_ANYURI_SCHEMES = "ldap.dsml.dereference.anyuri.schemes";
++  private static final String DEREF_ANYURI_MAXSIZE = "ldap.dsml.dereference.anyuri.maxsize";
+   private static final long serialVersionUID = -3748022009593442973L;
+   private static final AtomicInteger nextMessageID = new AtomicInteger(1);
+ 
+@@ -190,9 +194,39 @@ public void init(ServletConfig config) throws ServletException {
+         }
+       }
+ 
+-      // allow the use of anyURI values in adds and modifies
++      // Materialise anyURI values as java.net.URI so that, when dereferencing
++      // is explicitly enabled, they can be fetched. Dereferencing itself is
++      // gated and hardened in ByteStringUtility (disabled by default).
+       System.setProperty("mapAnyUriToUri", "true");
+ 
++      // Server-side dereferencing of anyURI values is disabled by default
++      // (SSRF / local-file / unbounded-read hardening, GHSA-68r5-9hpg-7qw9).
++      // Enable it explicitly, and optionally tune the scheme allowlist and the
++      // maximum fetched size, via the corresponding context-params.
++      boolean derefAnyUri = booleanValue(config, DEREF_ANYURI);
++      ByteStringUtility.setDereferenceUri(derefAnyUri);
++      if (derefAnyUri)
++      {
++        String schemes = stringValue(config, DEREF_ANYURI_SCHEMES);
++        if (schemes != null && !schemes.trim().isEmpty())
++        {
++          ByteStringUtility.setAllowedUriSchemes(schemes);
++        }
++        String maxSize = stringValue(config, DEREF_ANYURI_MAXSIZE);
++        if (maxSize != null && !maxSize.trim().isEmpty())
++        {
++          try
++          {
++            ByteStringUtility.setMaxUriContentLength(Long.parseLong(maxSize.trim()));
++          }
++          catch (IllegalArgumentException e)
++          {
++            throw new ServletException(DEREF_ANYURI_MAXSIZE
++                + " must be a positive number of bytes, but was: " + maxSize);
++          }
++        }
++      }
++
+       if(jaxbContext==null)
+       {
+         jaxbContext = JAXBContext.newInstance(PKG_NAME, getClass().getClassLoader());
+diff --git a/opendj-dsml-servlet/src/test/java/org/opends/dsml/protocol/ByteStringUtilityTestCase.java b/opendj-dsml-servlet/src/test/java/org/opends/dsml/protocol/ByteStringUtilityTestCase.java
+new file mode 100644
+index 0000000000..d42c4791f8
+--- /dev/null
++++ b/opendj-dsml-servlet/src/test/java/org/opends/dsml/protocol/ByteStringUtilityTestCase.java
+@@ -0,0 +1,251 @@
++/*
++ * The contents of this file are subject to the terms of the Common Development and
++ * Distribution License (the License). You may not use this file except in compliance with the
++ * License.
++ *
++ * You can obtain a copy of the License at legal/CDDLv1.0.txt. See the License for the
++ * specific language governing permission and limitations under the License.
++ *
++ * When distributing Covered Software, include this CDDL Header Notice in each file and include
++ * the License file at legal/CDDLv1.0.txt. If applicable, add the following below the CDDL
++ * Header, with the fields enclosed by brackets [] replaced by your own identifying
++ * information: "Portions copyright [year] [name of copyright owner]".
++ *
++ * Copyright 2026 3A Systems, LLC.
++ */
++package org.opends.dsml.protocol;
++
++import java.io.ByteArrayInputStream;
++import java.io.IOException;
++import java.net.InetAddress;
++import java.net.URI;
++
++import org.forgerock.opendj.ldap.ByteString;
++import org.forgerock.testng.ForgeRockTestCase;
++import org.testng.annotations.AfterMethod;
++import org.testng.annotations.DataProvider;
++import org.testng.annotations.Test;
++
++import static org.testng.Assert.assertEquals;
++import static org.testng.Assert.assertFalse;
++import static org.testng.Assert.assertTrue;
++
++/**
++ * Tests the anyURI dereferencing hardening added for GHSA-68r5-9hpg-7qw9:
++ * secure-by-default (no fetch), scheme allowlist, internal-address filter,
++ * redirect refusal and content size cap. None of these tests performs network
++ * or DNS I/O: hosts are IP literals and streams are in-memory.
++ */
++@SuppressWarnings("javadoc")
++@Test(groups = { "precommit", "dsml" })
++public class ByteStringUtilityTestCase extends ForgeRockTestCase
++{
++  @AfterMethod
++  public void restoreDefaults()
++  {
++    ByteStringUtility.setDereferenceUri(false);
++    ByteStringUtility.setAllowedUriSchemes("http,https");
++    ByteStringUtility.setMaxUriContentLength(10L * 1024 * 1024);
++  }
++
++  @Test
++  public void testUriIsStoredVerbatimByDefault() throws Exception
++  {
++    ByteString value = ByteStringUtility.convertValue(new URI("http://203.0.113.10/secret"));
++    assertEquals(value, ByteString.valueOfUtf8("http://203.0.113.10/secret"));
++  }
++
++  @DataProvider
++  public Object[][] disallowedSchemeUris()
++  {
++    return new Object[][] {
++      { "file:///etc/passwd" },
++      { "ftp://203.0.113.10/file" },
++      { "gopher://203.0.113.10/1" },
++      { "jar:http://203.0.113.10/a.jar!/b" },
++      { "urn:isbn:0451450523" },        // opaque URI, no scheme match
++      { "/relative/path" },             // no scheme at all
++    };
++  }
++
++  @Test(dataProvider = "disallowedSchemeUris", expectedExceptions = IOException.class,
++      expectedExceptionsMessageRegExp = ".*disallowed scheme.*")
++  public void testDisallowedSchemesAreRejected(String uri) throws Exception
++  {
++    ByteStringUtility.setDereferenceUri(true);
++    ByteStringUtility.convertUri(new URI(uri));
++  }
++
++  @Test(expectedExceptions = IOException.class,
++      expectedExceptionsMessageRegExp = ".*disallowed scheme.*")
++  public void testSchemeAllowlistIsConfigurable() throws Exception
++  {
++    ByteStringUtility.setDereferenceUri(true);
++    ByteStringUtility.setAllowedUriSchemes(" HTTPS , ");
++    // http is no longer on the allowlist, so it is rejected before any I/O.
++    ByteStringUtility.convertUri(new URI("http://203.0.113.10/"));
++  }
++
++  @DataProvider
++  public Object[][] internalUris()
++  {
++    return new Object[][] {
++      { "http://127.0.0.1/" },
++      { "http://0.0.0.0/" },
++      { "http://10.1.2.3/" },
++      { "http://172.16.5.5/" },
++      { "http://192.168.1.1/" },
++      { "http://169.254.169.254/latest/meta-data/" },
++      { "http://100.100.100.200/latest/meta-data/" },
++      { "http://198.18.0.1/" },
++      { "http://240.0.0.1/" },
++      { "http://[::1]/" },
++      { "http://[fe80::1]/" },
++      { "http://[fc00::1]/" },
++      { "http://[fd12:3456::1]/" },
++    };
++  }
++
++  @Test(dataProvider = "internalUris", expectedExceptions = IOException.class,
++      expectedExceptionsMessageRegExp = ".*(internal|no host).*")
++  public void testInternalAddressesAreRejected(String uri) throws Exception
++  {
++    ByteStringUtility.assertHostAllowed(new URI(uri));
++  }
++
++  @Test(expectedExceptions = IOException.class,
++      expectedExceptionsMessageRegExp = ".*no host.*")
++  public void testUriWithoutHostIsRejected() throws Exception
++  {
++    ByteStringUtility.assertHostAllowed(new URI("http:///path"));
++  }
++
++  @DataProvider
++  public Object[][] addressClassification()
++  {
++    return new Object[][] {
++      // address, expected isInternalAddress
++      { "8.8.8.8", false },
++      { "1.1.1.1", false },
++      { "203.0.113.10", false },
++      { "2001:4860:4860::8888", false },
++      { "127.0.0.1", true },
++      { "0.1.2.3", true },
++      { "169.254.169.254", true },
++      { "239.255.255.255", true },      // multicast
++      { "255.255.255.255", true },      // broadcast
++      // 100.64.0.0/10 boundaries
++      { "100.63.255.255", false },
++      { "100.64.0.0", true },
++      { "100.100.100.200", true },
++      { "100.127.255.255", true },
++      { "100.128.0.0", false },
++      // 192.0.0.0/24 boundaries
++      { "192.0.0.1", true },
++      { "192.0.1.1", false },
++      // 198.18.0.0/15 boundaries
++      { "198.17.255.255", false },
++      { "198.18.0.0", true },
++      { "198.19.255.255", true },
++      { "198.20.0.0", false },
++      // 240.0.0.0/4 boundary
++      { "239.0.0.1", true },            // multicast anyway
++      { "240.0.0.0", true },
++      // IPv6 unique-local fc00::/7 boundaries
++      { "fbff::1", false },
++      { "fc00::1", true },
++      { "fdff::1", true },
++      { "fe00::1", false },
++    };
++  }
++
++  @Test(dataProvider = "addressClassification")
++  public void testIsInternalAddress(String literal, boolean expectedInternal) throws Exception
++  {
++    // IP literals do not trigger DNS resolution.
++    InetAddress address = InetAddress.getByName(literal);
++    assertEquals(ByteStringUtility.isInternalAddress(address), expectedInternal,
++        "isInternalAddress(" + literal + ")");
++  }
++
++  @DataProvider
++  public Object[][] redirectCodes()
++  {
++    return new Object[][] { { 300 }, { 301 }, { 302 }, { 303 }, { 307 }, { 308 } };
++  }
++
++  @Test(dataProvider = "redirectCodes", expectedExceptions = IOException.class,
++      expectedExceptionsMessageRegExp = ".*redirect.*")
++  public void testRedirectsAreRefused(int responseCode) throws Exception
++  {
++    ByteStringUtility.assertNotRedirect(responseCode, new URI("http://203.0.113.10/"));
++  }
++
++  @Test
++  public void testNonRedirectCodesAreAccepted() throws Exception
++  {
++    ByteStringUtility.assertNotRedirect(200, new URI("http://203.0.113.10/"));
++    ByteStringUtility.assertNotRedirect(404, new URI("http://203.0.113.10/"));
++  }
++
++  @Test
++  public void testContentWithinCapIsReadFully() throws Exception
++  {
++    byte[] content = new byte[8192];
++    for (int i = 0; i < content.length; i++)
++    {
++      content[i] = (byte) i;
++    }
++    ByteStringUtility.setMaxUriContentLength(content.length);
++    ByteString value = ByteStringUtility.readCapped(
++        new ByteArrayInputStream(content), new URI("http://203.0.113.10/"));
++    assertEquals(value, ByteString.wrap(content));
++  }
++
++  @Test(expectedExceptions = IOException.class,
++      expectedExceptionsMessageRegExp = ".*maximum allowed size.*")
++  public void testContentOverCapIsRejected() throws Exception
++  {
++    ByteStringUtility.setMaxUriContentLength(1024);
++    ByteStringUtility.readCapped(
++        new ByteArrayInputStream(new byte[1025]), new URI("http://203.0.113.10/"));
++  }
++
++  @Test(expectedExceptions = IllegalArgumentException.class)
++  public void testZeroMaxSizeIsRejected()
++  {
++    ByteStringUtility.setMaxUriContentLength(0);
++  }
++
++  @Test(expectedExceptions = IllegalArgumentException.class)
++  public void testNegativeMaxSizeIsRejected()
++  {
++    ByteStringUtility.setMaxUriContentLength(-1);
++  }
++
++  @Test
++  public void testSchemeCheckPrecedesHostCheck() throws Exception
++  {
++    ByteStringUtility.setDereferenceUri(true);
++    // A disallowed scheme must be rejected even for an internal host,
++    // and the internal host must be rejected for an allowed scheme.
++    try
++    {
++      ByteStringUtility.convertUri(new URI("file://127.0.0.1/etc/passwd"));
++      assertFalse(true, "expected IOException for disallowed scheme");
++    }
++    catch (IOException e)
++    {
++      assertTrue(e.getMessage().contains("disallowed scheme"), e.getMessage());
++    }
++    try
++    {
++      ByteStringUtility.convertUri(new URI("http://127.0.0.1/"));
++      assertFalse(true, "expected IOException for internal address");
++    }
++    catch (IOException e)
++    {
++      assertTrue(e.getMessage().contains("internal"), e.getMessage());
++    }
++  }
++}

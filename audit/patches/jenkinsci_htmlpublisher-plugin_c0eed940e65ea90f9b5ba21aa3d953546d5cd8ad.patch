@@ -1,0 +1,691 @@
+From c0eed940e65ea90f9b5ba21aa3d953546d5cd8ad Mon Sep 17 00:00:00 2001
+From: Boris Yao <byao@cloudbees.com>
+Date: Wed, 28 Feb 2024 17:25:08 +0100
+Subject: [PATCH] SECURITY-3302
+
+---
+ .../java/htmlpublisher/HtmlPublisher.java     |  10 +-
+ .../BaseHTMLAction/index.groovy               |  25 ++
+ .../java/htmlpublisher/HtmlFileNameTest.java  |  12 +-
+ .../java/htmlpublisher/Security3302Test.java  | 218 ++++++++++++++++++
+ .../jobs/testJob/builds/1/build.xml           |  44 ++++
+ .../jobs/testJob/builds/1/changelog.xml       |   1 +
+ .../HTML_20Report/htmlpublisher-wrapper.html  | 140 +++++++++++
+ .../1/htmlreports/HTML_20Report/test.txt      |   1 +
+ .../jobs/testJob/builds/1/log                 |   8 +
+ .../jobs/testJob/builds/legacyIds             |   0
+ .../jobs/testJob/builds/permalinks            |   6 +
+ .../jobs/testJob/config.xml                   |  38 +++
+ .../jobs/testJob/nextBuildNumber              |   1 +
+ 13 files changed, 494 insertions(+), 10 deletions(-)
+ create mode 100644 src/test/java/htmlpublisher/Security3302Test.java
+ create mode 100644 src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/builds/1/build.xml
+ create mode 100644 src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/builds/1/changelog.xml
+ create mode 100644 src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/builds/1/htmlreports/HTML_20Report/htmlpublisher-wrapper.html
+ create mode 100644 src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/builds/1/htmlreports/HTML_20Report/test.txt
+ create mode 100644 src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/builds/1/log
+ create mode 100644 src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/builds/legacyIds
+ create mode 100644 src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/builds/permalinks
+ create mode 100644 src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/config.xml
+ create mode 100644 src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/nextBuildNumber
+
+diff --git a/src/main/java/htmlpublisher/HtmlPublisher.java b/src/main/java/htmlpublisher/HtmlPublisher.java
+index dc86d9e2..09e507ba 100644
+--- a/src/main/java/htmlpublisher/HtmlPublisher.java
++++ b/src/main/java/htmlpublisher/HtmlPublisher.java
+@@ -81,6 +81,8 @@
+ 
+ import edu.umd.cs.findbugs.annotations.NonNull;
+ 
++import static hudson.Functions.htmlAttributeEscape;
++
+ 
+ /**
+  * Saves HTML reports for the project and publishes them.
+@@ -130,7 +132,7 @@ private static String writeFile(List<String> lines, File path) throws IOExceptio
+         return Util.toHexString(sha1.digest());
+     }
+ 
+-    public List<String> readFile(String filePath) throws 
++    public List<String> readFile(String filePath) throws
+             java.io.IOException {
+         return readFile(filePath, this.getClass());
+     }
+@@ -302,7 +304,7 @@ public static boolean publishReports(Run<?, ?> build, FilePath workspace, TaskLi
+                 // On windows file paths contains back slashes, but
+                 // in the HTML file we do not want them, so replace them with forward slash
+                 report = report.replace("\\", "/");
+-	
++
+                 // Ignore blank report names caused by trailing or double commas.
+                 if (report.isEmpty()) {
+                     continue;
+@@ -318,13 +320,13 @@ public static boolean publishReports(Run<?, ?> build, FilePath workspace, TaskLi
+                 } else {
+                     reportFile = report;
+                 }
+-                String tabItem = "<li id=\"" + tabNo + "\" class=\"unselected\" onclick=\"updateBody('" + tabNo + "');\" value=\"" + report + "\">" + getTitle(reportFile, titles, j) + "</li>";
++                String tabItem = "<li id=\"" + tabNo + "\" class=\"unselected\" onclick=\"updateBody('" + tabNo + "');\" value=\"" + htmlAttributeEscape(report) + "\">" + htmlAttributeEscape(getTitle(reportFile, titles, j)) + "</li>";
+                 reportLines.add(tabItem);
+             }
+             // Add the JS to change the link as appropriate.
+             String hudsonUrl = Jenkins.get().getRootUrl();
+             Job job = build.getParent();
+-            reportLines.add("<script type=\"text/javascript\">document.getElementById(\"hudson_link\").innerHTML=\"Back to " + job.getName() + "\";</script>");
++            reportLines.add("<script type=\"text/javascript\">document.getElementById(\"hudson_link\").innerHTML=\"Back to " + htmlAttributeEscape(job.getName()) + "\";</script>");
+             // If the URL isn't configured in Hudson, the best we can do is attempt to go Back.
+             if (hudsonUrl == null) {
+                 reportLines.add("<script type=\"text/javascript\">document.getElementById(\"hudson_link\").onclick = function() { history.go(-1); return false; };</script>");
+diff --git a/src/main/resources/htmlpublisher/HtmlPublisherTarget/BaseHTMLAction/index.groovy b/src/main/resources/htmlpublisher/HtmlPublisherTarget/BaseHTMLAction/index.groovy
+index 51e94b31..ab0b2825 100644
+--- a/src/main/resources/htmlpublisher/HtmlPublisherTarget/BaseHTMLAction/index.groovy
++++ b/src/main/resources/htmlpublisher/HtmlPublisherTarget/BaseHTMLAction/index.groovy
+@@ -3,6 +3,7 @@ package htmlpublisher.HtmlPublisherTarget.BaseHTMLAction
+ import htmlpublisher.HtmlPublisher
+ import htmlpublisher.HtmlPublisherTarget
+ import hudson.Util
++import hudson.model.Descriptor
+ 
+ import java.security.MessageDigest
+ 
+@@ -57,6 +58,30 @@ def serveWrapperLegacyDirectly() {
+ 
+     def legacyFile = new File(my.dir(), "htmlpublisher-wrapper.html")
+ 
++    def scriptPattern = legacyFile.text =~ /(<script type="text\/javascript">document.getElementById\("hudson_link"\).innerHTML="Back to )(.*[<>"\\].*)(";<\/script>)/
++
++    if (scriptPattern.find()) {
++        throw new Descriptor.FormException("Can't use illegal character in the Job Name", "JobName")
++    }
++
++    def tabPattern = legacyFile.text =~ /(<li id="tab\d+" class="unselected" onclick="updateBody\('tab\d+'\);" value=")(.*[<>"\\].*)(">)(.*[<>"\\].*)(<\/li>)/
++
++    if (tabPattern.find()) {
++        throw new Descriptor.FormException("Can't use illegal character in the Report Name", "ReportName")
++    }
++
++    def valuePattern = legacyFile.text =~ /(<li id="tab\d+" class="unselected" onclick="updateBody\('tab\d+'\);" value=")([^<]+)(">)(.*[<>"\\].*)(<\/li>)/
++
++    if (valuePattern.find()) {
++        throw new Descriptor.FormException("Can't use illegal character in the Report Name", "ReportName")
++    }
++
++    def titlePattern = legacyFile.text =~ /(<li id="tab\d+" class="unselected" onclick="updateBody\('tab\d+'\);" value=")(.*[<>"\\].*)(">)([^<]+)(<\/li>)/
++
++    if (titlePattern.find()) {
++        throw new Descriptor.FormException("Can't use illegal character in the Report Name", "ReportName")
++    }
++
+     raw(legacyFile.text)
+ }
+ 
+diff --git a/src/test/java/htmlpublisher/HtmlFileNameTest.java b/src/test/java/htmlpublisher/HtmlFileNameTest.java
+index 9ad21103..f4da1b5a 100644
+--- a/src/test/java/htmlpublisher/HtmlFileNameTest.java
++++ b/src/test/java/htmlpublisher/HtmlFileNameTest.java
+@@ -24,7 +24,7 @@ public void fileNameWithSpecialCharactersAndSingleSlash() throws Exception {
+ 
+         FreeStyleProject job = j.createFreeStyleProject();
+ 
+-        job.getBuildersList().add(new CreateFileBuilder("subdir/#$&+,;= @.html", content));
++        job.getBuildersList().add(new CreateFileBuilder("subdir/#$+,;= @.html", content));
+         job.getPublishersList().add(new HtmlPublisher(Arrays.asList(
+             new HtmlPublisherTarget("report-name", "", "subdir/*.html", true, true, false))));
+         job.save();
+@@ -33,12 +33,12 @@ public void fileNameWithSpecialCharactersAndSingleSlash() throws Exception {
+ 
+         JenkinsRule.WebClient client = j.createWebClient();
+         assertEquals(content,
+-            client.getPage(job, "report-name/subdir/%23%24%26%2B%2C%3B%3D%20%40.html").getWebResponse().getContentAsString());
++            client.getPage(job, "report-name/subdir/%23%24%2B%2C%3B%3D%20%40.html").getWebResponse().getContentAsString());
+ 
+         // published html page(s)
+         HtmlPage page = client.getPage(job, "report-name");
+         HtmlInlineFrame iframe = (HtmlInlineFrame) page.getElementById("myframe");
+-        assertEquals("subdir/%23%24%26%2B%2C%3B%3D%20%40.html", iframe.getAttribute("src"));
++        assertEquals("subdir/%23%24%2B%2C%3B%3D%20%40.html", iframe.getAttribute("src"));
+ 
+         HtmlPage pageInIframe = (HtmlPage) iframe.getEnclosedPage();
+         assertEquals("Hello world!", pageInIframe.getBody().asNormalizedText());
+@@ -50,7 +50,7 @@ public void fileNameWithSpecialCharactersAndMultipleSlashes() throws Exception {
+ 
+         FreeStyleProject job = j.createFreeStyleProject();
+ 
+-        job.getBuildersList().add(new CreateFileBuilder("subdir/subdir2/#$&+,;= @.html", content));
++        job.getBuildersList().add(new CreateFileBuilder("subdir/subdir2/#$+,;= @.html", content));
+         job.getPublishersList().add(new HtmlPublisher(Arrays.asList(
+             new HtmlPublisherTarget("report-name", "", "subdir/subdir2/*.html", true, true, false))));
+         job.save();
+@@ -59,12 +59,12 @@ public void fileNameWithSpecialCharactersAndMultipleSlashes() throws Exception {
+ 
+         JenkinsRule.WebClient client = j.createWebClient();
+         assertEquals(content,
+-            client.getPage(job, "report-name/subdir/subdir2/%23%24%26%2B%2C%3B%3D%20%40.html").getWebResponse().getContentAsString());
++            client.getPage(job, "report-name/subdir/subdir2/%23%24%2B%2C%3B%3D%20%40.html").getWebResponse().getContentAsString());
+ 
+         // published html page(s)
+         HtmlPage page = client.getPage(job, "report-name");
+         HtmlInlineFrame iframe = (HtmlInlineFrame) page.getElementById("myframe");
+-        assertEquals("subdir/subdir2/%23%24%26%2B%2C%3B%3D%20%40.html", iframe.getAttribute("src"));
++        assertEquals("subdir/subdir2/%23%24%2B%2C%3B%3D%20%40.html", iframe.getAttribute("src"));
+ 
+         HtmlPage pageInIframe = (HtmlPage) iframe.getEnclosedPage();
+         assertEquals("Hello world!", pageInIframe.getBody().asNormalizedText());
+diff --git a/src/test/java/htmlpublisher/Security3302Test.java b/src/test/java/htmlpublisher/Security3302Test.java
+new file mode 100644
+index 00000000..738d5f1e
+--- /dev/null
++++ b/src/test/java/htmlpublisher/Security3302Test.java
+@@ -0,0 +1,218 @@
++package htmlpublisher;
++
++import hudson.model.FreeStyleProject;
++import hudson.tasks.Shell;
++import org.htmlunit.AlertHandler;
++import org.htmlunit.FailingHttpStatusCodeException;
++import org.htmlunit.Page;
++import org.junit.Rule;
++import org.junit.Test;
++import org.jvnet.hudson.test.Issue;
++import org.jvnet.hudson.test.JenkinsRule;
++import org.jvnet.hudson.test.recipes.LocalData;
++
++import java.util.ArrayList;
++import java.util.Collections;
++import java.util.List;
++
++import static hudson.Functions.isWindows;
++import static org.hamcrest.MatcherAssert.assertThat;
++import static org.hamcrest.collection.IsEmptyCollection.empty;
++import static org.hamcrest.core.IsNot.not;
++import static org.junit.Assert.*;
++import static org.junit.Assume.assumeFalse;
++
++public class Security3302Test {
++
++    @Rule
++    public JenkinsRule j = new JenkinsRule();
++
++    @Test
++    public void security3302sanitizeJobNameTest() throws Exception {
++
++        // Skip on windows
++        assumeFalse(isWindows());
++
++        FreeStyleProject job = j.jenkins.createProject(FreeStyleProject.class, "\"+alert(1)+\"");
++        job.getBuildersList().add(new Shell("date > index.html"));
++
++        HtmlPublisherTarget target = new HtmlPublisherTarget(
++                "HTML Report",
++                "",
++                "index.html",
++                true,
++                false,
++                false
++        );
++
++        target.setUseWrapperFileDirectly(true);
++        target.setEscapeUnderscores(true);
++        target.setReportTitles("");
++        target.setIncludes("**/*");
++        
++        List<HtmlPublisherTarget> reportTargets = new ArrayList<>();
++        reportTargets.add(target);
++
++        job.getPublishersList().add(new HtmlPublisher(reportTargets));
++
++        j.buildAndAssertSuccess(job);
++
++        HtmlPublisherTarget.HTMLAction action = job.getAction(HtmlPublisherTarget.HTMLAction.class);
++        assertNotNull(action);
++
++        assertEquals("HTML Report", action.getHTMLTarget().getReportName());
++        assertEquals("HTML_20Report", action.getUrlName());
++
++        JenkinsRule.WebClient client = j.createWebClient();
++
++        // Create an alert handler to check for any alerts
++        Alerter alerter = new Alerter();
++        client.setAlertHandler(alerter);
++        client.goTo("job/\"+alert(1)+\"/HTML_20Report/");
++
++        // Check that the alerter has not been triggered
++        client.waitForBackgroundJavaScript(2000);
++        assertTrue(alerter.messages.isEmpty());
++
++    }
++
++    @Test
++    @LocalData
++    @Issue("security-3302")
++    public void oldReportJobNameTest() throws Exception {
++        // Skip on windows
++        assumeFalse(isWindows());
++        List<FreeStyleProject> items = j.jenkins.getItems(FreeStyleProject.class);
++        assertThat(items, not(empty()));
++        FreeStyleProject job = items.get(0);
++        assertNotNull(job);
++        HtmlPublisherTarget.HTMLAction action = job.getAction(HtmlPublisherTarget.HTMLAction.class);
++        assertNotNull(action);
++
++        assertEquals("HTML Report", action.getHTMLTarget().getReportName());
++        assertEquals("HTML_20Report", action.getUrlName());
++
++        JenkinsRule.WebClient client = j.createWebClient();
++
++        // Create an alert handler to check for any alerts
++        Alerter alerter = new Alerter();
++        client.setAlertHandler(alerter);
++
++        try {
++            client.goTo("job/testJob/1/HTML_20Report/");
++
++        } catch (FailingHttpStatusCodeException e) {
++            // Ignore the exception as needed
++        } finally {
++
++            client.waitForBackgroundJavaScript(2000);
++            assertTrue(alerter.messages.isEmpty());
++        }
++    }
++
++    @Test
++    public void security3302sanitizeOptionalNameTest() throws Exception {
++
++        // Skip on windows
++        assumeFalse(isWindows());
++
++        FreeStyleProject job = j.jenkins.createProject(FreeStyleProject.class, "testJob");
++        job.getBuildersList().add(new Shell("echo \"Test\" > test.txt"));
++
++        HtmlPublisherTarget target = new HtmlPublisherTarget(
++                "HTML Report",
++                "",
++                "test.txt",
++                true,
++                false,
++                false
++        );
++
++        target.setUseWrapperFileDirectly(true);
++        target.setEscapeUnderscores(true);
++        target.setReportTitles("<img src onerror=alert(1)>");
++        target.setIncludes("**/*");
++
++        List<HtmlPublisherTarget> reportTargets = new ArrayList<>();
++        reportTargets.add(target);
++
++        job.getPublishersList().add(new HtmlPublisher(reportTargets));
++
++        j.buildAndAssertSuccess(job);
++
++        HtmlPublisherTarget.HTMLAction action = job.getAction(HtmlPublisherTarget.HTMLAction.class);
++        assertNotNull(action);
++
++        assertEquals("HTML Report", action.getHTMLTarget().getReportName());
++        assertEquals("HTML_20Report", action.getUrlName());
++
++        JenkinsRule.WebClient client = j.createWebClient();
++
++        // Create an alert handler to check for any alerts
++        Alerter alerter = new Alerter();
++        client.setAlertHandler(alerter);
++        client.goTo("job/testJob/HTML_20Report/");
++
++        // Check that the alerter has not been triggered
++        client.waitForBackgroundJavaScript(2000);
++        assertTrue(alerter.messages.isEmpty());
++
++    }
++
++    @Test
++    public void security3302sanitizeExistingReportTitleTest() throws Exception {
++
++        // Skip on windows
++        assumeFalse(isWindows());
++
++        FreeStyleProject job = j.jenkins.createProject(FreeStyleProject.class, "testJob");
++        job.getBuildersList().add(new Shell("echo \"Test\" > '\"><img src onerror=alert(1)>'"));
++
++        HtmlPublisherTarget target = new HtmlPublisherTarget(
++                "HTML Report",
++                "",
++                "",
++                true,
++                false,
++                false
++        );
++
++        target.setUseWrapperFileDirectly(true);
++        target.setEscapeUnderscores(true);
++        target.setReportTitles("\"><img src onerror=alert(1)>");
++        target.setIncludes("**/*");
++
++        List<HtmlPublisherTarget> reportTargets = new ArrayList<>();
++        reportTargets.add(target);
++
++        job.getPublishersList().add(new HtmlPublisher(reportTargets));
++
++        j.buildAndAssertSuccess(job);
++
++        HtmlPublisherTarget.HTMLAction action = job.getAction(HtmlPublisherTarget.HTMLAction.class);
++        assertNotNull(action);
++
++        assertEquals("HTML Report", action.getHTMLTarget().getReportName());
++        assertEquals("HTML_20Report", action.getUrlName());
++
++        JenkinsRule.WebClient client = j.createWebClient();
++
++        Alerter alerter = new Alerter();
++        client.setAlertHandler(alerter);
++        client.goTo("job/testJob/HTML_20Report/");
++
++        // Check that the alerter has not been triggered
++        client.waitForBackgroundJavaScript(2000);
++        assertTrue(alerter.messages.isEmpty());
++
++    }
++
++    // This class is used to check for any alerts that are triggered on a page
++    static class Alerter implements AlertHandler {
++        List<String> messages = Collections.synchronizedList(new ArrayList<>());
++        @Override
++        public void handleAlert(final Page page, final String message) {
++            messages.add(message);
++        }
++    }
++}
+\ No newline at end of file
+diff --git a/src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/builds/1/build.xml b/src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/builds/1/build.xml
+new file mode 100644
+index 00000000..c316097b
+--- /dev/null
++++ b/src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/builds/1/build.xml
+@@ -0,0 +1,44 @@
++<?xml version='1.1' encoding='UTF-8'?>
++<build>
++  <actions>
++    <hudson.model.CauseAction>
++      <causeBag class="linked-hash-map">
++        <entry>
++          <hudson.model.Cause_-UserIdCause/>
++          <int>1</int>
++        </entry>
++      </causeBag>
++    </hudson.model.CauseAction>
++    <htmlpublisher.HtmlPublisherTarget_-HTMLBuildAction plugin="htmlpublisher@1.33-SNAPSHOT">
++      <actualHtmlPublisherTarget>
++        <reportName>HTML Report</reportName>
++        <reportDir></reportDir>
++        <reportFiles>index.html</reportFiles>
++        <alwaysLinkToLastBuild>false</alwaysLinkToLastBuild>
++        <reportTitles></reportTitles>
++        <keepAll>true</keepAll>
++        <allowMissing>false</allowMissing>
++        <includes>**/*</includes>
++        <escapeUnderscores>true</escapeUnderscores>
++        <useWrapperFileDirectly>true</useWrapperFileDirectly>
++      </actualHtmlPublisherTarget>
++      <outer-class reference="../actualHtmlPublisherTarget"/>
++      <wrapperChecksum>bb013837dd6fed1ea7ef00d584484d62e90b64a1</wrapperChecksum>
++      <outer-class defined-in="htmlpublisher.HtmlPublisherTarget$HTMLBuildAction" reference="../actualHtmlPublisherTarget"/>
++    </htmlpublisher.HtmlPublisherTarget_-HTMLBuildAction>
++  </actions>
++  <queueId>1</queueId>
++  <timestamp>1702036826488</timestamp>
++  <startTime>1702036826496</startTime>
++  <result>SUCCESS</result>
++  <duration>99</duration>
++  <charset>UTF-8</charset>
++  <keepLog>false</keepLog>
++  <builtOn></builtOn>
++  <workspace>workspace/&quot;+alert(1)+&quot;</workspace>
++  <hudsonVersion>2.387.3</hudsonVersion>
++  <scm class="hudson.scm.NullChangeLogParser"/>
++  <culprits class="java.util.Collections$UnmodifiableSet">
++    <c class="sorted-set"/>
++  </culprits>
++</build>
+\ No newline at end of file
+diff --git a/src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/builds/1/changelog.xml b/src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/builds/1/changelog.xml
+new file mode 100644
+index 00000000..a8911916
+--- /dev/null
++++ b/src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/builds/1/changelog.xml
+@@ -0,0 +1 @@
++<log/>
+\ No newline at end of file
+diff --git a/src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/builds/1/htmlreports/HTML_20Report/htmlpublisher-wrapper.html b/src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/builds/1/htmlreports/HTML_20Report/htmlpublisher-wrapper.html
+new file mode 100644
+index 00000000..9345b1e1
+--- /dev/null
++++ b/src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/builds/1/htmlreports/HTML_20Report/htmlpublisher-wrapper.html
+@@ -0,0 +1,140 @@
++<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
++"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
++
++<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
++<head>
++<meta http-equiv="Content-Type" content="text/html" />
++<!-- CSS Tabs is licensed under Creative Commons Attribution 3.0 - http://creativecommons.org/licenses/by/3.0/ -->
++<style type="text/css">
++
++body {
++font: 100% verdana, arial, sans-serif;
++background-color: #fff;
++}
++
++/* begin css tabs */
++
++ul#tabnav { /* general settings */
++text-align: left; /* set to left, right or center */
++margin: 8px 0 0 0; /* set margins as desired */
++font: bold 11px verdana, arial, sans-serif; /* set font as desired */
++border-bottom: 1px solid #6c6; /* set border COLOR as desired */
++list-style-type: none;
++padding: 3px 10px 0px 10px;
++}
++
++ul#tabnav li { /* do not change */
++display: inline-block;
++}
++
++ul#tabnav li.selected { /* settings for selected tab */
++border-bottom: 1px solid #fff; /* set border color to page background color */
++background-color: #fff; /* set background color to match above border color */
++}
++
++
++ul#tabnav li { /* settings for all tab links */
++padding: 3px 4px;
++border: 1px solid #6c6; /* set border COLOR as desired; usually matches border color specified in #tabnav */
++border-bottom: 1px solid #cfc;
++background-color: #cfc; /* set unselected tab background color as desired */
++color: #666; /* set unselected tab link color as desired */
++margin-right: 0px; /* set additional spacing between tabs as desired */
++text-decoration: none;
++cursor: pointer;
++}
++
++ul#tabnav li:hover { /* settings for hover effect */
++background: #afa; /* set desired hover color */
++}
++
++/* end css tabs */
++
++/* FF 100% height iframe */
++html, body, div, iframe { margin:0; padding:0; }
++iframe { display:block; width:100%; border:none; }
++
++h1
++{
++    display: inline;
++    float: left;
++    font-size: small;
++    margin: 0;
++    padding: 0 10px;
++}
++
++h2
++{
++    display: inline;
++    float: right;
++    font-size: small;
++    margin: 0;
++    padding: 0 10px;
++}
++
++</style>
++
++<script type="text/javascript">
++function updateBody(tabId, page) {
++    document.getElementById(selectedTab).setAttribute("class", "unselected");
++    tab = document.getElementById(tabId)
++    tab.setAttribute("class", "selected");
++    selectedTab = tabId;
++    iframe = document.getElementById("myframe");
++    iframe.src = encodeURIComponent(tab.getAttribute("value")).replace(/%2F/g, '/');
++}
++function init(tabId){
++	updateBody(tabId);
++	updateViewport();
++	
++	window.onresize = updateViewport;
++}
++
++function updateViewport(){
++	 var viewportheight;
++
++	 // the more standards compliant browsers (mozilla/netscape/opera/IE7) use window.innerWidth and window.innerHeight
++
++	 if (typeof window.innerWidth != 'undefined')
++	 {
++	      viewportheight = window.innerHeight
++	 }
++
++	// IE6 in standards compliant mode (i.e. with a valid doctype as the first line in the document)
++
++	 else if (typeof document.documentElement != 'undefined'
++	     && typeof document.documentElement.clientWidth !=
++	     'undefined' && document.documentElement.clientWidth != 0)
++	 {
++	       viewportheight = document.documentElement.clientHeight
++	 }
++	// older versions of IE
++	 else
++	 { 
++	       viewportheight = document.getElementsByTagName('body')[0].clientHeight
++	 }
++	
++	iframe = document.getElementById("myframe");
++	iframe.style.height = (viewportheight-30)+'px';
++}
++var selectedTab = "tab1"
++</script>
++
++</head>
++
++<body onload="init('tab1');">
++
++<h1><a id="hudson_link" href="#"></a></h1>
++<h2><a id="zip_link" href="#">Zip</a></h2>
++
++<ul id="tabnav">
++<script type="text/javascript">document.getElementById("hudson_link").innerHTML="Back to "+alert(1)+"";</script>
++<script type="text/javascript">document.getElementById("hudson_link").onclick = function() { history.go(-1); return false; };</script>
++<script type="text/javascript">document.getElementById("zip_link").href="*zip*/HTML_20Report.zip";</script>
++</ul>
++<div>
++<iframe id="myframe" height="100%" width="100%" frameborder="0"></iframe>
++</div>
++
++</body>
++</html>
+diff --git a/src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/builds/1/htmlreports/HTML_20Report/test.txt b/src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/builds/1/htmlreports/HTML_20Report/test.txt
+new file mode 100644
+index 00000000..345e6aef
+--- /dev/null
++++ b/src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/builds/1/htmlreports/HTML_20Report/test.txt
+@@ -0,0 +1 @@
++Test
+diff --git a/src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/builds/1/log b/src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/builds/1/log
+new file mode 100644
+index 00000000..09a90856
+--- /dev/null
++++ b/src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/builds/1/log
+@@ -0,0 +1,8 @@
++Started by user unknown or anonymous
++Running as SYSTEM
++Building in workspace workspace/"+alert(1)+"
++["+alert(1)+"] $ /bin/sh -xe /tmp/jenkins2940273657363065808.sh
+++ echo Test
++[htmlpublisher] Archiving HTML reports...
++[htmlpublisher] Archiving at BUILD level workspace/"+alert(1)+" to jobs/"+alert(1)+"/builds/1/htmlreports/HTML_20Report
++Finished: SUCCESS
+diff --git a/src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/builds/legacyIds b/src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/builds/legacyIds
+new file mode 100644
+index 00000000..e69de29b
+diff --git a/src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/builds/permalinks b/src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/builds/permalinks
+new file mode 100644
+index 00000000..8c155db7
+--- /dev/null
++++ b/src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/builds/permalinks
+@@ -0,0 +1,6 @@
++lastCompletedBuild 1
++lastFailedBuild -1
++lastStableBuild 1
++lastSuccessfulBuild 1
++lastUnstableBuild -1
++lastUnsuccessfulBuild -1
+diff --git a/src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/config.xml b/src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/config.xml
+new file mode 100644
+index 00000000..c451e27d
+--- /dev/null
++++ b/src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/config.xml
+@@ -0,0 +1,38 @@
++<?xml version='1.1' encoding='UTF-8'?>
++<project>
++  <description></description>
++  <keepDependencies>false</keepDependencies>
++  <properties/>
++  <scm class="hudson.scm.NullSCM"/>
++  <canRoam>true</canRoam>
++  <disabled>false</disabled>
++  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
++  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
++  <triggers/>
++  <concurrentBuild>false</concurrentBuild>
++  <builders>
++    <hudson.tasks.Shell>
++      <command>echo &quot;Test&quot; &gt; test.txt</command>
++      <configuredLocalRules/>
++    </hudson.tasks.Shell>
++  </builders>
++  <publishers>
++    <htmlpublisher.HtmlPublisher plugin="htmlpublisher@1.33-SNAPSHOT">
++      <reportTargets>
++        <htmlpublisher.HtmlPublisherTarget>
++          <reportName>HTML Report</reportName>
++          <reportDir></reportDir>
++          <reportFiles>index.html</reportFiles>
++          <alwaysLinkToLastBuild>false</alwaysLinkToLastBuild>
++          <reportTitles></reportTitles>
++          <keepAll>true</keepAll>
++          <allowMissing>false</allowMissing>
++          <includes>**/*</includes>
++          <escapeUnderscores>true</escapeUnderscores>
++          <useWrapperFileDirectly>true</useWrapperFileDirectly>
++        </htmlpublisher.HtmlPublisherTarget>
++      </reportTargets>
++    </htmlpublisher.HtmlPublisher>
++  </publishers>
++  <buildWrappers/>
++</project>
+\ No newline at end of file
+diff --git a/src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/nextBuildNumber b/src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/nextBuildNumber
+new file mode 100644
+index 00000000..0cfbf088
+--- /dev/null
++++ b/src/test/resources/htmlpublisher/Security3302Test/oldReportJobNameTest/jobs/testJob/nextBuildNumber
+@@ -0,0 +1 @@
++2

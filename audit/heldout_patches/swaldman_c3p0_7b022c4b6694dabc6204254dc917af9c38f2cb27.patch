@@ -1,0 +1,191 @@
+From 7b022c4b6694dabc6204254dc917af9c38f2cb27 Mon Sep 17 00:00:00 2001
+From: Steve Waldman <swaldman@mchange.com>
+Date: Sun, 31 May 2026 21:42:28 -0300
+Subject: [PATCH] Generate BeanInfo classes for c3p0's DataSource and
+ ConnectionPoolDataSource implemetations that forbid treating connection /
+ pooledConnection as bean properties.
+
+---
+ .../v2/c3p0/beaninfo/C3P0BeanInfoGen.java     | 65 +++++++++++++++++++
+ build.mill                                    | 63 +++++++++++++++++-
+ 2 files changed, 125 insertions(+), 3 deletions(-)
+ create mode 100644 beanInfo/src/com/mchange/v2/c3p0/beaninfo/C3P0BeanInfoGen.java
+
+diff --git a/beanInfo/src/com/mchange/v2/c3p0/beaninfo/C3P0BeanInfoGen.java b/beanInfo/src/com/mchange/v2/c3p0/beaninfo/C3P0BeanInfoGen.java
+new file mode 100644
+index 00000000..a9b31ff0
+--- /dev/null
++++ b/beanInfo/src/com/mchange/v2/c3p0/beaninfo/C3P0BeanInfoGen.java
+@@ -0,0 +1,65 @@
++package com.mchange.v2.c3p0.beaninfo;
++
++import java.io.*;
++import java.util.Collections;
++import java.util.HashSet;
++import java.util.Set;
++import com.mchange.v2.codegen.bean.BeanInfoGen;
++
++import static java.nio.charset.StandardCharsets.UTF_8;
++
++public final class C3P0BeanInfoGen
++{
++    final static Set excludedPropertyNames;
++    final static Set excludedPropertyTypes;
++
++    static
++    {
++        Set tmp0 = new HashSet();
++        tmp0.add("connection");
++        tmp0.add("pooledConnection");
++        excludedPropertyNames = Collections.unmodifiableSet(tmp0);
++
++        Set tmp1 = new HashSet();
++        tmp1.add( java.sql.Connection.class );
++        tmp1.add( javax.sql.PooledConnection.class );
++        excludedPropertyTypes = Collections.unmodifiableSet(tmp1);
++    }
++
++    public static void main(String[] argv) throws Exception
++    {
++        int numFqcns = argv.length - 1;
++        String baseOutputDirStr = argv[numFqcns];
++        File baseOutputDir = new File(baseOutputDirStr);
++
++        for (int i = 0; i < numFqcns; ++i)
++        {
++            String fqcn = argv[i];
++            System.out.println("Generating bean info class for '" + fqcn + "'.");
++            RelDirectoryFilename rdfn = new RelDirectoryFilename(fqcn);
++            File relDir = new File(baseOutputDir, rdfn.relDirectory);
++            relDir.mkdirs();
++            File outputFile = new File(relDir, rdfn.filename);
++            Class beanClass = Class.forName(fqcn);
++            try (Writer w = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(outputFile), UTF_8)))
++            {
++                w.write(BeanInfoGen.explicitBeanInfoClassSourceForBeanClass( beanClass, excludedPropertyNames, excludedPropertyTypes ));
++            }
++        }
++        System.out.println("Bean info class generation complete.");
++    }
++
++    final static class RelDirectoryFilename
++    {
++        String relDirectory;
++        String filename;
++
++        RelDirectoryFilename(String fqcn)
++        {
++            int lastDot = fqcn.lastIndexOf('.');
++            String dottedRelDir = fqcn.substring(0,lastDot);
++            this.filename = fqcn.substring(lastDot + 1) + "BeanInfo.java";
++            this.relDirectory = dottedRelDir.replace('.','/');
++        }
++    }
++}
+diff --git a/build.mill b/build.mill
+index 7a376b79..ac83bfaa 100644
+--- a/build.mill
++++ b/build.mill
+@@ -81,6 +81,11 @@ object `package` extends JavaModule with SonatypeCentralPublishModule {
+ 
+   object bean extends Gen {}
+ 
++  object beanInfo extends Gen {
++    override def moduleDeps = Seq(build) // makes the c3p0 bean classes loadable at run time
++    override def mainClass   = Task { Some("com.mchange.v2.c3p0.beaninfo.C3P0BeanInfoGen") }
++  }
++
+   object proxy extends Gen {
+     override def sources = Task {
+       BuildCtx.withFilesystemCheckerDisabled {
+@@ -90,6 +95,13 @@ object `package` extends JavaModule with SonatypeCentralPublishModule {
+     override def mainClass = Task { Some("com.mchange.v2.c3p0.codegen.JdbcProxyGenerator") }
+   }
+ 
++  object beanInfoBin extends JavaModule {
++    override def moduleDeps       = Seq(build) // compile BeanInfos against the beans
++    override def javacOptions     = Seq("-source", JvmCompatVersion, "-target", JvmCompatVersion)
++    override def sources          = Task { Seq.empty[PathRef] } // no hand-written sources
++    override def generatedSources = Task { Seq(beanInfoGen()) }
++  }
++
+   val Debug = true
+   val Trace = 10     // 10 is TRACE_MAX, 5 for less tracing
+ 
+@@ -182,6 +194,32 @@ object `package` extends JavaModule with SonatypeCentralPublishModule {
+       PathRef(realDest)
+     }
+   }
++  def beanInfoGenGeneratedSourceDir : T[os.Path] = Task(persistent=true) { Task.dest }
++  def beanInfoGen : T[PathRef] = Task {
++    BuildCtx.withFilesystemCheckerDisabled {
++      val realDest = beanInfoGenGeneratedSourceDir()
++      beanInfo.runIf(
++        Task.Anon(
++          Args(
++            (Seq(buildModTime(),recursiveDirModTime(BuildCtx.workspaceRoot/"src"),recursiveDirModTime(BuildCtx.workspaceRoot/"beanInfo"/"src")).max > recursiveDirModTime(beanInfoGenGeneratedSourceDir())).toString,
++            "com.mchange.v2.c3p0.DriverManagerDataSource",
++            "com.mchange.v2.c3p0.PoolBackedDataSource",
++            "com.mchange.v2.c3p0.ComboPooledDataSource",
++            "com.mchange.v2.c3p0.WrapperConnectionPoolDataSource",
++            "com.mchange.v2.c3p0.JndiRefConnectionPoolDataSource",
++            "com.mchange.v2.c3p0.JndiRefForwardingDataSource",
++            "com.mchange.v2.c3p0.debug.CloseLoggingComboPooledDataSource",
++            "com.mchange.v2.c3p0.debug.ConstructionLoggingComboPooledDataSource",
++            "com.mchange.v2.c3p0.debug.AfterCloseLoggingComboPooledDataSource",
++            //"com.mchange.v2.c3p0.test.FreezableDriverManagerDataSource",
++            //"com.mchange.v2.c3p0.test.AlwaysFailDataSource",
++            beanInfoGenGeneratedSourceDir().toString
++          )
++        )
++      )()
++      PathRef(realDest)
++    }
++  }
+   def proxygenGeneratedSourceDir : T[os.Path] = Task(persistent=true) { Task.dest }
+   def proxygen : T[PathRef] = Task {
+     BuildCtx.withFilesystemCheckerDisabled {
+@@ -219,12 +257,22 @@ object `package` extends JavaModule with SonatypeCentralPublishModule {
+     val out = Task.dest / "source.jar"
+     Jvm.createJar(
+       jar = out,
+-      inputPaths = (allSources() ++ resources() ++ compileResources() ++ allLicenses()).map(_.path).filter(os.exists),
++      inputPaths = (allSources() ++ resources() ++ compileResources() ++ Seq(beanInfoGen()) ++ allLicenses()).map(_.path).filter(os.exists),
+       manifest = manifest()
+     )
+     PathRef(out)
+   }
+ 
++  override def jar: T[PathRef] = Task {
++    val out = Task.dest / "out.jar" // match the out.jar name produced by the default jar task.
++    Jvm.createJar(
++      jar        = out,
++      inputPaths = (Seq(compile().classes, beanInfoBin.compile().classes) ++ resources()).map(_.path).filter(os.exists),
++      manifest   = manifest()
++    )
++    PathRef(out)
++  }
++
+   object doc extends JavaModule
+   {
+     val StagingDir = os.Path("/Users/swaldman/development/gitproj/www.mchange.com/projects/c3p0-versions")
+@@ -296,8 +344,17 @@ object `package` extends JavaModule with SonatypeCentralPublishModule {
+     def localResourcesRough : T[PathRef] = Task.Source { moduleDir / "resources-local-rough" }
+ 
+     override def runClasspath : T[Seq[PathRef]] = Task {
+-      super.runClasspath() :+ localResources()
+-      // super.runClasspath() :+ localResourcesRough()
++      // build.beanInfoBin holds the generated explicit BeanInfo classes, which ship in the
++      // main jar but are not part of build.compile (so not pulled in via the moduleDep on build).
++      // We add them here so java.beans.Introspector finds them at test runtime, as it would in a
++      // deployed jar. (See PerishableConnectionResourcesNotBeanPropertiesJUnitTestCase.)
++      val testClasses = super.runClasspath() :+ build.beanInfoBin.compile().classes
++
++      // we maintain two sets of configs for quick tests, one "reasonable",
++      // the other intentionally miserable. We tend to run tests against both,
++      // manually switching between the versions below
++      testClasses :+ localResources()
++      // testClasses :+ localResourcesRough()
+     }
+ 
+     def externalClassPath : T[String] = Task {
