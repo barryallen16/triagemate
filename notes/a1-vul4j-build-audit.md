@@ -12,7 +12,7 @@ build, due to VPS disk limits (~8.6 GB total).
 
 Dataset: `benchmarks/vul4j/dataset/vul4j_dataset.csv` from tuhh-softsec/vul4j.
 
-## Results — Target CWES entries (all 23 processed)
+## Results - Target CWES entries (all 23 processed)
 
 | | Count | Entries |
 |---|---|---|
@@ -26,16 +26,16 @@ Dataset: `benchmarks/vul4j/dataset/vul4j_dataset.csv` from tuhh-softsec/vul4j.
 |---|---|---|---|
 | VUL4J-2 | CWE-611 | 1.6 | apache/xmlgraphics-batik |
 | VUL4J-15 | CWE-611 | 1.8 | apache/cxf |
-| VUL4J-25 | CWE-79 | — | apache/sling-org-apache-sling-xss |
+| VUL4J-25 | CWE-79 | - | apache/sling-org-apache-sling-xss |
 | VUL4J-33 | CWE-77 | 1.7 | apache/struts |
 | VUL4J-34 | CWE-79 | 1.7 | apache/struts |
-| VUL4J-41 | CWE-22 | — | codehaus-plexus/plexus-archiver |
-| VUL4J-42 | CWE-78 | — | codehaus-plexus/plexus-utils |
+| VUL4J-41 | CWE-22 | - | codehaus-plexus/plexus-archiver |
+| VUL4J-42 | CWE-78 | - | codehaus-plexus/plexus-utils |
 | VUL4J-45 | CWE-74 | 1.7 | esigate/esigate |
-| VUL4J-47 | CWE-611 | — | FasterXML/jackson-dataformat-xml |
+| VUL4J-47 | CWE-611 | - | FasterXML/jackson-dataformat-xml |
 | VUL4J-59 | CWE-79 | 1.5 | jhy/jsoup |
-| VUL4J-60 | CWE-79 | — | nahsra/antisamy |
-| VUL4J-61 | CWE-611 | — | neo4j-contrib/neo4j-apoc-procedures (Gradle) |
+| VUL4J-60 | CWE-79 | - | nahsra/antisamy |
+| VUL4J-61 | CWE-611 | - | neo4j-contrib/neo4j-apoc-procedures (Gradle) |
 | VUL4J-65 | CWE-22 | 1.8 | OpenRefine/OpenRefine |
 | VUL4J-79 | CWE-22 | 1.6 | zeroturnaround/zt-zip |
 
@@ -44,9 +44,9 @@ Dataset: `benchmarks/vul4j/dataset/vul4j_dataset.csv` from tuhh-softsec/vul4j.
 | Entry | CWE | Java version | Repo | Reason |
 |---|---|---|---|---|
 | VUL4J-18 | CWE-22 | \${jdk} | apache/jspwiki | Build returns non-zero (TLD scanner) |
-| VUL4J-50 | CWE-79 | — | javamelody/javamelody | Build returns non-zero (source 1.5 warnings) |
+| VUL4J-50 | CWE-79 | - | javamelody/javamelody | Build returns non-zero (source 1.5 warnings) |
 | VUL4J-64 | CWE-611 | 1.8 | OpenRefine/OpenRefine | Build returns non-zero |
-| VUL4J-69 | CWE-22 | — | spring-projects/spring-framework | compile_cmd needs $VUL4J_GIT env var (not set) |
+| VUL4J-69 | CWE-22 | - | spring-projects/spring-framework | compile_cmd needs $VUL4J_GIT env var (not set) |
 | VUL4J-76 | CWE-22 | 1.7 | square/retrofit | Build returns non-zero |
 
 ### Clone/checkout failed (4)
@@ -58,19 +58,19 @@ Dataset: `benchmarks/vul4j/dataset/vul4j_dataset.csv` from tuhh-softsec/vul4j.
 | VUL4J-38 | CWE-74 | apereo/java-cas-client | Patch commit not reachable in repo |
 | VUL4J-43 | CWE-22 | eclipse/rdf4j | Repo too large for available disk |
 
-## Results — Non-target CWES entries (sample of 5)
+## Results - Non-target CWES entries (sample of 5)
 
 | Entry | CWE | Java version | Repo | Result |
 |---|---|---|---|---|
 | VUL4J-1 | CWE-20 | 1.5 | alibaba/fastjson | Build failed |
-| VUL4J-3 | CWE-20 | — | apache/camel | Clone failed (too large) |
-| VUL4J-4 | CWE-20 | — | apache/camel | Clone failed (too large) |
+| VUL4J-3 | CWE-20 | - | apache/camel | Clone failed (too large) |
+| VUL4J-4 | CWE-20 | - | apache/camel | Clone failed (too large) |
 | VUL4J-5 | CWE-20 | 1.7 | apache/commons-compress | Build OK |
 | VUL4J-6 | CWE-20 | 1.7 | apache/commons-compress | Build OK |
 
 ## Version pinning
 
-All buildable entries target Java 1.5–1.8. **JDK 8 (eclipse-temurin-8 or openjdk-8-jdk-headless) + Maven 3.9** covers every entry that builds. No entry requires JDK 11 or newer.
+All buildable entries target Java 1.5-1.8. **JDK 8 (eclipse-temurin-8 or openjdk-8-jdk-headless) + Maven 3.9** covers every entry that builds. No entry requires JDK 11 or newer.
 
 The system has Java 8 (1.8.0_504) and Maven 3.9.12 installed via apt.
 
@@ -86,9 +86,9 @@ The system has Java 8 (1.8.0_504) and Maven 3.9.12 installed via apt.
 
 ## Report files
 
-- `scripts/vul4j-audit/audit_builds.py` — the audit script (resume-safe, one repo at a time)
-- `data/vul4j-audit/audit_report.jsonl` — per-entry results (23 target CWES + 5 non-target samples)
-- `benchmarks/vul4j/dataset/vul4j_dataset.csv` — the Vul4J dataset (129 entries)
+- `scripts/vul4j-audit/audit_builds.py` - the audit script (resume-safe, one repo at a time)
+- `data/vul4j-audit/audit_report.jsonl` - per-entry results (23 target CWES + 5 non-target samples)
+- `benchmarks/vul4j/dataset/vul4j_dataset.csv` - the Vul4J dataset (129 entries)
 
 ## Scope decision for the remaining entries
 

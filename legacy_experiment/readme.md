@@ -1,4 +1,4 @@
-# Legacy experiment — superseded
+# Legacy experiment - superseded
 
 This folder holds the first version of the project, before TriageMate. It is kept for provenance only and is not part of the current release.
 
@@ -12,6 +12,6 @@ See `notes/leak-audit.md` for the full leak audit and `README.md` for the curren
 
 ## Contents
 
-- `finetuning/` — old finetuning notebook
-- `misc/` — old eval scripts and results
-- `java_eval_new.ipynb` — old evaluation notebook
+- `finetuning/` - old finetuning notebook
+- `misc/` - old eval scripts and results
+- `java_eval_new.ipynb` - old evaluation notebook

@@ -1,7 +1,7 @@
 # Run locally without a Kaggle GPU
 
 The full model scorer needs CUDA, unsloth, and semgrep. If you don't have a GPU,
-use the heuristic scorer instead — it ranks Semgrep alerts by severity and needs
+use the heuristic scorer instead - it ranks Semgrep alerts by severity and needs
 only Python and Java.
 
 ## Heuristic scorer (no GPU)

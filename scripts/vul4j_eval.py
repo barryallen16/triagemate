@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent
 CSV = ROOT / "benchmarks" / "vul4j" / "dataset" / "vul4j_dataset.csv"
 OUT = ROOT / "data" / "vul4j-eval"
 
-# CWEs that Semgrep's security rules cover — these are the ones we can label.
+# CWEs that Semgrep's security rules cover - these are the ones we can label.
 TARGET_CWES = {"CWE-22", "CWE-78", "CWE-79", "CWE-611", "CWE-74", "CWE-77"}
 
 # Map CWE to Semgrep rule families for labeling.

@@ -1,4 +1,4 @@
-"""Tests for triage/metrics.py — hand-computed expectations."""
+"""Tests for triage/metrics.py - hand-computed expectations."""
 import numpy as np
 
 from triage.metrics import precision_at_recall, ece, summarize
@@ -26,7 +26,7 @@ def test_precision_at_recall_mixed():
 
 def test_precision_at_recall_unreachable():
     # Only 1 positive out of 100; target 90% recall requires keeping 90%,
-    # but there aren't enough positives — actually recall can still reach
+    # but there aren't enough positives - actually recall can still reach
     # 0.9 if we keep all. With y.sum()=1, recall hits 1.0 at the positive.
     y = np.array([0, 0, 0, 1, 0])
     score = np.array([0.1, 0.2, 0.3, 0.9, 0.4])

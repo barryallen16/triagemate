@@ -1,4 +1,4 @@
-"""Tests for triage/dataset.py — method windows and name neutralization."""
+"""Tests for triage/dataset.py - method windows and name neutralization."""
 from triage.dataset import build_window, neutralize, method_ranges
 
 
@@ -40,7 +40,7 @@ def test_build_window_returns_enclosing_method():
 
 
 def test_build_window_line_outside_method():
-    # Line 2 is the package declaration — no enclosing method.
+    # Line 2 is the package declaration - no enclosing method.
     assert build_window(SRC, 2, None, juliet=False) is None
 
 

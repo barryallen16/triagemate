@@ -1,4 +1,4 @@
-"""Tests for triage/prompts.py — verdict/why/fix parsing."""
+"""Tests for triage/prompts.py - verdict/why/fix parsing."""
 from triage.prompts import parse, target
 
 

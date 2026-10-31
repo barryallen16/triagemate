@@ -9,17 +9,17 @@ detector and not a SOTA claim.
 
 **Strongest results:** `barryallen16/Qwen2.5_7B_java_vul_final` scores **979/1000 =
 97.90%** on a stratified NIST-Juliet held-out set (`model-evaluation/juliet-heldout-1000.csv`,
-Oct 2025 Colab run, per-case file `juliet-final-1000.json`) — with one open flaw:
+Oct 2025 Colab run, per-case file `juliet-final-1000.json`) - with one open flaw:
 Juliet method names (`bad`/`good...`) and `POTENTIAL FLAW` comments leak the verdict,
 so that run partly measures name-reading. A neutralized re-run on
 `juliet-heldout-1000-neutral.csv` (same rows, names and flaw comments scrubbed) is
 pending and will replace that number, plus **194/200 =
-97.00%** (precision/recall/F1 96.81%) on a 200-case LLM-generated set — see the
+97.00%** (precision/recall/F1 96.81%) on a 200-case LLM-generated set - see the
 stored outputs in `java_eval_new.ipynb`. Two caveats on the 200-case run: the cases
 are LLM-written, not a public benchmark, and 31 of the 200 rows are
 fix-explanation prose that also appears verbatim in the training set, so they
 measure recall rather than detection. On the 169 genuine-Java rows the accuracy
-is 96.4–100%.
+is 96.4-100%.
 
 ## Evaluations with saved outputs
 
@@ -29,7 +29,7 @@ without a GPU.
 | Notebook | Model evaluated | Cases | Correct | Accuracy |
 |---|---|---|---|---|
 | `java_eval_new.ipynb` | `Qwen2.5_7B_java_vul_final` (LoRA on `unsloth/qwen2.5-7b-instruct`, non-Coder) | 200 | 194 | **97.00%** |
-| `juliet-final-1000.json` (Colab T4, Oct 2025) | `Qwen2.5_7B_java_vul_final` | 1000 | 979 | 97.90%, confounded — see note |
+| `juliet-final-1000.json` (Colab T4, Oct 2025) | `Qwen2.5_7B_java_vul_final` | 1000 | 979 | 97.90%, confounded - see note |
 | `model-evaluation/testcases_java_eval.ipynb` | `Qwen2.5_7B_java_vul_v3` (LoRA on `unsloth/qwen2.5-coder-7b-instruct`) | 88 | 81 | 92.05% |
 | `misc/eval-res1.txt` (per-case JSON) | Mistral-Nemo-Instruct-2407 4-bit | 102 | 79 | 77.45% |
 
@@ -37,7 +37,7 @@ Confusion matrix for the 200-case run: 91 TP / 3 FN / 3 FP / 103 TN.
 
 ## Older 102-case sweep (weak evidence)
 
-From June–July 2025 notes (`misc/evaulation.md`). Only the Mistral row has a
+From June-July 2025 notes (`misc/evaulation.md`). Only the Mistral row has a
 per-case file; the other three rows were never saved. With n=102 the 95% CI is
 roughly ±8 pts, so the 7B-vs-14B gap (2 cases) is noise, not a finding.
 
@@ -86,7 +86,7 @@ raw datasets -> standardize -> clean -> LLM synthetic augmentation
 | `preprocess/processed_datasetv1.jsonl` | 71,765 | 36,232 / 35,533 |
 | `final-dataset/finetuning_dataset_v3.jsonl` | 71,765 | 36,232 / 35,533 |
 
-`finetuning_dataset_v3.jsonl` — the set behind the currently published adapter —
+`finetuning_dataset_v3.jsonl` - the set behind the currently published adapter -
 is built from `processed_datasetv1.jsonl`, which comes from the *merged* corpus.
 It therefore skips the synthetic augmentation and the dedupe stage that the two
 earlier sets (`previous-versions/`) were built from, and it still carries 7,601
@@ -116,40 +116,40 @@ expect to be run from their own directory rather than from the repo root:
 
 ## Project structure
 
-- `datasets/` — the seven curated stages. Only scripts, readmes and notebooks
+- `datasets/` - the seven curated stages. Only scripts, readmes and notebooks
   are tracked; stage JSONL is fetched with `bash scripts/download_data.sh`.
-  - `prepared_jsonl/` — the eight extracted and initially standardized sources,
+  - `prepared_jsonl/` - the eight extracted and initially standardized sources,
     plus `cleaning-code.py`, which applies the final standardization into
     `standarized/`.
-  - `standarized/` — all standardized datasets.
-  - `synthetic/` — synthetic samples from six LLMs (claude, deepseek, grok,
+  - `standarized/` - all standardized datasets.
+  - `synthetic/` - synthetic samples from six LLMs (claude, deepseek, grok,
     llama, mistral, qwen) plus `new_vuls.jsonl`; the generation prompt is in
     the folder's readme.
-  - `merged_jsonl/` — `clean_merged.jsonl`, `enhanced_dataset.jsonl`,
+  - `merged_jsonl/` - `clean_merged.jsonl`, `enhanced_dataset.jsonl`,
     `clean+enhanced.jsonl` and `merge_synthetic.py`; `previous-versions/` keeps
-    v1–v3 of the synthetic merge, `merged_output_v4.jsonl` is the final one.
-  - `deduped/` — `dedupe.py` plus `deduped_clean_enhance.jsonl` and
+    v1-v3 of the synthetic merge, `merged_output_v4.jsonl` is the final one.
+  - `deduped/` - `dedupe.py` plus `deduped_clean_enhance.jsonl` and
     `final_deduped.jsonl`.
-  - `preprocess/` — `java-preprocessing-notebook.ipynb` and
+  - `preprocess/` - `java-preprocessing-notebook.ipynb` and
     `processed_datasetv1.jsonl`.
-  - `final-dataset/` — `prepare-final-dataset.py` and
+  - `final-dataset/` - `prepare-final-dataset.py` and
     `finetuning_dataset_v3.jsonl`; `previous-versions/` holds v1 and v2.
-- `finetuning/finetuning_final.ipynb` — LoRA fine-tuning notebook (Unsloth,
+- `finetuning/finetuning_final.ipynb` - LoRA fine-tuning notebook (Unsloth,
   r=64, alpha=16). Note: as committed it loads the 423-record
   `finetuning_dataset_enhanced.jsonl` for 60 steps, not the 71,765-record v3.
-- `model-evaluation/` — evaluation notebook plus `testcases-prompt.md`, the
+- `model-evaluation/` - evaluation notebook plus `testcases-prompt.md`, the
   prompt used to generate the test set from an LLM; `eval-clean-152.csv` (the
   200-case set minus 31 leaked prose rows and 17 training overlaps) and
   `juliet-heldout-1000.csv` (stratified NIST-Juliet sample, seed 42) are the
   frozen sets to re-run everything on.
-- `scripts/` — `freeze_eval.py` (rebuilds the clean set), `run_eval.py` (one
+- `scripts/` - `freeze_eval.py` (rebuilds the clean set), `run_eval.py` (one
   checkpoint × one CSV → per-case JSON, same prompt as the notebooks).
-- `java_eval_new.ipynb` — the 200-case evaluation of the published adapter,
+- `java_eval_new.ipynb` - the 200-case evaluation of the published adapter,
   with stored outputs.
-- `misc/` — validation scripts (`validate-jsonl-file.py`, `check-datasets.py`,
+- `misc/` - validation scripts (`validate-jsonl-file.py`, `check-datasets.py`,
   `before-tesing.py`), raw test cases (`120-testcases.txt`), the per-case
   Mistral result (`eval-res1.txt`) and the evaluation summary (`evaulation.md`).
-- `../all-unorganized-code/` — the original working folders, the project archives
+- `../all-unorganized-code/` - the original working folders, the project archives
   (`.zip`, `.7z`) and the upstream source corpora, kept for provenance
   (sibling of repo root, outside git).
 

@@ -1,4 +1,4 @@
-"""Tests for triage/cli.py — heuristic scorer and output parsing."""
+"""Tests for triage/cli.py - heuristic scorer and output parsing."""
 from triage.cli import heuristic_score
 
 
